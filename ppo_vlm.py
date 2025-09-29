@@ -25,11 +25,6 @@ from qwen_vl_utils import process_vision_info
 
 from IPython import embed
 
-
-# ==================================================================================================
-# ## 1. Argument Parsing and Configuration
-# We add new arguments for the VLM, prompt, and RL-specific hyperparameters from the papers.
-# ==================================================================================================
 @dataclass
 class Args:
     exp_name: str = "vlm_ppo_finetuning"
@@ -101,7 +96,7 @@ class Args:
     """Scaling factor to down-weight the CoT reasoning tokens in log-prob calculation, as per Section 4.3."""
     max_new_tokens: int = 128
     """Maximum number of new tokens for the VLM to generate."""
-    enable_compile: bool = True
+    enable_compile: bool = False
     "wether to compile VLM"
     
     
@@ -126,11 +121,9 @@ def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
 
 def numpy_to_pil(images: np.ndarray) -> list:
     """Converts a batch of numpy array images to a list of PIL Images."""
-    # Assuming images are (N, C, H, W).
-    images = images.transpose(0, 2, 3, 1) # Convert to NHWC
+    images = images.transpose(0, 2, 3, 1)
     return [Image.fromarray(img.astype(np.uint8)) for img in images]
 
-# Helper function to parse the VLM's text output to an action
 def parse_action(text: str, action_space: gym.spaces.Discrete) -> int:
     """
     Parses the 'action' field from the VLM's structured output.
@@ -156,7 +149,6 @@ def parse_action(text: str, action_space: gym.spaces.Discrete) -> int:
     # Default to a random action if parsing fails, as suggested in the paper.
     return action_space.sample()
 
-# The RecordEpisodeStatistics wrapper remains the same
 class RecordEpisodeStatistics(gym.Wrapper):
     def __init__(self, env, deque_size=100):
         super().__init__(env)
@@ -193,6 +185,7 @@ class RecordEpisodeStatistics(gym.Wrapper):
 class Agent(nn.Module):
     def __init__(self, envs, vlm_name: str):
         super().__init__()
+        # atari img size without downscale
         self.processor = AutoProcessor.from_pretrained(vlm_name, trust_remote_code=True, min_pixels = 210 * 160 * 3, max_pixels = 210 * 160 * 3)
         self.model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
             vlm_name,
@@ -233,21 +226,26 @@ class Agent(nn.Module):
                 [{"role": "user", "content": [{"type": "image"}, {"type": "text", "text": p}]}],
                 tokenize=False, add_generation_prompt=True,
             ) for p in text_prompts]
+            
             inputs = self.processor(
                 text=texts, images=images, return_tensors="pt", padding=True,
             ).to(self.model.device)
+            
             with torch.no_grad():
                 generated_ids = self.model.generate(
                     **inputs, max_new_tokens=args.max_new_tokens, do_sample=True,
                     temperature=0.7, top_p=0.9,
                 )
+            
             generated_texts = self.processor.batch_decode(
                 generated_ids[:, inputs.input_ids.shape[1]:], skip_special_tokens=True
             )
+            
             env_actions = torch.tensor(
                 [parse_action(text, envs.single_action_space) for text in generated_texts],
                 device=self.model.device
             )
+            
             full_ids = generated_ids
             prompt_lens = torch.tensor([inputs.input_ids.shape[1]] * len(images), device=self.model.device)
         else:  # --- Update Phase ---
@@ -285,7 +283,6 @@ class Agent(nn.Module):
 # ==================================================================================================
 # ## 4. Main Training Loop
 # ==================================================================================================
-
 if __name__ == "__main__":
     args = tyro.cli(Args)
 
@@ -296,7 +293,7 @@ if __name__ == "__main__":
             fullgraph=True,
             dynamic=False
         )
-        accelerator = Accelerator(dynamo_plugin=dynamo_plugin)
+        accelerator = Accelerator(dynamo_plugin=dynamo_plugin, gradient_accumulation_steps=1)
         print("Enabling compilation!")
     else:
         accelerator = Accelerator(gradient_accumulation_steps=1)
@@ -337,7 +334,6 @@ if __name__ == "__main__":
 
     # ✨ DISTRIBUTED RL: Guard all logging to run only on the main process
     if accelerator.is_main_process:
-        # Create a dedicated folder for this run's interaction logs
         log_path = os.path.join(f"runs/{run_name}", args.log_dir)
         os.makedirs(log_path, exist_ok=True)
         interaction_log_file = open(os.path.join(log_path, "interactions.txt"), "w")
@@ -366,10 +362,10 @@ if __name__ == "__main__":
         episodic_life=True,
         reward_clip=True,
         seed=args.seed + accelerator.process_index,
-        stack_num=1,
-        gray_scale=False,
-        img_width=160,
-        img_height=210,
+        stack_num=1, # no atari wrappers
+        gray_scale=False, # no atari wrappers
+        img_width=160, # no atari wrappers
+        img_height=210, # no atari wrappers
     )
     envs.num_envs = args.num_envs
     envs.single_action_space = envs.action_space
@@ -414,7 +410,6 @@ if __name__ == "__main__":
             obs[step] = next_obs.cpu()
             dones[step] = next_done.cpu()
             
-            
             pil_images = numpy_to_pil(next_obs.cpu().numpy())
             with torch.no_grad():
                 action, logprob, value, f_ids, f_mask, p_len, generated_texts = agent.get_action_and_value(
@@ -440,6 +435,8 @@ if __name__ == "__main__":
             
             actions[step] = action.cpu()
             logprobs[step] = logprob.cpu()
+            
+            # i think p_len might always be the same?
             prompt_lens[step] = p_len.cpu()
             
             seq_len = min(f_ids.shape[1], max_seq_len)
