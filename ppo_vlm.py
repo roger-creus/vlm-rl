@@ -1,4 +1,3 @@
-# docs and experiment results can be found at https://docs.cleanrl.dev/rl-algorithms/ppo/#ppo_atari_envpoolpy
 import os
 import random
 import re
@@ -71,7 +70,7 @@ class Args:
     """the surrogate clipping coefficient"""
     clip_vloss: bool = True
     """Toggles whether or not to use a clipped loss for the value function, as per the paper."""
-    ent_coef: float = 0.01
+    ent_coef: float = 0.0
     """coefficient of the entropy"""
     vf_coef: float = 0.5
     """coefficient of the value function"""
@@ -107,12 +106,6 @@ class Args:
     """the mini-batch size (computed in runtime)"""
     num_iterations: int = 0
     """the number of iterations (computed in runtime)"""
-
-# ==================================================================================================
-# ## 2. Environment and Agent Definition
-# The core logic is now in the `Agent` class. It handles VLM loading, text generation,
-# action parsing, and calculating log probabilities for text sequences.
-# ==================================================================================================
 
 def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
     torch.nn.init.orthogonal_(layer.weight, std)
@@ -185,13 +178,12 @@ class RecordEpisodeStatistics(gym.Wrapper):
 class Agent(nn.Module):
     def __init__(self, envs, vlm_name: str):
         super().__init__()
-        # atari img size without downscale
         self.processor = AutoProcessor.from_pretrained(vlm_name, trust_remote_code=True, min_pixels = 210 * 160 * 3, max_pixels = 210 * 160 * 3)
         self.model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
             vlm_name,
             torch_dtype=torch.bfloat16,
             trust_remote_code=True,
-            attn_implementation="flash_attention_2"
+            attn_implementation="flash_attention_2",
         )
         hidden_size = self.model.config.hidden_size
         self.critic = nn.Sequential(
