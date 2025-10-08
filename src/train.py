@@ -138,6 +138,8 @@ if __name__ == "__main__":
     next_done = torch.zeros(args.num_envs).to(device)
     
     for iteration in range(1, args.num_iterations + 1):
+        accelerator.unwrap_model(agent).eval()
+        
         if args.anneal_lr:
             frac = 1.0 - (iteration - 1.0) / args.num_iterations
             lrnow = frac * args.learning_rate
@@ -165,10 +167,8 @@ if __name__ == "__main__":
                             
             actions[step] = action
             logprobs[step] = logprob
-            # TODO: i think p_len might always be the same?
-            prompt_lens[step] = p_len
-            
-            #print(f"p_len: {p_len} | p_len.shape: {p_len.shape}")
+            # TODO: remove because p_len is always the same...
+            prompt_lens[step] = p_len 
             
             seq_len = min(f_ids.shape[1], max_seq_len)
             full_input_ids[step, :, :seq_len] = f_ids[:, :seq_len]
@@ -215,18 +215,18 @@ if __name__ == "__main__":
             ).to(device)
             next_value = agent.get_value(next_inputs.input_ids, next_inputs.attention_mask).flatten()
 
-        gathered_rewards = accelerator.gather(rewards)
-        gathered_values = accelerator.gather(values)
-        gathered_dones = accelerator.gather(dones)
-        gathered_next_value = accelerator.gather(next_value)
-        gathered_next_done = accelerator.gather(next_done)
+        gathered_rewards = accelerator.gather(rewards) # shape (num_processes * num_steps, num_envs)
+        gathered_values = accelerator.gather(values) # shape (num_processes * num_steps, num_envs)
+        gathered_dones = accelerator.gather(dones) # shape (num_processes * num_steps, num_envs)
+        gathered_next_value = accelerator.gather(next_value) # shape (num_processes * num_envs)
+        gathered_next_done = accelerator.gather(next_done) # shape (num_processes * num_envs)
 
         num_total_envs = args.num_envs * accelerator.num_processes
-        gathered_rewards = gathered_rewards.view(accelerator.num_processes, args.num_steps, args.num_envs).permute(1, 0, 2).reshape(args.num_steps, num_total_envs)
-        gathered_values = gathered_values.view(accelerator.num_processes, args.num_steps, args.num_envs).permute(1, 0, 2).reshape(args.num_steps, num_total_envs)
-        gathered_dones = gathered_dones.view(accelerator.num_processes, args.num_steps, args.num_envs).permute(1, 0, 2).reshape(args.num_steps, num_total_envs)
-        gathered_next_value = gathered_next_value.view(num_total_envs)
-        gathered_next_done = gathered_next_done.view(num_total_envs)
+        gathered_rewards = gathered_rewards.view(accelerator.num_processes, args.num_steps, args.num_envs).permute(1, 0, 2).reshape(args.num_steps, num_total_envs) # shape (num_steps, num_processes * num_envs)
+        gathered_values = gathered_values.view(accelerator.num_processes, args.num_steps, args.num_envs).permute(1, 0, 2).reshape(args.num_steps, num_total_envs) # shape (num_steps, num_processes * num_envs)
+        gathered_dones = gathered_dones.view(accelerator.num_processes, args.num_steps, args.num_envs).permute(1, 0, 2).reshape(args.num_steps, num_total_envs) # shape (num_steps, num_processes * num_envs)
+        gathered_next_value = gathered_next_value.view(num_total_envs) # shape (num_processes * num_envs)       
+        gathered_next_done = gathered_next_done.view(num_total_envs) # shape (num_processes * num_envs)
 
         with torch.no_grad():
             advantages = torch.zeros_like(gathered_rewards)
@@ -242,8 +242,7 @@ if __name__ == "__main__":
                 advantages[t] = lastgaelam = delta + args.gamma * args.gae_lambda * nextnonterminal * lastgaelam
             returns = advantages + gathered_values
 
-        # Fetch the gathered tensors once
-        gathered_logprobs = accelerator.gather(logprobs)
+        gathered_logprobs = accelerator.gather(logprobs) 
         gathered_input_ids = accelerator.gather(full_input_ids)
         gathered_prompt_lens = accelerator.gather(prompt_lens)
 
@@ -268,6 +267,7 @@ if __name__ == "__main__":
         if accelerator.is_main_process:
             print("Training...")
 
+        accelerator.unwrap_model(agent).train()
         for epoch in range(args.update_epochs):
             np.random.shuffle(b_inds)
             for start in range(0, args.total_batch_size, args.minibatch_size):
@@ -288,9 +288,18 @@ if __name__ == "__main__":
                         action_ids=mb_input_ids,
                         prompt_lens=mb_prompt_lens
                     )
+                    
+                    if accelerator.is_main_process:
+                        print(f"mb_logprobs: {mb_logprobs.min().item()}, {mb_logprobs.max().item()}, {mb_logprobs.mean().item()}")
+                        print(f"newlogprob: {newlogprob.min().item()}, {newlogprob.max().item()}, {newlogprob.mean().item()}")
+                        print(f"entropy_tensor: {entropy_tensor.min().item()}, {entropy_tensor.max().item()}, {entropy_tensor.mean().item()}")
+                    
                     newvalue = newvalue.view(-1)
                     logratio = newlogprob - mb_logprobs
                     ratio = logratio.exp()
+                    
+                    if accelerator.is_main_process:
+                        print(f"epoch: {epoch} | ratio: {ratio.mean().item()}")
                     
                     #with torch.no_grad():
                     #    approx_kl = accelerator.gather( ((ratio - 1) - logratio).mean() ).mean()
@@ -312,14 +321,14 @@ if __name__ == "__main__":
                     else:
                         v_loss = 0.5 * ((newvalue - mb_returns) ** 2).mean()
                     
-                    entropy_loss = (entropy_tensor * final_mask).sum() / final_mask.sum()
+                    entropy_loss = entropy_tensor.mean()
                     loss = pg_loss - args.ent_coef * entropy_loss + v_loss * args.vf_coef
                     
                     accelerator.backward(loss)
                     optimizer.step()
                     optimizer.zero_grad()
 
-        # ✨ DISTRIBUTED RL: Logging should still be guarded
+        # --- Logging ---
         if accelerator.is_main_process:
             writer.add_scalar("charts/learning_rate", optimizer.param_groups[0]["lr"], global_step)
             writer.add_scalar("losses/value_loss", v_loss.item(), global_step)
