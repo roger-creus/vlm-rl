@@ -6,6 +6,8 @@ from IPython import embed
 from torch.distributions.categorical import Categorical
 from transformers import Qwen2_5_VLForConditionalGeneration, AutoTokenizer, AutoProcessor
 
+from src.utils.utils import numpy_to_pil
+
 def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
     torch.nn.init.orthogonal_(layer.weight, std)
     torch.nn.init.constant_(layer.bias, bias_const)
@@ -21,7 +23,7 @@ class Agent(nn.Module):
             vlm_name,
             torch_dtype=torch.bfloat16,
             trust_remote_code=True,
-            attn_implementation="flash_attention_2",
+            #attn_implementation="flash_attention_2",
         )
         
         hidden_size = self.model.config.hidden_size
@@ -32,63 +34,89 @@ class Agent(nn.Module):
         )
         self.critic.to(self.model.dtype)
 
-    def get_value(self, input_ids, attention_mask):
-        """Calculates value from the last non-padding token's hidden state."""
+    def get_value(self, obs, prompt_text):
+        pil_images = numpy_to_pil(obs.cpu().numpy())
+        batch_size = obs.shape[0]
+
+        texts = [self.processor.apply_chat_template(
+            [{"role": "user", "content": [{"type": "image"}, {"type": "text", "text": prompt_text}]}],
+            tokenize=False, add_generation_prompt=True,
+        )] * batch_size
+
+        inputs = self.processor(
+            text=texts, images=pil_images, return_tensors="pt", padding=True,
+        ).to(self.model.device)
+
         outputs = self.model(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
+            **inputs,
             output_hidden_states=True,
         )
-        last_hidden_state = self.get_last_hidden_state(outputs.hidden_states[-1], attention_mask)
+        last_hidden_state = self.get_last_hidden_state(outputs.hidden_states[-1], inputs['attention_mask'])
         return self.critic(last_hidden_state)
 
-    def get_action_and_value(self, images, text_prompts, action_ids=None, prompt_lens=None):
-        if action_ids is None:  # --- Generation Phase ---
-            texts = [self.processor.apply_chat_template(
-                [{"role": "user", "content": [{"type": "image"}, {"type": "text", "text": p}]}],
-                tokenize=False, add_generation_prompt=True,
-            ) for p in text_prompts]
+    def get_action_and_value(self, obs=None, text_prompts=None, action_ids=None, prompt_lens=None):
+        batch_size = len(text_prompts)
+        
+        # --- Preprocess inputs for both phases ---
+        pil_images = numpy_to_pil(obs.cpu().numpy())
+        texts = [self.processor.apply_chat_template(
+            [{"role": "user", "content": [{"type": "image"}, {"type": "text", "text": p}]}],
+            tokenize=False, add_generation_prompt=True,
+        ) for p in text_prompts]
+
+        inputs = self.processor(
+            text=texts, images=pil_images, return_tensors="pt", padding=True,
+        ).to(self.model.device)
+        
+        pixel_values = inputs.pixel_values
+        image_grid_thw = inputs.image_grid_thw
+
+        # --- Generation Phase  ---
+        if action_ids is None:
+            full_ids = self.model.generate(
+                **inputs,
+                max_new_tokens=self.max_new_tokens,
+                do_sample=True,
+                temperature=0.7,
+                top_p=0.9,
+            )
             
-            inputs = self.processor(
-                text=texts, images=images, return_tensors="pt", padding=True,
-            ).to(self.model.device)
-            
-            with torch.no_grad():
-                full_ids = self.model.generate(
-                    **inputs, max_new_tokens=self.max_new_tokens, do_sample=True,
-                    temperature=0.7, top_p=0.9,
-                ) # shape (num_envs, seq_len) {seq_len = prompt_len + max_new_tokens}
-                
             generated_texts = self.processor.batch_decode(
                 full_ids[:, inputs.input_ids.shape[1]:], skip_special_tokens=True
             )
-             
-            prompt_lens = torch.tensor([inputs.input_ids.shape[-1]] * len(images), device=self.model.device) # shape (num_envs)
-        else:  # --- Update Phase ---
-            full_ids = action_ids # shape (num_envs, seq_len) {seq_len = prompt_len + max_new_tokens}
+            prompt_lens = torch.tensor([inputs.input_ids.shape[1]] * len(text_prompts), device=self.model.device)
 
-        full_attention_mask = (full_ids != self.processor.tokenizer.pad_token_id).long() # shape (num_envs, seq_len)
+        # --- Training Phase ---
+        else:
+            full_ids = action_ids
+
+        # --- Common Logic for both Phases ---
+        full_attention_mask = (full_ids != self.processor.tokenizer.pad_token_id).long()
+        
         outputs = self.model(
-            input_ids=full_ids, attention_mask=full_attention_mask, output_hidden_states=True
+            input_ids=full_ids,
+            attention_mask=full_attention_mask,
+            image_grid_thw=image_grid_thw,
+            pixel_values=pixel_values,
+            output_hidden_states=True
         )
-        logits = outputs.logits # shape (num_envs, seq_len, vocab_size)
-        log_probs_all = torch.nn.functional.log_softmax(logits, dim=-1)  # (num_envs, seq_len, vocab_size)
-        log_probs = torch.gather(log_probs_all, 2, full_ids.unsqueeze(-1)).squeeze(-1)  # (num_envs, seq_len)
+        
+        logits = outputs.logits
+        log_probs_all = torch.nn.functional.log_softmax(logits, dim=-1)
+        log_probs = torch.gather(log_probs_all, 2, full_ids.unsqueeze(-1)).squeeze(-1)
 
-        # Mask out the prompt tokens, only keep generated tokens
-        indices = torch.arange(full_ids.shape[1], device=full_ids.device) # shape (seq_len)
-        action_token_mask = indices[None, :] >= (prompt_lens - 1)[:, None]
+        indices = torch.arange(full_ids.shape[1], device=full_ids.device)
+        action_token_mask = indices[None, :] >= (prompt_lens)[:, None]
         pad_mask = (full_ids != self.processor.tokenizer.pad_token_id)
-        final_mask = action_token_mask & pad_mask # shape (num_envs, seq_len)
+        final_mask = action_token_mask & pad_mask
 
         log_probs = log_probs * final_mask
         summed_log_probs = log_probs.sum(dim=-1)
 
-        # get value. the critic currently takes the full prompt + generated tokens. {outputs.hidden_states[-1]  is of shape (num_envs, seq_len, hidden_size)}
-        last_hidden_state = self.get_last_hidden_state(outputs.hidden_states[-1], full_attention_mask) # shape (num_envs, hidden_size)
+        last_hidden_state = self.get_last_hidden_state(outputs.hidden_states[-1], full_attention_mask)
         value = self.critic(last_hidden_state)
 
-        entropy = Categorical(logits=logits).entropy()  # (num_envs, seq_len)
+        entropy = Categorical(logits=logits).entropy()
         masked_entropy = entropy * final_mask
         summed_entropy = masked_entropy.sum(dim=-1)
 

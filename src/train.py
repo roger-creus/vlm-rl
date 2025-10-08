@@ -153,10 +153,12 @@ if __name__ == "__main__":
             obs[step] = next_obs
             dones[step] = next_done
             
-            pil_images = numpy_to_pil(next_obs.cpu().numpy())
             with torch.no_grad():
                 logprob, value, f_ids, f_mask, p_len, generated_texts = agent.get_action_and_value(
-                    pil_images, [prompt_text] * args.num_envs,
+                    obs=next_obs, 
+                    text_prompts=[prompt_text] * args.num_envs,
+                    action_ids=None,
+                    prompt_lens=None,
                 )
                 
                 action = torch.tensor(
@@ -167,10 +169,12 @@ if __name__ == "__main__":
                             
             actions[step] = action
             logprobs[step] = logprob
-            # TODO: remove because p_len is always the same...
             prompt_lens[step] = p_len 
             
             seq_len = min(f_ids.shape[1], max_seq_len)
+            if seq_len > max_seq_len:
+                print(f"WARNING:seq_len > max_seq_len: {seq_len} > {max_seq_len}")
+                
             full_input_ids[step, :, :seq_len] = f_ids[:, :seq_len]
             full_attention_masks[step, :, :seq_len] = f_mask[:, :seq_len]
 
@@ -185,7 +189,8 @@ if __name__ == "__main__":
             # --- Logging ---
             if accelerator.is_main_process:
                 if iteration % args.log_every == 0 and step == 0:
-                    log_image = pil_images[0]
+                    pil_images_debug = numpy_to_pil(next_obs.cpu().numpy())
+                    log_image = pil_images_debug[0]
                     image_path = os.path.join(log_path, f"iter_{iteration}_step_{step}.png")
                     log_image.save(image_path)
                     
@@ -209,11 +214,7 @@ if __name__ == "__main__":
 
         # --- GAE ---
         with torch.no_grad():
-            next_pil_images = numpy_to_pil(next_obs.cpu().numpy())
-            next_inputs = agent.module.processor(
-                text=[prompt_text] * args.num_envs, images=next_pil_images, return_tensors="pt", padding=True,
-            ).to(device)
-            next_value = agent.get_value(next_inputs.input_ids, next_inputs.attention_mask).flatten()
+            next_value = agent.get_value(obs=next_obs, prompt_text=prompt_text).flatten()
 
         gathered_rewards = accelerator.gather(rewards) # shape (num_processes * num_steps, num_envs)
         gathered_values = accelerator.gather(values) # shape (num_processes * num_steps, num_envs)
@@ -242,21 +243,26 @@ if __name__ == "__main__":
                 advantages[t] = lastgaelam = delta + args.gamma * args.gae_lambda * nextnonterminal * lastgaelam
             returns = advantages + gathered_values
 
-        gathered_logprobs = accelerator.gather(logprobs) 
-        gathered_input_ids = accelerator.gather(full_input_ids)
-        gathered_prompt_lens = accelerator.gather(prompt_lens)
+        gathered_obs = accelerator.gather(obs) # shape (num_processes * num_steps, num_envs, *obs_shape)
+        gathered_logprobs = accelerator.gather(logprobs) # shape (num_processes * num_steps, num_envs)
+        gathered_input_ids = accelerator.gather(full_input_ids) # shape (num_processes * num_steps, num_envs, max_seq_len)
+        gathered_prompt_lens = accelerator.gather(prompt_lens) # shape (num_processes * num_steps, num_envs)
 
         b_logprobs = gathered_logprobs.view(
             accelerator.num_processes, args.num_steps, args.num_envs
-        ).permute(1, 0, 2).reshape(-1)
+        ).permute(1, 0, 2).reshape(-1) # shape (num_processes * num_steps * num_envs)
 
         b_input_ids = gathered_input_ids.view(
             accelerator.num_processes, args.num_steps, args.num_envs, max_seq_len
-        ).permute(1, 0, 2, 3).reshape(-1, max_seq_len)
+        ).permute(1, 0, 2, 3).reshape(-1, max_seq_len) # shape (num_processes * num_steps * num_envs, max_seq_len)
 
         b_prompt_lens = gathered_prompt_lens.view(
             accelerator.num_processes, args.num_steps, args.num_envs
         ).permute(1, 0, 2).reshape(-1)
+        
+        b_obs = gathered_obs.view(
+            accelerator.num_processes, args.num_steps, args.num_envs, *envs.single_observation_space.shape
+        ).permute(1, 0, 2, 3, 4, 5).reshape(-1, *envs.single_observation_space.shape)
         
         b_advantages = advantages.reshape(-1)
         b_returns = returns.reshape(-1)
@@ -276,6 +282,7 @@ if __name__ == "__main__":
                 process_mb_inds = mb_inds[accelerator.process_index::accelerator.num_processes]
                 
                 with accelerator.accumulate(agent):
+                    mb_obs = b_obs[process_mb_inds].to(device)
                     mb_input_ids = b_input_ids[process_mb_inds].to(device)
                     mb_prompt_lens = b_prompt_lens[process_mb_inds].to(device)
                     mb_logprobs = b_logprobs[process_mb_inds].to(device)
@@ -284,7 +291,8 @@ if __name__ == "__main__":
                     mb_values = b_values[process_mb_inds].to(device)
 
                     newlogprob, newvalue, entropy_tensor, final_mask = agent.get_action_and_value(
-                        None, None,
+                        obs=mb_obs,
+                        text_prompts=[prompt_text] * mb_obs.shape[0],
                         action_ids=mb_input_ids,
                         prompt_lens=mb_prompt_lens
                     )
