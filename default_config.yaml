@@ -1,6 +1,6 @@
 compute_environment: LOCAL_MACHINE
 distributed_type: DEEPSPEED
-mixed_precision: 'no'
+mixed_precision: 'bf16'
 downcast_bf16: 'no'
 num_machines: 1
 num_processes: 4

@@ -26,9 +26,9 @@ class Args:
     """total timesteps of the experiments"""
     learning_rate: float = 1e-5
     """the learning rate of the optimizer"""
-    num_envs: int = 1
+    num_envs: int = 8
     """the number of parallel game environments"""
-    num_steps: int = 4
+    num_steps: int = 32
     """the number of steps to run in each environment per policy rollout"""
     anneal_lr: bool = True
     """Toggle learning rate annealing for policy and value networks"""
@@ -36,8 +36,10 @@ class Args:
     """the discount factor gamma"""
     gae_lambda: float = 0.95
     """the lambda for the general advantage estimation"""
-    num_minibatches: int = 4
+    num_minibatches: int = 128
     """the number of mini-batches"""
+    gradient_accumulation_steps: int = 32
+    """the number of gradient accumulation steps"""
     update_epochs: int = 2
     """the K epochs to update the policy"""
     norm_adv: bool = True
@@ -50,10 +52,6 @@ class Args:
     """coefficient of the entropy"""
     vf_coef: float = 0.5
     """coefficient of the value function"""
-    max_grad_norm: float = 0.5
-    """the maximum norm for the gradient clipping"""
-    target_kl: float = None
-    """the target KL divergence threshold"""
     
     log_every: int = 1
     """the frequency of logging interactions to a file"""

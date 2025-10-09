@@ -23,10 +23,10 @@ class Agent(nn.Module):
         # if we dont use torch.float32 we get non 1 ratio BUG! but with float32 we cant use flash attention2...
         self.model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
             vlm_name,
-            #torch_dtype=torch.bfloat16,
-            dtype=torch.float32,
+            dtype=torch.bfloat16,
+            #dtype=torch.float32,
             trust_remote_code=True,
-            #attn_implementation="flash_attention_2",
+            attn_implementation="flash_attention_2",
         )
         
         hidden_size = self.model.config.hidden_size

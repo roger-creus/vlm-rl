@@ -17,6 +17,7 @@ from torch.utils.tensorboard import SummaryWriter
 from peft import LoraConfig
 from accelerate.utils import TorchDynamoPlugin
 from accelerate import Accelerator 
+from tqdm import tqdm
 
 from src.models.model import Agent
 from src.utils.args import Args
@@ -28,7 +29,7 @@ from IPython import embed
 if __name__ == "__main__":
     args = tyro.cli(Args)
 
-    accelerator_cfg = {"gradient_accumulation_steps": 1}
+    accelerator_cfg = {"gradient_accumulation_steps": args.gradient_accumulation_steps}
     if args.enable_compile:
         dynamo_plugin = TorchDynamoPlugin(
             backend="inductor",  # Options: "inductor", "aot_eager", "aot_nvfuser", etc.
@@ -47,21 +48,34 @@ if __name__ == "__main__":
     per_process_minibatch_size = int(args.minibatch_size // accelerator.num_processes)
     args.num_iterations = args.total_timesteps // args.total_batch_size
     if accelerator.is_main_process:
-        print("\n" + "="*50)
+        print("\n" + "="*60)
         print(" VLM PPO Distributed Training Configuration")
-        print("="*50)
-        print(f" 🚀 Number of GPUs: {accelerator.num_processes}")
-        print(f" 🌍 Environments per GPU: {args.num_envs}")
-        print(f" 👣 Steps per Environment: {args.num_steps}")
-        print("-" * 50)
-        print(f" 📊 Total Batch Size (envs * steps * gpus): {args.total_batch_size}")
-        print(f" 📦 Total Minibatches: {args.num_minibatches}")
-        print(f"  -> Minibatch Size (total_batch / minibatches): {args.minibatch_size}")
-        print(f"  -> Minibatch Size Per Worker (total_batch / minibatches / {accelerator.num_processes}): {per_process_minibatch_size}")
-        print("-" * 50)
-        print(f" 🎯 Total Timesteps: {args.total_timesteps:,}")
-        print(f" 🔄 Total Training Iterations: {args.num_iterations:,}")
-        print("="*50 + "\n")
+        print("="*60)
+        print(f" 🚀 Number of GPUs (num_gpus): {accelerator.num_processes}")
+        print(f" 🌍 Environments per GPU (num_envs): {args.num_envs}")
+        print(f" 👣 Steps per Environment (num_steps): {args.num_steps}")
+        print("-" * 60)
+        total_batch_formula = "num_envs * num_steps * num_gpus"
+        total_batch_subst = f"{args.num_envs} * {args.num_steps} * {accelerator.num_processes}"
+        print(f" 📊 Total Batch Size ({total_batch_formula}) = ({total_batch_subst}) = {args.total_batch_size}")
+        print(f" 📦 Total Minibatches (num_minibatches): {args.num_minibatches}")
+        minibatch_formula = "total_batch_size / num_minibatches"
+        minibatch_subst = f"{args.total_batch_size} / {args.num_minibatches}"
+        print(f"  -> Minibatch Size ({minibatch_formula}) = ({minibatch_subst}) = {args.minibatch_size}")
+        minibatch_per_worker_formula = "minibatch_size / num_gpus"
+        minibatch_per_worker_subst = f"{args.minibatch_size} / {accelerator.num_processes}"
+        print(f"  -> Minibatch Size Per Worker ({minibatch_per_worker_formula}) = ({minibatch_per_worker_subst}) = {per_process_minibatch_size}")
+        print(f"  -> Gradient Accumulation Steps (gradient_accumulation_steps): {args.gradient_accumulation_steps}")
+        true_grad_steps_formula = "num_minibatches / gradient_accumulation_steps"
+        true_grad_steps_subst = f"{args.num_minibatches} / {args.gradient_accumulation_steps}"
+        true_grad_steps = args.num_minibatches / args.gradient_accumulation_steps
+        print(f"  -> True Gradient Steps ({true_grad_steps_formula}) = ({true_grad_steps_subst}) = {true_grad_steps}")
+        print("-" * 60)
+        print(f" 🎯 Total Timesteps (total_timesteps): {args.total_timesteps:,}")
+        total_iter_formula = "total_timesteps / total_batch_size"
+        total_iter_subst = f"{args.total_timesteps} / {args.total_batch_size}"
+        print(f" 🔄 Total Training Iterations ({total_iter_formula}) = ({total_iter_subst}) = {args.num_iterations:,}")
+        print("="*60 + "\n")
     accelerator.wait_for_everyone()
 
     if accelerator.state.deepspeed_plugin is not None:
@@ -136,6 +150,7 @@ if __name__ == "__main__":
     
     for iteration in range(1, args.num_iterations + 1):
         #accelerator.unwrap_model(agent).eval()
+        generation_lengths = []
         
         if args.anneal_lr:
             frac = 1.0 - (iteration - 1.0) / args.num_iterations
@@ -169,6 +184,7 @@ if __name__ == "__main__":
             prompt_lens[step] = p_len 
             
             seq_len = min(f_ids.shape[1], max_seq_len)
+            generation_lengths.append(seq_len - p_len[0].cpu().item())
             if seq_len > max_seq_len:
                 print(f"WARNING:seq_len > max_seq_len: {seq_len} > {max_seq_len}")
                 
@@ -212,10 +228,6 @@ if __name__ == "__main__":
         # --- GAE ---
         with torch.no_grad():
             next_value = agent.get_value(obs=next_obs, prompt_text=prompt_text).flatten()
-
-        # rewards is of shape (num_steps, num_envs) and when gathered it becomes (num_processes * num_steps, num_envs)
-        # same with all other tensors
-        # gather concatenates the tensors along the first dimension
 
         gathered_rewards = accelerator.gather(rewards) # shape (num_processes * num_steps, num_envs)
         gathered_values = accelerator.gather(values) # shape (num_processes * num_steps, num_envs)
@@ -284,21 +296,37 @@ if __name__ == "__main__":
 
         b_inds = np.arange(args.total_batch_size)
         clipfracs = []
+        ratios_1st_epoch_1st_minibatch = []
+        
         if accelerator.is_main_process:
             print("Training...")
 
         #accelerator.unwrap_model(agent).train()
-        for epoch in range(args.update_epochs):
+        epoch_iter = range(args.update_epochs)
+        if accelerator.is_main_process:
+            epoch_iter = tqdm(epoch_iter, desc="Epochs")
+
+        for epoch in epoch_iter:
             epoch_clipfracs = []
             epoch_approx_kls = []
 
             np.random.shuffle(b_inds)
-            for start in range(0, args.total_batch_size, args.minibatch_size):
+
+            minibatch_iter = range(0, args.total_batch_size, args.minibatch_size)
+            if accelerator.is_main_process:
+                minibatch_iter = tqdm(
+                    minibatch_iter,
+                    desc=f"Epoch {epoch+1}/{args.update_epochs}",
+                    leave=False,
+                    dynamic_ncols=True,
+                )
+
+            for mb_idx, start in enumerate(minibatch_iter):
+                if accelerator.is_main_process and hasattr(minibatch_iter, "set_postfix"):
+                    minibatch_iter.set_postfix({"minibatch": mb_idx})
                 end = start + args.minibatch_size
                 mb_inds = b_inds[start:end]
                 process_mb_inds = mb_inds[accelerator.process_index::accelerator.num_processes]
-                print(f"[Process {accelerator.process_index}] {process_mb_inds}")
-                
                 with accelerator.accumulate(agent):
                     mb_obs = b_obs[process_mb_inds].to(device)
                     mb_input_ids = b_input_ids[process_mb_inds].to(device)
@@ -321,6 +349,11 @@ if __name__ == "__main__":
                     logratio = newlogprob - mb_logprobs
                     ratio = logratio.exp()
                     ratio = torch.where(true_final_mask, ratio, 1.0)
+                    
+                    # for logging sanity checking
+                    if epoch == 0 and start == 0:
+                        for mb_idx_inner in range(mb_obs.shape[0]):
+                            ratios_1st_epoch_1st_minibatch.append(ratio[mb_idx_inner][torch.where(true_final_mask[mb_idx_inner])].mean().cpu().item())
                     
                     with torch.no_grad():
                         valid_token_count = true_final_mask.sum()
@@ -364,6 +397,10 @@ if __name__ == "__main__":
             writer.add_scalar("losses/value_loss", v_loss.item(), global_step)
             writer.add_scalar("losses/policy_loss", pg_loss.item(), global_step)
             writer.add_scalar("losses/entropy", entropy_loss.item(), global_step)
+            writer.add_scalar("charts/generation_length", np.mean(generation_lengths), global_step)
+            
+            if ratios_1st_epoch_1st_minibatch:
+                writer.add_scalar("charts/ratios_1st_epoch_1st_minibatch", np.mean(ratios_1st_epoch_1st_minibatch), global_step)
             
             if epoch_approx_kls:
                 writer.add_scalar("losses/approx_kl", np.mean(epoch_approx_kls), global_step)
