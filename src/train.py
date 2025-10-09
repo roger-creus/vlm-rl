@@ -25,9 +25,6 @@ from src.utils.action_maps import action_maps
 
 from IPython import embed
 
-# ==================================================================================================
-# ## 4. Main Training Loop
-# ==================================================================================================
 if __name__ == "__main__":
     args = tyro.cli(Args)
 
@@ -122,7 +119,6 @@ if __name__ == "__main__":
     # --- Storage Tensors ---
     obs = torch.zeros((args.num_steps, args.num_envs) + envs.single_observation_space.shape, device=device)
     actions = torch.zeros((args.num_steps, args.num_envs), device=device)
-    logprobs = torch.zeros((args.num_steps, args.num_envs), device=device)
     rewards = torch.zeros((args.num_steps, args.num_envs), device=device)
     dones = torch.zeros((args.num_steps, args.num_envs), device=device)
     values = torch.zeros((args.num_steps, args.num_envs), device=device)
@@ -130,6 +126,7 @@ if __name__ == "__main__":
     max_seq_len = 1024
     full_input_ids = torch.zeros((args.num_steps, args.num_envs, max_seq_len), dtype=torch.long, device=device)
     full_attention_masks = torch.zeros((args.num_steps, args.num_envs, max_seq_len), dtype=torch.long, device=device)
+    logprobs = torch.zeros((args.num_steps, args.num_envs, max_seq_len), device=device)
 
     global_step = 0
     start_time = time.time()
@@ -138,7 +135,7 @@ if __name__ == "__main__":
     next_done = torch.zeros(args.num_envs).to(device)
     
     for iteration in range(1, args.num_iterations + 1):
-        accelerator.unwrap_model(agent).eval()
+        #accelerator.unwrap_model(agent).eval()
         
         if args.anneal_lr:
             frac = 1.0 - (iteration - 1.0) / args.num_iterations
@@ -168,7 +165,7 @@ if __name__ == "__main__":
                 values[step] = value.flatten()
                             
             actions[step] = action
-            logprobs[step] = logprob
+            logprobs[step, :, :logprob.shape[1]] = logprob
             prompt_lens[step] = p_len 
             
             seq_len = min(f_ids.shape[1], max_seq_len)
@@ -216,6 +213,10 @@ if __name__ == "__main__":
         with torch.no_grad():
             next_value = agent.get_value(obs=next_obs, prompt_text=prompt_text).flatten()
 
+        # rewards is of shape (num_steps, num_envs) and when gathered it becomes (num_processes * num_steps, num_envs)
+        # same with all other tensors
+        # gather concatenates the tensors along the first dimension
+
         gathered_rewards = accelerator.gather(rewards) # shape (num_processes * num_steps, num_envs)
         gathered_values = accelerator.gather(values) # shape (num_processes * num_steps, num_envs)
         gathered_dones = accelerator.gather(dones) # shape (num_processes * num_steps, num_envs)
@@ -247,10 +248,11 @@ if __name__ == "__main__":
         gathered_logprobs = accelerator.gather(logprobs) # shape (num_processes * num_steps, num_envs)
         gathered_input_ids = accelerator.gather(full_input_ids) # shape (num_processes * num_steps, num_envs, max_seq_len)
         gathered_prompt_lens = accelerator.gather(prompt_lens) # shape (num_processes * num_steps, num_envs)
+        gathered_attention_masks = accelerator.gather(full_attention_masks) # shape (num_processes * num_steps, num_envs, max_seq_len)
 
         b_logprobs = gathered_logprobs.view(
-            accelerator.num_processes, args.num_steps, args.num_envs
-        ).permute(1, 0, 2).reshape(-1) # shape (num_processes * num_steps * num_envs)
+            accelerator.num_processes, args.num_steps, args.num_envs, max_seq_len
+        ).permute(1, 0, 2, 3).reshape(-1, max_seq_len) # shape (num_processes * num_steps * num_envs, max_seq_len)
 
         b_input_ids = gathered_input_ids.view(
             accelerator.num_processes, args.num_steps, args.num_envs, max_seq_len
@@ -260,66 +262,86 @@ if __name__ == "__main__":
             accelerator.num_processes, args.num_steps, args.num_envs
         ).permute(1, 0, 2).reshape(-1)
         
+        b_attention_masks = gathered_attention_masks.view(
+            accelerator.num_processes, args.num_steps, args.num_envs, max_seq_len
+        ).permute(1, 0, 2, 3).reshape(-1, max_seq_len)
+        
         b_obs = gathered_obs.view(
             accelerator.num_processes, args.num_steps, args.num_envs, *envs.single_observation_space.shape
         ).permute(1, 0, 2, 3, 4, 5).reshape(-1, *envs.single_observation_space.shape)
+
+        b_advantages = advantages.view(
+            accelerator.num_processes, args.num_steps, args.num_envs
+        ).permute(1, 0, 2).reshape(-1)
         
-        b_advantages = advantages.reshape(-1)
-        b_returns = returns.reshape(-1)
-        b_values = gathered_values.reshape(-1)
+        b_returns = returns.view(
+            accelerator.num_processes, args.num_steps, args.num_envs
+        ).permute(1, 0, 2).reshape(-1)
+        
+        b_values = gathered_values.view(
+            accelerator.num_processes, args.num_steps, args.num_envs
+        ).permute(1, 0, 2).reshape(-1) # shape (num_processes * num_steps * num_envs)
 
         b_inds = np.arange(args.total_batch_size)
         clipfracs = []
         if accelerator.is_main_process:
             print("Training...")
 
-        accelerator.unwrap_model(agent).train()
+        #accelerator.unwrap_model(agent).train()
         for epoch in range(args.update_epochs):
+            epoch_clipfracs = []
+            epoch_approx_kls = []
+
             np.random.shuffle(b_inds)
             for start in range(0, args.total_batch_size, args.minibatch_size):
                 end = start + args.minibatch_size
                 mb_inds = b_inds[start:end]
                 process_mb_inds = mb_inds[accelerator.process_index::accelerator.num_processes]
+                print(f"[Process {accelerator.process_index}] {process_mb_inds}")
                 
                 with accelerator.accumulate(agent):
                     mb_obs = b_obs[process_mb_inds].to(device)
                     mb_input_ids = b_input_ids[process_mb_inds].to(device)
                     mb_prompt_lens = b_prompt_lens[process_mb_inds].to(device)
+                    mb_attention_masks = b_attention_masks[process_mb_inds].to(device)
                     mb_logprobs = b_logprobs[process_mb_inds].to(device)
                     mb_advantages = b_advantages[process_mb_inds].to(device)
                     mb_returns = b_returns[process_mb_inds].to(device)
                     mb_values = b_values[process_mb_inds].to(device)
 
-                    newlogprob, newvalue, entropy_tensor, final_mask = agent.get_action_and_value(
+                    newlogprob, newvalue, entropy_tensor, final_mask_from_agent = agent.get_action_and_value(
                         obs=mb_obs,
                         text_prompts=[prompt_text] * mb_obs.shape[0],
                         action_ids=mb_input_ids,
                         prompt_lens=mb_prompt_lens
                     )
-                    
-                    if accelerator.is_main_process:
-                        print(f"mb_logprobs: {mb_logprobs.min().item()}, {mb_logprobs.max().item()}, {mb_logprobs.mean().item()}")
-                        print(f"newlogprob: {newlogprob.min().item()}, {newlogprob.max().item()}, {newlogprob.mean().item()}")
-                        print(f"entropy_tensor: {entropy_tensor.min().item()}, {entropy_tensor.max().item()}, {entropy_tensor.mean().item()}")
-                    
                     newvalue = newvalue.view(-1)
+                    
+                    true_final_mask = final_mask_from_agent & mb_attention_masks.bool()
                     logratio = newlogprob - mb_logprobs
                     ratio = logratio.exp()
+                    ratio = torch.where(true_final_mask, ratio, 1.0)
                     
-                    if accelerator.is_main_process:
-                        print(f"epoch: {epoch} | ratio: {ratio.mean().item()}")
-                    
-                    #with torch.no_grad():
-                    #    approx_kl = accelerator.gather( ((ratio - 1) - logratio).mean() ).mean()
-                    #    clipfracs += [accelerator.gather( ((ratio - 1.0).abs() > args.clip_coef).float().mean() ).mean().item()]
-                    
+                    with torch.no_grad():
+                        valid_token_count = true_final_mask.sum()
+                        if valid_token_count > 0:
+                            masked_logratio = torch.where(true_final_mask, logratio, 0.0)
+                            approx_kl = (((ratio - 1) - masked_logratio) * true_final_mask).sum() / valid_token_count
+                            epoch_approx_kls.append(approx_kl.item())
+                            
+                            clipfrac = (torch.gt(torch.abs(ratio - 1.0), args.clip_coef).float() * true_final_mask).sum() / valid_token_count
+                            epoch_clipfracs.append(clipfrac.item())
+
                     if args.norm_adv:
                         mb_advantages = (mb_advantages - mb_advantages.mean()) / (mb_advantages.std() + 1e-8)
                     
+                    mb_advantages = mb_advantages.unsqueeze(-1)
+
                     pg_loss1 = -mb_advantages * ratio
                     pg_loss2 = -mb_advantages * torch.clamp(ratio, 1 - args.clip_coef, 1 + args.clip_coef)
-                    pg_loss = torch.max(pg_loss1, pg_loss2).mean()
-
+                    pg_loss_per_token = torch.max(pg_loss1, pg_loss2)
+                    
+                    pg_loss = (pg_loss_per_token * true_final_mask).sum() / true_final_mask.sum()
                     if args.clip_vloss:
                         v_loss_unclipped = (newvalue - mb_returns) ** 2
                         v_clipped = mb_values + torch.clamp(newvalue - mb_values, -args.clip_coef, args.clip_coef)
@@ -329,9 +351,9 @@ if __name__ == "__main__":
                     else:
                         v_loss = 0.5 * ((newvalue - mb_returns) ** 2).mean()
                     
-                    entropy_loss = entropy_tensor.mean()
+                    entropy_loss = (entropy_tensor * true_final_mask).sum() / true_final_mask.sum()
                     loss = pg_loss - args.ent_coef * entropy_loss + v_loss * args.vf_coef
-                    
+            
                     accelerator.backward(loss)
                     optimizer.step()
                     optimizer.zero_grad()
@@ -342,9 +364,11 @@ if __name__ == "__main__":
             writer.add_scalar("losses/value_loss", v_loss.item(), global_step)
             writer.add_scalar("losses/policy_loss", pg_loss.item(), global_step)
             writer.add_scalar("losses/entropy", entropy_loss.item(), global_step)
-            #writer.add_scalar("losses/approx_kl", approx_kl.item(), global_step)
-            #writer.add_scalar("losses/clipfrac", np.mean(clipfracs), global_step)
-            #writer.add_scalar("losses/explained_variance", explained_var, global_step)
+            
+            if epoch_approx_kls:
+                writer.add_scalar("losses/approx_kl", np.mean(epoch_approx_kls), global_step)
+            if epoch_clipfracs:
+                writer.add_scalar("losses/clipfrac", np.mean(epoch_clipfracs), global_step)
             
             sps = int(args.total_batch_size / (time.time() - start_time))
             writer.add_scalar("charts/SPS", sps, global_step)

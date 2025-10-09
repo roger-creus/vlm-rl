@@ -28,16 +28,16 @@ def make_env(env_id, idx, capture_video, run_name):
 
 def parse_action(text: str, action_space: gym.spaces.Discrete, action_map: dict) -> int:
     """
-    Parses the 'action' field from the VLM's structured output.
+    Parses the 'ACTION' from the VLM's multi-line text output.
     Returns a random action if parsing fails.
     """
     try:
-        # Using regex to find the action string, e.g., "action": "ACTION_NAME"
-        match = re.search(r'"action":\s*"([^"]+)"', text)
-        if match:
-            action_str = match.group(1).strip()
-            if action_str.upper() in action_map:
-                return action_map[action_str.upper()]
+        parts = text.split("ACTION:")
+        if len(parts) > 1:
+            action_str = parts[1].strip().upper()
+            if action_str in action_map:
+                return action_map[action_str]
     except Exception as e:
-        print(f"Error parsing action: {e}. Text: {text}")
+        print(f"Error parsing action: {e}. Text: '{text}'")
+    
     return action_space.sample()

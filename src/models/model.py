@@ -19,9 +19,12 @@ class Agent(nn.Module):
         self.max_new_tokens = max_new_tokens
         
         self.processor = AutoProcessor.from_pretrained(vlm_name, trust_remote_code=True, min_pixels = 210 * 160 * 3, max_pixels = 210 * 160 * 3)
+        
+        # if we dont use torch.float32 we get non 1 ratio BUG! but with float32 we cant use flash attention2...
         self.model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
             vlm_name,
-            torch_dtype=torch.bfloat16,
+            #torch_dtype=torch.bfloat16,
+            dtype=torch.float32,
             trust_remote_code=True,
             #attn_implementation="flash_attention_2",
         )
@@ -110,20 +113,20 @@ class Agent(nn.Module):
         pad_mask = (full_ids != self.processor.tokenizer.pad_token_id)
         final_mask = action_token_mask & pad_mask
 
-        log_probs = log_probs * final_mask
-        summed_log_probs = log_probs.sum(dim=-1)
+        masked_log_probs = log_probs * final_mask
+        #summed_log_probs = log_probs.sum(dim=-1)
 
         last_hidden_state = self.get_last_hidden_state(outputs.hidden_states[-1], full_attention_mask)
         value = self.critic(last_hidden_state)
 
         entropy = Categorical(logits=logits).entropy()
         masked_entropy = entropy * final_mask
-        summed_entropy = masked_entropy.sum(dim=-1)
+        #summed_entropy = masked_entropy.sum(dim=-1)
 
         if action_ids is None:
-            return summed_log_probs, value, full_ids, full_attention_mask, prompt_lens, generated_texts
+            return masked_log_probs, value, full_ids, full_attention_mask, prompt_lens, generated_texts
         else:
-            return summed_log_probs, value, summed_entropy, final_mask
+            return masked_log_probs, value, masked_entropy, final_mask
 
     def get_last_hidden_state(self, hidden_states, attention_mask):
         """Calculates the hidden state of the last non-padding token."""
