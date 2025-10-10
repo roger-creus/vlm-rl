@@ -82,3 +82,4 @@ IPython
 peft
 qwen_vl_utils
 accelerate
+deepspeed

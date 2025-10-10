@@ -50,6 +50,7 @@ class BaseVLM(nn.Module):
             vlm_name,
             dtype=torch.bfloat16,
             trust_remote_code=True,
+            attn_implementation="flash_attention_2",
         )
 
     def preprocess_obs_and_text(self, obs, text_prompts):
