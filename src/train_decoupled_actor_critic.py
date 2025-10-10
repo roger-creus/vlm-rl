@@ -362,7 +362,7 @@ if __name__ == "__main__":
                             prompt_lens=mb_prompt_lens
                         )
                         # Critic computes values for fresh batch
-                        newvalue = agent.get_value(obs=mb_obs, prompt_text=[prompt_text] * mb_obs.shape[0]).view(-1)
+                        newvalue = agent.get_value(obs=mb_obs, prompt_text=[prompt_text_critic] * mb_obs.shape[0]).view(-1)
 
                         true_final_mask = f_mask & mb_attention_masks.bool()
                         logratio = newlogprob - mb_logprobs
