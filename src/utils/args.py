@@ -24,7 +24,7 @@ class Args:
     """the id of the environment"""
     total_timesteps: int = 10000000
     """total timesteps of the experiments"""
-    learning_rate: float = 1e-5
+    learning_rate: float = 2e-6
     """the learning rate of the optimizer"""
     num_envs: int = 8
     """the number of parallel game environments"""
@@ -38,7 +38,7 @@ class Args:
     """the lambda for the general advantage estimation"""
     num_minibatches: int = 128
     """the number of mini-batches"""
-    gradient_accumulation_steps: int = 32
+    gradient_accumulation_steps: int = 16
     """the number of gradient accumulation steps"""
     update_epochs: int = 2
     """the K epochs to update the policy"""
@@ -63,15 +63,14 @@ class Args:
     """The model ID from Hugging Face."""
     prompt_path: str = "prompt.txt"
     """Path to a file containing the text prompt for the VLM."""
-    kl_coef: float = 0.02
-    """Coefficient for the KL-divergence penalty in the reward, to stabilize training."""
-    cot_lambda: float = 0.5
-    """Scaling factor to down-weight the CoT reasoning tokens in log-prob calculation, as per Section 4.3."""
+    critic_warmup_iterations: int = 5
+    """the number of iterations to warm up the critic"""
     max_new_tokens: int = 128
     """Maximum number of new tokens for the VLM to generate."""
     enable_compile: bool = False
     """wether to compile VLM"""
     
+    # LoRA specific arguments
     use_lora: bool = False
     lora_rank: int = 1
     lora_alpha: float = 0.1

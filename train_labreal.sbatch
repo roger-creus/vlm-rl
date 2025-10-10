@@ -11,4 +11,4 @@
 module load anaconda/3
 conda activate /home/mila/r/roger.creus-castanyer/miniconda3/envs/clean-llm-rl
 
-accelerate launch --config_file=default_config.yaml src/train.py --track
+accelerate launch --config_file=default_config.yaml src/train_shared_actor_critic_vlm.py --track

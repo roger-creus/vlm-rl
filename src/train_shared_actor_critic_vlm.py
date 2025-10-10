@@ -19,7 +19,7 @@ from accelerate.utils import TorchDynamoPlugin
 from accelerate import Accelerator 
 from tqdm import tqdm
 
-from src.models.model import Agent
+from src.models.model import SharedActorCriticVLM
 from src.utils.args import Args
 from src.utils.utils import numpy_to_pil, make_env, parse_action
 from src.utils.action_maps import action_maps
@@ -113,7 +113,7 @@ if __name__ == "__main__":
         prompt_text = f.read()
 
     # --- Agent and Optimizer ---
-    agent = Agent(envs, args.vlm_name)
+    agent = SharedActorCriticVLM(args.vlm_name, max_new_tokens=args.max_new_tokens)
     if args.use_lora:
         lora_config = LoraConfig(
             r=args.lora_rank,
@@ -151,6 +151,7 @@ if __name__ == "__main__":
     for iteration in range(1, args.num_iterations + 1):
         #accelerator.unwrap_model(agent).eval()
         generation_lengths = []
+        seq_len_errors = []
         
         if args.anneal_lr:
             frac = 1.0 - (iteration - 1.0) / args.num_iterations
@@ -187,6 +188,7 @@ if __name__ == "__main__":
             generation_lengths.append(seq_len - p_len[0].cpu().item())
             if seq_len > max_seq_len:
                 print(f"WARNING:seq_len > max_seq_len: {seq_len} > {max_seq_len}")
+            seq_len_errors.append(1 if seq_len > max_seq_len else 0)
                 
             full_input_ids[step, :, :seq_len] = f_ids[:, :seq_len]
             full_attention_masks[step, :, :seq_len] = f_mask[:, :seq_len]
@@ -227,7 +229,7 @@ if __name__ == "__main__":
 
         # --- GAE ---
         with torch.no_grad():
-            next_value = agent.get_value(obs=next_obs, prompt_text=prompt_text).flatten()
+            next_value = agent.get_value(obs=next_obs, prompt_text=[prompt_text] * args.num_envs).flatten()
 
         gathered_rewards = accelerator.gather(rewards) # shape (num_processes * num_steps, num_envs)
         gathered_values = accelerator.gather(values) # shape (num_processes * num_steps, num_envs)
@@ -306,6 +308,7 @@ if __name__ == "__main__":
         if accelerator.is_main_process:
             epoch_iter = tqdm(epoch_iter, desc="Epochs")
 
+        is_critic_warmup = iteration <= args.critic_warmup_iterations
         for epoch in epoch_iter:
             epoch_clipfracs = []
             epoch_approx_kls = []
@@ -327,15 +330,20 @@ if __name__ == "__main__":
                 end = start + args.minibatch_size
                 mb_inds = b_inds[start:end]
                 process_mb_inds = mb_inds[accelerator.process_index::accelerator.num_processes]
+                # normalize advantages before sharding data
+                mb_advantages = b_advantages[mb_inds]
+                if args.norm_adv:
+                    mb_advantages = (mb_advantages - mb_advantages.mean()) / (mb_advantages.std() + 1e-8)
+                
                 with accelerator.accumulate(agent):
-                    mb_obs = b_obs[process_mb_inds].to(device)
-                    mb_input_ids = b_input_ids[process_mb_inds].to(device)
-                    mb_prompt_lens = b_prompt_lens[process_mb_inds].to(device)
-                    mb_attention_masks = b_attention_masks[process_mb_inds].to(device)
-                    mb_logprobs = b_logprobs[process_mb_inds].to(device)
-                    mb_advantages = b_advantages[process_mb_inds].to(device)
-                    mb_returns = b_returns[process_mb_inds].to(device)
-                    mb_values = b_values[process_mb_inds].to(device)
+                    mb_obs = b_obs[process_mb_inds]
+                    mb_input_ids = b_input_ids[process_mb_inds]
+                    mb_prompt_lens = b_prompt_lens[process_mb_inds]
+                    mb_attention_masks = b_attention_masks[process_mb_inds]
+                    mb_logprobs = b_logprobs[process_mb_inds]
+                    mb_advantages = b_advantages[process_mb_inds]
+                    mb_returns = b_returns[process_mb_inds]
+                    mb_values = b_values[process_mb_inds]
 
                     newlogprob, newvalue, entropy_tensor, final_mask_from_agent = agent.get_action_and_value(
                         obs=mb_obs,
@@ -365,11 +373,7 @@ if __name__ == "__main__":
                             clipfrac = (torch.gt(torch.abs(ratio - 1.0), args.clip_coef).float() * true_final_mask).sum() / valid_token_count
                             epoch_clipfracs.append(clipfrac.item())
 
-                    if args.norm_adv:
-                        mb_advantages = (mb_advantages - mb_advantages.mean()) / (mb_advantages.std() + 1e-8)
-                    
                     mb_advantages = mb_advantages.unsqueeze(-1)
-
                     pg_loss1 = -mb_advantages * ratio
                     pg_loss2 = -mb_advantages * torch.clamp(ratio, 1 - args.clip_coef, 1 + args.clip_coef)
                     pg_loss_per_token = torch.max(pg_loss1, pg_loss2)
@@ -385,7 +389,10 @@ if __name__ == "__main__":
                         v_loss = 0.5 * ((newvalue - mb_returns) ** 2).mean()
                     
                     entropy_loss = (entropy_tensor * true_final_mask).sum() / true_final_mask.sum()
-                    loss = pg_loss - args.ent_coef * entropy_loss + v_loss * args.vf_coef
+                    if is_critic_warmup:
+                        loss = v_loss * args.vf_coef
+                    else:
+                        loss = pg_loss - args.ent_coef * entropy_loss + v_loss * args.vf_coef
             
                     accelerator.backward(loss)
                     optimizer.step()
@@ -398,6 +405,8 @@ if __name__ == "__main__":
             writer.add_scalar("losses/policy_loss", pg_loss.item(), global_step)
             writer.add_scalar("losses/entropy", entropy_loss.item(), global_step)
             writer.add_scalar("charts/generation_length", np.mean(generation_lengths), global_step)
+            writer.add_scalar("charts/seq_len_error", np.mean(seq_len_errors), global_step)
+            writer.add_scalar("charts/iteration", iteration, global_step)
             
             if ratios_1st_epoch_1st_minibatch:
                 writer.add_scalar("charts/ratios_1st_epoch_1st_minibatch", np.mean(ratios_1st_epoch_1st_minibatch), global_step)
@@ -409,7 +418,11 @@ if __name__ == "__main__":
             
             sps = int(args.total_batch_size / (time.time() - start_time))
             writer.add_scalar("charts/SPS", sps, global_step)
-            print(f"SPS: {sps} || value.loss : {v_loss.item()}, policy.loss : {pg_loss.item()}, policy.entropy : {entropy_loss.item()}")
+            if is_critic_warmup:
+                print(f"SPS: {sps} || Critic warmup phase! - value.loss : {v_loss.item()}")
+            else:
+                print(f"SPS: {sps} || value.loss : {v_loss.item()}, policy.loss : {pg_loss.item()}, policy.entropy : {entropy_loss.item()}")
 
     envs.close()
+    writer.close()
     writer.close()
