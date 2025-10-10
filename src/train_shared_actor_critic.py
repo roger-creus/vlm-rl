@@ -111,20 +111,9 @@ if __name__ == "__main__":
 
     # --- Agent and Optimizer ---
     agent = SharedActorCriticVLM(args.vlm_name, max_new_tokens=args.max_new_tokens)
-    if args.use_lora:
-        lora_config = LoraConfig(
-            r=args.lora_rank,
-            lora_alpha=args.lora_alpha,
-            init_lora_weights="gaussian",
-            target_modules=agent.target_modules,
-        )
-        lora_layers = filter(lambda p: p.requires_grad, agent.model.parameters())
-        critic_layers = filter(lambda p: p.requires_grad, agent.critic.parameters())
-        parameters = list(lora_layers) + list(critic_layers)
-    else:
-        parameters = agent.parameters()
-    
-    optimizer = optim.AdamW(parameters, lr=args.learning_rate, eps=1e-5, weight_decay=args.weight_decay)
+    print("============ Agent =============")
+    print(agent)
+    optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate)
     agent, optimizer = accelerator.prepare(agent, optimizer)
 
     # --- Storage Tensors ---
@@ -429,17 +418,19 @@ if __name__ == "__main__":
         # --- Logging ---
         if accelerator.is_main_process:
             writer.add_scalar("charts/learning_rate", optimizer.param_groups[0]["lr"], global_step)
-            writer.add_scalar("charts/generation_length", np.mean(generation_lengths), global_step)
-            writer.add_scalar("charts/seq_len_errors", np.mean(seq_len_errors), global_step)
-            writer.add_scalar("charts/rollout_time", rollout_time_completed, global_step)
-            writer.add_scalar("charts/learning_time", learning_time_completed, global_step)
+            writer.add_scalar("charts/global_step", global_step, global_step)
+            writer.add_scalar("charts/iteration", iteration, global_step)
+            writer.add_scalar("debug/generation_length", np.mean(generation_lengths), global_step)
+            writer.add_scalar("debug/seq_len_errors", np.mean(seq_len_errors), global_step)
+            writer.add_scalar("debug/rollout_time", rollout_time_completed, global_step)
+            writer.add_scalar("debug/update_time", learning_time_completed, global_step)
             
             if not is_critic_warmup:
                 writer.add_scalar("losses/value_loss", v_loss.item(), global_step)
                 writer.add_scalar("losses/policy_loss", pg_loss.item(), global_step)
                 writer.add_scalar("losses/entropy", entropy_loss.item(), global_step)
             else:
-                writer.add_scalar("losses/warmup_value_loss", v_loss.item(), global_step)
+                writer.add_scalar("warmup/value_loss", v_loss.item(), global_step)
             
             if ratios_1st_epoch_1st_minibatch:
                 writer.add_scalar("charts/ratios_1st_epoch_1st_minibatch", np.mean(ratios_1st_epoch_1st_minibatch), global_step)
@@ -449,7 +440,7 @@ if __name__ == "__main__":
                 writer.add_scalar("losses/clipfrac", np.mean(epoch_clipfracs), global_step)
             
             sps = int(args.total_batch_size / (time.time() - start_time))
-            writer.add_scalar("charts/SPS", sps, global_step)
+            writer.add_scalar("debug/SPS", sps, global_step)
             print(f"SPS: {sps} || value.loss : {v_loss.item()}, policy.loss : {pg_loss.item()}, policy.entropy : {entropy_loss.item()}")
             
             if is_critic_warmup:

@@ -71,8 +71,6 @@ class Args:
     """Maximum sequence length for the VLM to generate. Longer sequences will be truncated."""
     critic_warmup_iterations: int = 10
     """Number of iterations to warm up the critic."""
-    weight_decay: float = 0.01
-    """Weight decay for the optimizer."""
 
     enable_compile: bool = False
     """wether to compile VLM"""

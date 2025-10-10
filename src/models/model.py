@@ -49,10 +49,9 @@ class BaseVLM(nn.Module):
         )
         self.model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
             vlm_name,
-            torch_dtype=torch.bfloat16,
-            # dtype=torch.float32,
+            dtype=torch.bfloat16,
+            #dtype=torch.float32,
             trust_remote_code=True,
-            attn_implementation="flash_attention_2",
         )
 
     def preprocess_obs_and_text(self, obs, text_prompts):
@@ -94,6 +93,9 @@ class CriticHead(nn.Module):
 
 # --- SHARED ACTOR-CRITIC ---
 class SharedActorCriticVLM(BaseVLM):
+    """
+    Shared actor-critic: uses a single VLM for both action and value.
+    """
     def __init__(self, vlm_name: str, max_new_tokens: int = 128):
         super().__init__(vlm_name, max_new_tokens)
         hidden_size = self.model.config.hidden_size
@@ -164,35 +166,44 @@ class SharedActorCriticVLM(BaseVLM):
         else:
             return masked_log_probs, value, masked_entropy, final_mask
 
-# --- SEPARATE ACTOR ---
-class ActorVLM(BaseVLM):
-    def __init__(self, vlm_name: str, max_new_tokens: int = 128):
-        super().__init__(vlm_name, max_new_tokens)
+# --- DECOUPLED ACTOR-CRITIC ---
+class DecoupledActorCriticVLM(nn.Module):
+    """
+    Decoupled actor-critic with completely separate actor and critic VLMs.
+    No weight sharing between actor and critic.
+    """
+    def __init__(self, actor_vlm_name: str, critic_vlm_name: str, max_new_tokens: int = 128):
+        super().__init__()
+        self.actor_vlm = BaseVLM(actor_vlm_name, max_new_tokens)
+        self.critic_vlm = BaseVLM(critic_vlm_name)
+        hidden_size = self.critic_vlm.model.config.hidden_size
+        self.critic_head = CriticHead(hidden_size).to(self.critic_vlm.model.dtype)
+        self.max_new_tokens = max_new_tokens
 
     def get_action(self, obs=None, text_prompts=None, action_ids=None, prompt_lens=None):
         batch_size = len(text_prompts)
-        inputs = self.preprocess_obs_and_text(obs, text_prompts)
+        inputs = self.actor_vlm.preprocess_obs_and_text(obs, text_prompts)
         pixel_values = inputs.pixel_values
         image_grid_thw = inputs.image_grid_thw
 
         # --- Generation ---
         if action_ids is None:
-            full_ids = self.model.generate(
+            full_ids = self.actor_vlm.model.generate(
                 **inputs,
                 max_new_tokens=self.max_new_tokens,
                 do_sample=True,
                 temperature=0.7,
                 top_p=0.9,
             )
-            generated_texts = self.processor.batch_decode(
+            generated_texts = self.actor_vlm.processor.batch_decode(
                 full_ids[:, inputs.input_ids.shape[1]:], skip_special_tokens=True
             )
-            prompt_lens = torch.tensor([inputs.input_ids.shape[1]] * batch_size, device=self.model.device)
+            prompt_lens = torch.tensor([inputs.input_ids.shape[1]] * batch_size, device=self.actor_vlm.model.device)
         else:
             full_ids = action_ids
 
-        full_attention_mask = (full_ids != self.processor.tokenizer.pad_token_id).long()
-        outputs = self.model(
+        full_attention_mask = (full_ids != self.actor_vlm.processor.tokenizer.pad_token_id).long()
+        outputs = self.actor_vlm.model(
             input_ids=full_ids,
             attention_mask=full_attention_mask,
             image_grid_thw=image_grid_thw,
@@ -205,7 +216,7 @@ class ActorVLM(BaseVLM):
 
         indices = torch.arange(full_ids.shape[1], device=full_ids.device)
         action_token_mask = indices[None, :] >= (prompt_lens)[:, None]
-        pad_mask = (full_ids != self.processor.tokenizer.pad_token_id)
+        pad_mask = (full_ids != self.actor_vlm.processor.tokenizer.pad_token_id)
         final_mask = action_token_mask & pad_mask
 
         masked_log_probs = log_probs * final_mask
@@ -218,18 +229,11 @@ class ActorVLM(BaseVLM):
         else:
             return masked_log_probs, masked_entropy, final_mask
 
-# --- SEPARATE CRITIC ---
-class CriticVLM(BaseVLM):
-    def __init__(self, vlm_name: str):
-        super().__init__(vlm_name)
-        hidden_size = self.model.config.hidden_size
-        self.critic = CriticHead(hidden_size).to(self.model.dtype)
-
     def get_value(self, obs, prompt_text):
-        inputs = self.preprocess_obs_and_text(obs, prompt_text)
-        outputs = self.model(
+        inputs = self.critic_vlm.preprocess_obs_and_text(obs, prompt_text)
+        outputs = self.critic_vlm.model(
             **inputs,
             output_hidden_states=True,
         )
-        last_hidden = self.last_hidden_state(outputs.hidden_states[-1], inputs['attention_mask'])
-        return self.critic(last_hidden)
+        last_hidden = self.critic_vlm.last_hidden_state(outputs.hidden_states[-1], inputs['attention_mask'])
+        return self.critic_head(last_hidden)

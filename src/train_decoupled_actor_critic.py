@@ -17,7 +17,7 @@ from accelerate.utils import TorchDynamoPlugin
 from accelerate import Accelerator 
 from tqdm import tqdm
 
-from src.models.model import ActorVLM, CriticVLM
+from src.models.model import DecoupledActorCriticVLM
 from src.utils.args import Args
 from src.utils.utils import numpy_to_pil, make_env, parse_action, gc_cuda_cleanup
 from src.utils.action_maps import action_maps
@@ -112,31 +112,12 @@ if __name__ == "__main__":
         prompt_text_critic = f.read()
 
     # --- Decoupled Actor & Critic VLMs and Optimizer ---
-    actor = ActorVLM(args.vlm_name, max_new_tokens=args.max_new_tokens)
-    critic = CriticVLM(args.vlm_name)
-
-    # Lora support (optional)
-    if args.use_lora:
-        actor_lora_config = LoraConfig(
-            r=args.lora_rank,
-            lora_alpha=args.lora_alpha,
-            init_lora_weights="gaussian",
-            target_modules=actor.target_modules,
-        )
-        critic_lora_config = LoraConfig(
-            r=args.lora_rank,
-            lora_alpha=args.lora_alpha,
-            init_lora_weights="gaussian",
-            target_modules=critic.target_modules,
-        )
-        actor_lora_layers = filter(lambda p: p.requires_grad, actor.model.parameters())
-        critic_lora_layers = filter(lambda p: p.requires_grad, critic.model.parameters())
-        parameters = list(actor_lora_layers) + list(critic_lora_layers)
-    else:
-        parameters = list(actor.parameters()) + list(critic.parameters())
-
-    optimizer = optim.AdamW(parameters, lr=args.learning_rate, eps=1e-5, weight_decay=args.weight_decay)
-    actor, critic, optimizer = accelerator.prepare(actor, critic, optimizer)
+    agent = DecoupledActorCriticVLM(args.vlm_name, args.vlm_name, max_new_tokens=args.max_new_tokens)
+    print("============ Agent =============")
+    print(agent)
+    
+    optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
+    agent, optimizer = accelerator.prepare(agent, optimizer)
 
     # --- Storage Tensors ---
     obs = torch.zeros((args.num_steps, args.num_envs) + envs.single_observation_space.shape, device=device)
@@ -174,7 +155,7 @@ if __name__ == "__main__":
 
             with torch.no_grad():
                 # Actor gets actions and logprobs
-                logprob, f_ids, f_mask, p_len, generated_texts = actor.get_action(
+                logprob, f_ids, f_mask, p_len, generated_texts = agent.get_action(
                     obs=next_obs, 
                     text_prompts=[prompt_text_actor] * args.num_envs,
                     action_ids=None,
@@ -186,7 +167,7 @@ if __name__ == "__main__":
                     device=device
                 )
                 # Critic gets value estimate for the current obs (with prompt)
-                value = critic.get_value(
+                value = agent.get_value(
                     obs=next_obs,
                     prompt_text=[prompt_text_critic] * args.num_envs
                 )
@@ -241,7 +222,7 @@ if __name__ == "__main__":
 
         # --- GAE ---
         with torch.no_grad():
-            next_value = critic.get_value(obs=next_obs, prompt_text=[prompt_text_critic] * args.num_envs).flatten()
+            next_value = agent.get_value(obs=next_obs, prompt_text=[prompt_text_critic] * args.num_envs).flatten()
 
         gathered_rewards = accelerator.gather(rewards)
         gathered_values = accelerator.gather(values)
@@ -349,7 +330,7 @@ if __name__ == "__main__":
                     mb_advantages_global = (mb_advantages_global - adv_mean) / (adv_std + 1e-8)
                 
                 process_mb_inds = mb_inds[accelerator.process_index::accelerator.num_processes]
-                with accelerator.accumulate(actor, critic):
+                with accelerator.accumulate(agent):
                     mb_obs = b_obs[process_mb_inds].to(device)
                     mb_input_ids = b_input_ids[process_mb_inds].to(device)
                     mb_prompt_lens = b_prompt_lens[process_mb_inds].to(device)
@@ -361,7 +342,7 @@ if __name__ == "__main__":
 
                     if is_critic_warmup:
                         # Critic-only training step
-                        newvalue = critic.get_value(obs=mb_obs, prompt_text=[prompt_text_critic] * mb_obs.shape[0]).view(-1)
+                        newvalue = agent.get_value(obs=mb_obs, prompt_text=[prompt_text_critic] * mb_obs.shape[0]).view(-1)
                         if args.clip_vloss:
                             v_loss_unclipped = (newvalue - mb_returns) ** 2
                             v_clipped = mb_values + torch.clamp(newvalue - mb_values, -args.clip_coef, args.clip_coef)
@@ -375,14 +356,14 @@ if __name__ == "__main__":
                         loss = v_loss * args.vf_coef
                     else:
                         # Actor (policy) and critic update
-                        newlogprob, entropy_tensor, f_mask = actor.get_action(
+                        newlogprob, entropy_tensor, f_mask = agent.get_action(
                             obs=mb_obs,
                             text_prompts=[prompt_text_actor] * mb_obs.shape[0],
                             action_ids=mb_input_ids,
                             prompt_lens=mb_prompt_lens
                         )
                         # Critic computes values for fresh batch
-                        newvalue = critic.get_value(obs=mb_obs, prompt_text=[prompt_text] * mb_obs.shape[0]).view(-1)
+                        newvalue = agent.get_value(obs=mb_obs, prompt_text=[prompt_text] * mb_obs.shape[0]).view(-1)
 
                         true_final_mask = f_mask & mb_attention_masks.bool()
                         logratio = newlogprob - mb_logprobs
