@@ -24,7 +24,7 @@ class Args:
     """the id of the environment"""
     total_timesteps: int = 10000000
     """total timesteps of the experiments"""
-    learning_rate: float = 1e-5
+    learning_rate: float = 2e-6
     """the learning rate of the optimizer"""
     num_envs: int = 8
     """the number of parallel game environments"""
@@ -61,14 +61,19 @@ class Args:
     # VLM specific arguments
     vlm_name: str = "Qwen/Qwen2.5-VL-3B-Instruct"
     """The model ID from Hugging Face."""
-    prompt_path: str = "prompt.txt"
+    prompt_actor_path: str = "prompt_actor.txt"
     """Path to a file containing the text prompt for the VLM."""
-    kl_coef: float = 0.02
-    """Coefficient for the KL-divergence penalty in the reward, to stabilize training."""
-    cot_lambda: float = 0.5
-    """Scaling factor to down-weight the CoT reasoning tokens in log-prob calculation, as per Section 4.3."""
+    prompt_critic_path: str = "prompt_critic.txt"
+    """Path to a file containing the text prompt for the VLM."""
     max_new_tokens: int = 128
     """Maximum number of new tokens for the VLM to generate."""
+    max_seq_len: int = 1024
+    """Maximum sequence length for the VLM to generate. Longer sequences will be truncated."""
+    critic_warmup_iterations: int = 10
+    """Number of iterations to warm up the critic."""
+    weight_decay: float = 0.01
+    """Weight decay for the optimizer."""
+
     enable_compile: bool = False
     """wether to compile VLM"""
     

@@ -1,3 +1,4 @@
+import torch
 import numpy as np
 import gymnasium as gym
 import re
@@ -20,9 +21,6 @@ def make_env(env_id, idx, capture_video, run_name):
         if "FIRE" in env.unwrapped.get_action_meanings():
             env = FireResetEnv(env)
         env = ClipRewardEnv(env)
-        # env = gym.wrappers.ResizeObservation(env, (84, 84))
-        # env = gym.wrappers.GrayScaleObservation(env)
-        # env = gym.wrappers.FrameStack(env, 4)
         return env
     return thunk
 
@@ -41,3 +39,7 @@ def parse_action(text: str, action_space: gym.spaces.Discrete, action_map: dict)
         print(f"Error parsing action: {e}. Text: '{text}'")
     
     return action_space.sample()
+
+def gc_cuda_cleanup():
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
