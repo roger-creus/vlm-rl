@@ -440,7 +440,7 @@ if __name__ == "__main__":
                 writer.add_scalar("losses/clipfrac", np.mean(epoch_clipfracs), global_step)
             
             sps = int(args.total_batch_size / (time.time() - start_time))
-            writer.add_scalar("debug/SPS", sps, global_step)
+            writer.add_scalar("charts/SPS", sps, global_step)
             print(f"SPS: {sps} || value.loss : {v_loss.item()}, policy.loss : {pg_loss.item()}, policy.entropy : {entropy_loss.item()}")
             
             if is_critic_warmup:
