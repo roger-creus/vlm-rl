@@ -107,10 +107,11 @@ class DecoupledActorCriticVLM(nn.Module):
         lora_dropout: float = 0.0,
     ):
         super().__init__()
-        actor_vlm = BaseVLM(actor_vlm_name, max_new_tokens)
-        critic_vlm = BaseVLM(critic_vlm_name)
-        hidden_size = critic_vlm.model.config.hidden_size
-        self.critic_head = CriticHead(hidden_size).to(critic_vlm.model.dtype)
+        self.actor_vlm = BaseVLM(actor_vlm_name, max_new_tokens)
+        self.critic_vlm = BaseVLM(critic_vlm_name, max_new_tokens)
+        
+        hidden_size = self.critic_vlm.model.config.hidden_size
+        self.critic_head = CriticHead(hidden_size).to(self.critic_vlm.model.dtype)
         self.max_new_tokens = max_new_tokens
 
         if use_lora:
@@ -120,26 +121,11 @@ class DecoupledActorCriticVLM(nn.Module):
                 lora_dropout=lora_dropout,
                 init_lora_weights="gaussian",
                 target_modules=default_target_modules(),
+                bias="none",
             )
 
-            for param in actor_vlm.model.parameters():
-                param.requires_grad = False
-            for param in critic_vlm.model.parameters():
-                param.requires_grad = False
-
-            actor_vlm.model = get_peft_model(actor_vlm.model, lora_config)
-            critic_vlm.model = get_peft_model(critic_vlm.model, lora_config)
-            self.actor_vlm = actor_vlm
-            self.critic_vlm = critic_vlm
-            
-            del actor_vlm, critic_vlm
-            gc_cuda_cleanup()
-
-            print("\n--- Actor VLM Trainable Parameters ---")
-            self.actor_vlm.model.print_trainable_parameters()
-            print("\n--- Critic VLM Trainable Parameters ---")
-            self.critic_vlm.model.print_trainable_parameters()
-            print("-" * 50)
+            self.actor_vlm.model.add_adapter(lora_config)
+            self.critic_vlm.model.add_adapter(lora_config)
 
     def get_trainable_params(self):
         params = []

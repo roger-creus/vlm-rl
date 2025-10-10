@@ -19,7 +19,7 @@ from tqdm import tqdm
 
 from src.models.model import DecoupledActorCriticVLM
 from src.utils.args import Args
-from src.utils.utils import numpy_to_pil, make_env, parse_action, gc_cuda_cleanup
+from src.utils.utils import numpy_to_pil, make_env, parse_action, gc_cuda_cleanup, print_trainable_parameters
 from src.utils.action_maps import action_maps
 
 from IPython import embed
@@ -126,10 +126,17 @@ if __name__ == "__main__":
     if accelerator.is_main_process:
         print("============ Agent =============")
         print(agent)
+        print("\n--- Actor VLM Trainable Parameters ---")
+        print_trainable_parameters(agent.actor_vlm.model)
+        print("\n--- Critic VLM Trainable Parameters ---")
+        print_trainable_parameters(agent.critic_vlm.model)
+        print("-" * 50)
         print(f"Total trainable parameters: {sum(p.numel() for p in params)}")
-    
+        print("-" * 50)
+        
     optimizer = optim.Adam(params, lr=args.learning_rate, eps=1e-5)
     agent, optimizer = accelerator.prepare(agent, optimizer)
+    gc_cuda_cleanup()
 
     # --- Storage Tensors ---
     obs = torch.zeros((args.num_steps, args.num_envs) + envs.single_observation_space.shape, device=device)
