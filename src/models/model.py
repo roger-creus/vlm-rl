@@ -1,12 +1,13 @@
 import torch
 import torch.nn as nn
 import numpy as np
+from peft import LoraConfig, get_peft_model
 
 from IPython import embed
 from torch.distributions.categorical import Categorical
 from transformers import Qwen2_5_VLForConditionalGeneration, AutoTokenizer, AutoProcessor
 
-from src.utils.utils import numpy_to_pil
+from src.utils.utils import numpy_to_pil, gc_cuda_cleanup
 
 def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
     torch.nn.init.orthogonal_(layer.weight, std)
@@ -23,9 +24,6 @@ def default_target_modules():
         "mlp.gate_proj",
         "mlp.up_proj",
         "mlp.down_proj",
-        # Common names in other architectures for broader compatibility
-        "attn.qkv",
-        "attn.proj",
     ]
     # Remove duplicates while preserving order
     seen = set()
@@ -48,9 +46,10 @@ class BaseVLM(nn.Module):
         )
         self.model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
             vlm_name,
-            dtype=torch.bfloat16,
+            #dtype=torch.bfloat16,
+            dtype=torch.float32,
             trust_remote_code=True,
-            attn_implementation="flash_attention_2",
+            #attn_implementation="flash_attention_2",
         )
 
     def preprocess_obs_and_text(self, obs, text_prompts):
@@ -93,9 +92,6 @@ class CriticHead(nn.Module):
     def forward(self, hidden):
         return self.net(hidden)
 
-
-
-# --- DECOUPLED ACTOR-CRITIC (MODIFIED) ---
 class DecoupledActorCriticVLM(nn.Module):
     """
     Decoupled actor-critic with LoRA-adaptable VLMs.
@@ -111,30 +107,33 @@ class DecoupledActorCriticVLM(nn.Module):
         lora_dropout: float = 0.0,
     ):
         super().__init__()
-        self.actor_vlm = BaseVLM(actor_vlm_name, max_new_tokens)
-        self.critic_vlm = BaseVLM(critic_vlm_name)
-        hidden_size = self.critic_vlm.model.config.hidden_size
-        self.critic_head = CriticHead(hidden_size).to(self.critic_vlm.model.dtype)
+        actor_vlm = BaseVLM(actor_vlm_name, max_new_tokens)
+        critic_vlm = BaseVLM(critic_vlm_name)
+        hidden_size = critic_vlm.model.config.hidden_size
+        self.critic_head = CriticHead(hidden_size).to(critic_vlm.model.dtype)
         self.max_new_tokens = max_new_tokens
 
-        from IPython import embed; embed()
         if use_lora:
             lora_config = LoraConfig(
                 r=lora_r,
                 lora_alpha=lora_alpha,
                 lora_dropout=lora_dropout,
-                bias="none",
-                task_type=TaskType.CAUSAL_LM,
+                init_lora_weights="gaussian",
                 target_modules=default_target_modules(),
             )
 
-            for param in self.actor_vlm.model.parameters():
+            for param in actor_vlm.model.parameters():
                 param.requires_grad = False
-            for param in self.critic_vlm.model.parameters():
+            for param in critic_vlm.model.parameters():
                 param.requires_grad = False
 
-            self.actor_vlm.model = get_peft_model(self.actor_vlm.model, lora_config)
-            self.critic_vlm.model = get_peft_model(self.critic_vlm.model, lora_config)
+            actor_vlm.model = get_peft_model(actor_vlm.model, lora_config)
+            critic_vlm.model = get_peft_model(critic_vlm.model, lora_config)
+            self.actor_vlm = actor_vlm
+            self.critic_vlm = critic_vlm
+            
+            del actor_vlm, critic_vlm
+            gc_cuda_cleanup()
 
             print("\n--- Actor VLM Trainable Parameters ---")
             self.actor_vlm.model.print_trainable_parameters()
@@ -147,7 +146,6 @@ class DecoupledActorCriticVLM(nn.Module):
         params.extend(self.actor_vlm.get_trainable_params())
         params.extend(self.critic_vlm.get_trainable_params())
         params.extend(list(self.critic_head.parameters()))
-        print(f"\nTotal trainable parameters for optimizer: {sum(p.numel() for p in params)}")
         return params
 
     def get_action(self, obs=None, text_prompts=None, action_ids=None, prompt_lens=None):
@@ -199,7 +197,7 @@ class DecoupledActorCriticVLM(nn.Module):
 
     def get_value(self, obs, prompt_text):
         inputs = self.critic_vlm.preprocess_obs_and_text(obs, prompt_text)
-            outputs = self.critic_vlm.model(
+        outputs = self.critic_vlm.model(
             **inputs,
             output_hidden_states=True,
         )
@@ -267,7 +265,6 @@ class SharedActorCriticVLM(BaseVLM):
 
         masked_log_probs = log_probs * final_mask
 
-        # critic uses last input token, not last token of full_ids!
         last_input_token_indices = prompt_lens.to(full_attention_mask.device) - 1  # shape [B]
         batch_indices = torch.arange(full_ids.size(0), device=full_ids.device)
         last_hidden_states = outputs.hidden_states[-1]  # [B, T, hidden]

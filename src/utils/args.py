@@ -76,8 +76,8 @@ class Args:
     """wether to compile VLM"""
     
     use_lora: bool = False
-    lora_rank: int = 1
-    lora_alpha: float = 0.1
+    lora_rank: int = 32
+    lora_alpha: float = 64
     
     # to be filled in runtime
     batch_size: int = 0

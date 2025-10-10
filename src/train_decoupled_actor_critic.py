@@ -112,12 +112,23 @@ if __name__ == "__main__":
         prompt_text_critic = f.read()
 
     # --- Decoupled Actor & Critic VLMs and Optimizer ---
-    agent = DecoupledActorCriticVLM(args.vlm_name, args.vlm_name, max_new_tokens=args.max_new_tokens)
+    agent = DecoupledActorCriticVLM(
+        args.vlm_name,
+        args.vlm_name,
+        max_new_tokens=args.max_new_tokens,
+        use_lora=args.use_lora,
+        lora_r=args.lora_rank,
+        lora_alpha=args.lora_alpha,
+        lora_dropout=0.0,
+    )
+    
+    params = agent.get_trainable_params()
     if accelerator.is_main_process:
         print("============ Agent =============")
         print(agent)
+        print(f"Total trainable parameters: {sum(p.numel() for p in params)}")
     
-    optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
+    optimizer = optim.Adam(params, lr=args.learning_rate, eps=1e-5)
     agent, optimizer = accelerator.prepare(agent, optimizer)
 
     # --- Storage Tensors ---
