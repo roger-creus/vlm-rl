@@ -113,8 +113,9 @@ if __name__ == "__main__":
 
     # --- Decoupled Actor & Critic VLMs and Optimizer ---
     agent = DecoupledActorCriticVLM(args.vlm_name, args.vlm_name, max_new_tokens=args.max_new_tokens)
-    print("============ Agent =============")
-    print(agent)
+    if accelerator.is_main_process:
+        print("============ Agent =============")
+        print(agent)
     
     optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
     agent, optimizer = accelerator.prepare(agent, optimizer)
@@ -186,7 +187,6 @@ if __name__ == "__main__":
 
             next_obs, reward, term, trunc, infos = envs.step(action.cpu().numpy())
             next_done = np.logical_or(term, trunc)
-
             print(f"[Process {accelerator.process_index}] Step {step+1}/{args.num_steps}")
 
             rewards[step] = torch.tensor(reward).to(device).view(-1)
@@ -306,7 +306,6 @@ if __name__ == "__main__":
             epoch_approx_kls = []
 
             np.random.shuffle(b_inds)
-
             minibatch_iter = range(0, args.total_batch_size, args.minibatch_size)
             if accelerator.is_main_process:
                 minibatch_iter = tqdm(
