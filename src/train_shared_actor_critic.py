@@ -147,6 +147,7 @@ if __name__ == "__main__":
     for iteration in range(1, args.num_iterations + 1):
         generation_lengths = []
         seq_len_errors = []
+        rollout_time_start = time.time()
         
         if args.anneal_lr:
             frac = 1.0 - (iteration - 1.0) / args.num_iterations
@@ -221,6 +222,8 @@ if __name__ == "__main__":
 
             del reward, term, trunc, infos, logprob, f_ids, f_mask, p_len, action, value
             gc_cuda_cleanup()
+
+        rollout_time_completed = time.time() - rollout_time_start
 
         # --- GAE ---
         with torch.no_grad():
@@ -299,6 +302,7 @@ if __name__ == "__main__":
             print("Training...")
 
         is_critic_warmup = iteration <= args.critic_warmup_iterations
+        learning_time_start = time.time()
         epoch_iter = range(args.update_epochs)
         if accelerator.is_main_process:
             epoch_iter = tqdm(epoch_iter, desc="Epochs")
@@ -420,11 +424,15 @@ if __name__ == "__main__":
                         del newvalue
                     gc_cuda_cleanup()
 
+        learning_time_completed = time.time() - learning_time_start
+
         # --- Logging ---
         if accelerator.is_main_process:
             writer.add_scalar("charts/learning_rate", optimizer.param_groups[0]["lr"], global_step)
             writer.add_scalar("charts/generation_length", np.mean(generation_lengths), global_step)
             writer.add_scalar("charts/seq_len_errors", np.mean(seq_len_errors), global_step)
+            writer.add_scalar("charts/rollout_time", rollout_time_completed, global_step)
+            writer.add_scalar("charts/learning_time", learning_time_completed, global_step)
             
             if not is_critic_warmup:
                 writer.add_scalar("losses/value_loss", v_loss.item(), global_step)
