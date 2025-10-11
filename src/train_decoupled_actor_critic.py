@@ -113,10 +113,8 @@ if __name__ == "__main__":
 
     # --- Decoupled Actor & Critic VLMs and Optimizer ---
     agent = DecoupledActorCriticVLM(
-        args.vlm_name,
-        args.vlm_name,
+        vlm_name=args.vlm_name,
         max_new_tokens=args.max_new_tokens,
-        use_lora=args.use_lora,
         lora_r=args.lora_rank,
         lora_alpha=args.lora_alpha,
         lora_dropout=0.0,
@@ -126,10 +124,8 @@ if __name__ == "__main__":
     if accelerator.is_main_process:
         print("============ Agent =============")
         print(agent)
-        print("\n--- Actor VLM Trainable Parameters ---")
-        print_trainable_parameters(agent.actor_vlm.model)
-        print("\n--- Critic VLM Trainable Parameters ---")
-        print_trainable_parameters(agent.critic_vlm.model)
+        print("\n--- Trainable Parameters ---")
+        print_trainable_parameters(agent.vlm.model)
         print("-" * 50)
         print(f"Total trainable parameters: {sum(p.numel() for p in params)}")
         print("-" * 50)
@@ -394,7 +390,8 @@ if __name__ == "__main__":
                         if epoch == 0 and start == 0:
                             for mb_idx_inner in range(mb_obs.shape[0]):
                                 if true_final_mask[mb_idx_inner].any():
-                                    ratios_1st_epoch_1st_minibatch.append(ratio[mb_idx_inner][torch.where(true_final_mask[mb_idx_inner])].mean().cpu().item())
+                                    ratios_debug = ratio[mb_idx_inner][torch.where(true_final_mask[mb_idx_inner])].mean().cpu().item()
+                                    ratios_1st_epoch_1st_minibatch.append(ratios_debug)
 
                         with torch.no_grad():
                             valid_token_count = true_final_mask.sum()

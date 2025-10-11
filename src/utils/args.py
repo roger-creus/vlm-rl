@@ -75,7 +75,6 @@ class Args:
     enable_compile: bool = False
     """wether to compile VLM"""
     
-    use_lora: bool = False
     lora_rank: int = 32
     lora_alpha: float = 64
     
