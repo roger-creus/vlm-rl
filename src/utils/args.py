@@ -24,8 +24,10 @@ class Args:
     """the id of the environment"""
     total_timesteps: int = 10000000
     """total timesteps of the experiments"""
-    learning_rate: float = 1e-6
+    learning_rate: float = 2e-5
     """the learning rate of the optimizer"""
+    weight_decay: float = 0.01
+    """the weight decay of the optimizer"""
     num_envs: int = 8
     """the number of parallel game environments"""
     num_steps: int = 32
@@ -40,12 +42,10 @@ class Args:
     """the number of mini-batches"""
     gradient_accumulation_steps: int = 32
     """the number of gradient accumulation steps"""
-    update_epochs: int = 1
+    update_epochs: int = 2
     """the K epochs to update the policy"""
     norm_adv: bool = True
     """Toggles advantages normalization"""
-    clip_coef: float = 0.2
-    """the surrogate clipping coefficient"""
     clip_vloss: bool = True
     """Toggles whether or not to use a clipped loss for the value function, as per the paper."""
     ent_coef: float = 0.0
@@ -75,8 +75,22 @@ class Args:
     enable_compile: bool = False
     """wether to compile VLM"""
     
+    # LoRa specific arguments
     lora_rank: int = 32
+    """the rank of the LoRA adapters"""
     lora_alpha: float = 64
+    """the alpha of the LoRA adapters"""
+    
+    # Dual-Clip PPO specific arguments
+    dual_clip_c: float = 3.0
+    """the coefficient for the Dual-Clip PPO"""
+    logratio_clamp: float = 20.0
+    """the clamp value for the log-ratio"""
+    clip_coef_lower: float = 0.2
+    """the lower clip coefficient for the Dual-Clip PPO"""
+    clip_coef_upper: float = 0.2
+    """the upper clip coefficient for the Dual-Clip PPO"""
+    
     
     # to be filled in runtime
     batch_size: int = 0

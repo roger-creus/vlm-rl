@@ -1,18 +1,14 @@
 import os
 import random
-import re
 import time
-from collections import deque
-
 import gymnasium as gym
 import numpy as np
 import torch
 import torch.optim as optim
 import tyro
-from PIL import Image
 from torch.utils.tensorboard import SummaryWriter
+from collections import deque
 
-from peft import LoraConfig
 from accelerate.utils import TorchDynamoPlugin
 from accelerate import Accelerator 
 from tqdm import tqdm
@@ -28,9 +24,8 @@ if __name__ == "__main__":
     args = tyro.cli(Args)
     run_name = f"{args.env_id}__{args.exp_name}__{args.seed}__{int(time.time())}"
     
-    accelerator_cfg = {
-        "gradient_accumulation_steps": args.gradient_accumulation_steps,
-    }
+    # --- Accelerator ---
+    accelerator_cfg = {"gradient_accumulation_steps": args.gradient_accumulation_steps}
     if args.enable_compile:
         dynamo_plugin = TorchDynamoPlugin(
             backend="inductor",
@@ -39,11 +34,11 @@ if __name__ == "__main__":
             dynamic=False
         )
         accelerator_cfg["dynamo_plugin"] = dynamo_plugin
-        print("Using compilation!")
-
+        print("Compilation enabled!")
     accelerator = Accelerator(**accelerator_cfg)
-    device = accelerator.device
 
+    # --- Arguments ---
+    device = accelerator.device
     args.total_batch_size = int(args.num_envs * args.num_steps * accelerator.num_processes)
     args.minibatch_size = int(args.total_batch_size // args.num_minibatches)
     per_process_minibatch_size = int(args.minibatch_size // accelerator.num_processes)
@@ -113,7 +108,7 @@ if __name__ == "__main__":
     with open(args.prompt_critic_path, "r") as f:
         prompt_text_critic = f.read()
 
-    # --- Decoupled Actor & Critic VLMs and Optimizer ---
+    # --- Agent and Optimizer ---
     agent = DecoupledActorCriticVLM(
         vlm_name=args.vlm_name,
         max_new_tokens=args.max_new_tokens,
@@ -132,31 +127,32 @@ if __name__ == "__main__":
         print(f"Total trainable parameters: {sum(p.numel() for p in params)}")
         print("-" * 50)
         
-    optimizer = optim.Adam(params, lr=args.learning_rate)
+    optimizer = optim.AdamW(params, lr=args.learning_rate, weight_decay=args.weight_decay)
     agent, optimizer = accelerator.prepare(agent, optimizer)
 
     # --- Storage Tensors ---
     obs = torch.zeros((args.num_steps, args.num_envs) + envs.single_observation_space.shape, device=device)
-    actions = torch.zeros((args.num_steps, args.num_envs), device=device)
     rewards = torch.zeros((args.num_steps, args.num_envs), device=device)
     dones = torch.zeros((args.num_steps, args.num_envs), device=device)
     values = torch.zeros((args.num_steps, args.num_envs), device=device)
     prompt_lens = torch.zeros((args.num_steps, args.num_envs), dtype=torch.long, device=device)
+    action_masks = torch.zeros((args.num_steps, args.num_envs, args.max_seq_len), dtype=torch.long, device=device)
     full_input_ids = torch.zeros((args.num_steps, args.num_envs, args.max_seq_len), dtype=torch.long, device=device)
-    full_attention_masks = torch.zeros((args.num_steps, args.num_envs, args.max_seq_len), dtype=torch.long, device=device)
     logprobs = torch.zeros((args.num_steps, args.num_envs, args.max_seq_len), device=device)
 
+    # --- Start training ---
     global_step = 0
     start_time = time.time()
     next_obs, _ = envs.reset()
     next_obs = torch.Tensor(next_obs).to(device)
     next_done = torch.zeros(args.num_envs).to(device)
-    
+
     for iteration in range(1, args.num_iterations + 1):
         generation_lengths = []
         seq_len_errors = []
         rollout_time_start = time.time()
         
+        # anneal lr
         if args.anneal_lr:
             frac = 1.0 - (iteration - 1.0) / args.num_iterations
             lrnow = frac * args.learning_rate
@@ -171,43 +167,51 @@ if __name__ == "__main__":
             dones[step] = next_done
 
             with torch.no_grad():
-                # Actor gets actions and logprobs
-                logprob, f_ids, f_mask, p_len, generated_texts = agent.get_action(
+                # sample actions from actor
+                logprob, f_ids, p_len, generated_texts = agent.get_action(
                     obs=next_obs, 
                     text_prompts=[prompt_text_actor] * args.num_envs,
                     action_ids=None,
                     prompt_lens=None,
                 )
-                # Decoded action selection as before
+                # parse model outputs to environment action space
                 action = torch.tensor(
                     [parse_action(text, envs.single_action_space, action_map) for text in generated_texts],
                     device=device
                 )
-                # Critic gets value estimate for the current obs (with prompt)
+                # get value estimate for the current obs
                 value = agent.get_value(
                     obs=next_obs,
                     prompt_text=[prompt_text_critic] * args.num_envs
                 )
                 values[step] = value.flatten()
 
-            actions[step] = action
-            logprobs[step, :, :logprob.shape[1]] = logprob
+            seq_len = min(f_ids.shape[1], args.max_seq_len) # length of the longest generated text in the batch (across environments)
+            full_input_ids[step, :, :seq_len] = f_ids[:, :seq_len]
             prompt_lens[step] = p_len
+            
+            # IMPORTANT: Recompute mask for the TRUNCATED sequence
+            indices = torch.arange(seq_len, device=device)
+            action_token_mask = indices[None, :] >= p_len[:, None]
+            truncated_ids = f_ids[:, :seq_len]
+            pad_mask = (truncated_ids != agent.vlm.processor.tokenizer.pad_token_id)
+            truncated_action_mask = (action_token_mask & pad_mask).long()
 
-            seq_len = min(f_ids.shape[1], args.max_seq_len)
+            action_masks[step, :, :seq_len] = truncated_action_mask
+            logprobs[step, :, :seq_len] = logprob[:, :seq_len]
+            
             generation_lengths.append(seq_len - p_len[0].cpu().item())
             seq_len_errors.append(1 if seq_len >= args.max_seq_len else 0)
-
-            full_input_ids[step, :, :seq_len] = f_ids[:, :seq_len]
-            full_attention_masks[step, :, :seq_len] = f_mask[:, :seq_len]
-
+            
+            # step the environment
             next_obs, reward, term, trunc, infos = envs.step(action.cpu().numpy())
-            next_done = np.logical_or(term, trunc)
             print(f"[Process {accelerator.process_index}] Step {step+1}/{args.num_steps}")
-
+            
             rewards[step] = torch.tensor(reward).to(device).view(-1)
+            next_done = np.logical_or(term, trunc)
             next_obs, next_done = torch.Tensor(next_obs).to(device), torch.Tensor(next_done).to(device)
 
+            # --- Logging ---
             if accelerator.is_main_process:
                 if iteration % args.log_every == 0 and step == 0:
                     pil_images_debug = numpy_to_pil(next_obs.cpu().numpy())
@@ -234,17 +238,17 @@ if __name__ == "__main__":
                             writer.add_scalar("charts/episodic_length", info["episode"]["l"], global_step)
 
             # TODO: is this necessary every step? 
-            # del reward, term, trunc, infos, logprob, f_ids, f_mask, p_len, action, value
+            # del reward, term, trunc, infos, logprob, f_ids, p_len, action, value
             # gc_cuda_cleanup()
-        
-        del reward, term, trunc, infos, logprob, f_ids, f_mask, p_len, action, value
+        del reward, term, trunc, infos, logprob, f_ids, p_len, action, value
         gc_cuda_cleanup()
         rollout_time_completed = time.time() - rollout_time_start
 
-        # --- GAE ---
+        # --- bootstrap last value to do GAE ---
         with torch.no_grad():
             next_value = agent.get_value(obs=next_obs, prompt_text=[prompt_text_critic] * args.num_envs).flatten()
 
+        # all processes will have identical data
         gathered_rewards = accelerator.gather(rewards)
         gathered_values = accelerator.gather(values)
         gathered_dones = accelerator.gather(dones)
@@ -258,6 +262,7 @@ if __name__ == "__main__":
         gathered_next_value = gathered_next_value.view(num_total_envs)
         gathered_next_done = gathered_next_done.view(num_total_envs)
 
+        # all processes do GAE on the same data
         with torch.no_grad():
             advantages = torch.zeros_like(gathered_rewards)
             lastgaelam = 0
@@ -272,11 +277,17 @@ if __name__ == "__main__":
                 advantages[t] = lastgaelam = delta + args.gamma * args.gae_lambda * nextnonterminal * lastgaelam
             returns = advantages + gathered_values
 
+        # all processes will have identical data
         gathered_obs = accelerator.gather(obs)
         gathered_logprobs = accelerator.gather(logprobs)
         gathered_input_ids = accelerator.gather(full_input_ids)
         gathered_prompt_lens = accelerator.gather(prompt_lens)
-        gathered_attention_masks = accelerator.gather(full_attention_masks)
+        gathered_action_masks = accelerator.gather(action_masks)
+
+        # all processes will have identical data
+        b_action_masks = gathered_action_masks.view(
+            accelerator.num_processes, args.num_steps, args.num_envs, args.max_seq_len
+        ).permute(1, 0, 2, 3).reshape(-1, args.max_seq_len)
 
         b_logprobs = gathered_logprobs.view(
             accelerator.num_processes, args.num_steps, args.num_envs, args.max_seq_len
@@ -289,10 +300,6 @@ if __name__ == "__main__":
         b_prompt_lens = gathered_prompt_lens.view(
             accelerator.num_processes, args.num_steps, args.num_envs
         ).permute(1, 0, 2).reshape(-1)
-        
-        b_attention_masks = gathered_attention_masks.view(
-            accelerator.num_processes, args.num_steps, args.num_envs, args.max_seq_len
-        ).permute(1, 0, 2, 3).reshape(-1, args.max_seq_len)
         
         b_obs = gathered_obs.view(
             accelerator.num_processes, args.num_steps, args.num_envs, *envs.single_observation_space.shape
@@ -309,23 +316,30 @@ if __name__ == "__main__":
         b_values = gathered_values.view(
             accelerator.num_processes, args.num_steps, args.num_envs
         ).permute(1, 0, 2).reshape(-1)
-
-        b_inds = np.arange(args.total_batch_size)
-        clipfracs = []
-        ratios_1st_epoch_1st_minibatch = []
         
         if accelerator.is_main_process:
             print("Training...")
-
+        
+        # --- Training ---
+        b_inds = np.arange(args.total_batch_size)
         is_critic_warmup = iteration <= args.critic_warmup_iterations
-        learning_time_start = time.time()
+        
         epoch_iter = range(args.update_epochs)
         if accelerator.is_main_process:
             epoch_iter = tqdm(epoch_iter, desc="Epochs")
 
+        cliprange_low = args.clip_coef_lower
+        cliprange_high = args.clip_coef_upper
+        dual_clip_c = args.dual_clip_c
+        ratios_1st_epoch_1st_minibatch = []
+
+        learning_time_start = time.time()
+        # multiple epochs of training on the gathered data batch
         for epoch in epoch_iter:
-            epoch_clipfracs = []
+            epoch_clipfracs_upper = []
+            epoch_clipfracs_lower = []
             epoch_approx_kls = []
+            epoch_old_approx_kls = []
             all_newlogprobs_stats = []
             all_oldlogprobs_stats = []
             all_logratios_stats = []
@@ -347,28 +361,31 @@ if __name__ == "__main__":
             for mb_idx, start in enumerate(minibatch_iter):
                 if accelerator.is_main_process and hasattr(minibatch_iter, "set_postfix"):
                     minibatch_iter.set_postfix({"minibatch": mb_idx})
+                
                 end = start + args.minibatch_size
                 mb_inds = b_inds[start:end]
-
+                
+                # normalize advantages at minibatch level BEFORE sharding across processes
                 proc_positions = torch.tensor(np.arange(len(mb_inds))[accelerator.process_index::accelerator.num_processes], dtype=torch.long, device=device)
                 mb_advantages_global = b_advantages[mb_inds]
                 if args.norm_adv:
                     adv_mean = mb_advantages_global.mean()
                     adv_std = mb_advantages_global.std()
                     mb_advantages_global = (mb_advantages_global - adv_mean) / (adv_std + 1e-8)
-                
+
+                # shard the minibatch across processes
                 process_mb_inds = mb_inds[accelerator.process_index::accelerator.num_processes]
                 with accelerator.accumulate(agent):
                     mb_obs = b_obs[process_mb_inds].to(device)
                     mb_input_ids = b_input_ids[process_mb_inds].to(device)
                     mb_prompt_lens = b_prompt_lens[process_mb_inds].to(device)
-                    mb_attention_masks = b_attention_masks[process_mb_inds].to(device)
                     mb_logprobs = b_logprobs[process_mb_inds].to(device)
                     mb_returns = b_returns[process_mb_inds].to(device)
                     mb_values = b_values[process_mb_inds].to(device)
                     mb_advantages = mb_advantages_global[proc_positions].to(device)
-
-                    # --- log statistics for values, advantages, returns at minibatch level always ---
+                    mb_action_masks = b_action_masks[process_mb_inds].to(device)
+                    
+                    # logging
                     stats = lambda x: dict(
                         mean=float(x.mean().cpu()), std=float(x.std().cpu()),
                         min=float(x.min().cpu()), max=float(x.max().cpu()))
@@ -376,12 +393,12 @@ if __name__ == "__main__":
                     all_advantages_stats.append(stats(mb_advantages))
                     all_returns_stats.append(stats(mb_returns))
 
+                    # --- Training ---
                     if is_critic_warmup:
-                        # Critic-only training step
                         newvalue = agent.get_value(obs=mb_obs, prompt_text=[prompt_text_critic] * mb_obs.shape[0]).view(-1)
                         if args.clip_vloss:
                             v_loss_unclipped = (newvalue - mb_returns) ** 2
-                            v_clipped = mb_values + torch.clamp(newvalue - mb_values, -args.clip_coef, args.clip_coef)
+                            v_clipped = mb_values + torch.clamp(newvalue - mb_values, -cliprange_low, cliprange_high)
                             v_loss_clipped = (v_clipped - mb_returns) ** 2
                             v_loss_max = torch.max(v_loss_unclipped, v_loss_clipped)
                             v_loss = 0.5 * v_loss_max.mean()
@@ -391,47 +408,45 @@ if __name__ == "__main__":
                         entropy_loss = torch.zeros_like(v_loss)
                         loss = v_loss * args.vf_coef
                     else:
-                        # Actor (policy) and critic update
-                        newlogprob, entropy_tensor, f_mask = agent.get_action(
+                        newlogprob, entropy_tensor = agent.get_action(
                             obs=mb_obs,
                             text_prompts=[prompt_text_actor] * mb_obs.shape[0],
                             action_ids=mb_input_ids,
                             prompt_lens=mb_prompt_lens
                         )
-                        # Critic computes values for fresh batch
                         newvalue = agent.get_value(obs=mb_obs, prompt_text=[prompt_text_critic] * mb_obs.shape[0]).view(-1)
 
-                        true_final_mask = f_mask & mb_attention_masks.bool()
                         logratio = newlogprob - mb_logprobs
-                        ratio = logratio.exp()
-                        ratio = torch.where(true_final_mask, ratio, 1.0)
 
-                        # --- Log statistics for (new/old) logprobs, logratio, ratio ---
-                        mask = true_final_mask
-                        mask_sum = mask.sum().cpu().item()
+                        # clamp logratio for stability
+                        if args.logratio_clamp > 0:
+                            logratio = torch.clamp(logratio, min=-args.logratio_clamp, max=args.logratio_clamp)
+                            
+                        logratio = torch.where(mb_action_masks.bool(), logratio, torch.zeros_like(logratio))
+                        ratio = torch.exp(logratio)
+
+                        # logging
+                        mask_sum = mb_action_masks.sum().cpu().item()
                         if mask_sum > 0:
-                            # only valid positions
-                            newlogprob_masked = newlogprob[mask].detach().cpu()
-                            oldlogprob_masked = mb_logprobs[mask].detach().cpu()
-                            logratio_masked = logratio[mask].detach().cpu()
-                            ratio_masked = ratio[mask].detach().cpu()
+                            newlogprob_masked = newlogprob[mb_action_masks].detach().cpu()
+                            oldlogprob_masked = mb_logprobs[mb_action_masks].detach().cpu()
+                            logratio_masked = logratio[mb_action_masks].detach().cpu()
+                            ratio_masked = ratio[mb_action_masks].detach().cpu()
                             all_newlogprobs_stats.append(stats(newlogprob_masked))
                             all_oldlogprobs_stats.append(stats(oldlogprob_masked))
                             all_logratios_stats.append(stats(logratio_masked))
                             all_ratios_stats.append(stats(ratio_masked))
 
+                        # logging
                         if epoch == 0 and start == 0:
-                            all_close_to_1 = True
                             for mb_idx_inner in range(mb_obs.shape[0]):
-                                if true_final_mask[mb_idx_inner].any():
-                                    ratios_debug = ratio[mb_idx_inner][torch.where(true_final_mask[mb_idx_inner])].mean().cpu().item()
+                                if mb_action_masks[mb_idx_inner].any():
+                                    ratios_debug = ratio[mb_idx_inner][torch.where(mb_action_masks[mb_idx_inner].bool())].mean().cpu().item()
                                     ratios_1st_epoch_1st_minibatch.append(ratios_debug)
                                     print(ratios_debug)
-                                    if not np.isclose(ratios_debug, 1.0, rtol=1e-2, atol=1e-2):
-                                        all_close_to_1 = False
-                            
+                        # logging
                         with torch.no_grad():
-                            valid = true_final_mask
+                            valid = mb_action_masks
                             valid_token_count = valid.sum()
                             if valid_token_count > 0:
                                 masked_logratio = logratio[valid]
@@ -439,24 +454,56 @@ if __name__ == "__main__":
                                 old_approx_kl = (-masked_logratio).mean()
                                 approx_kl = ((masked_ratio - 1) - masked_logratio).mean()
                                 epoch_approx_kls.append(approx_kl.item())
-                                clipfrac = ((masked_ratio - 1.0).abs() > args.clip_coef).float().mean().item()
-                                epoch_clipfracs.append(clipfrac)
+                                epoch_old_approx_kls.append(old_approx_kl.item())
 
+                        # dual-clip PPO loss
                         mb_advantages = mb_advantages.unsqueeze(-1)
-                        pg_loss1 = -mb_advantages * ratio
-                        pg_loss2 = -mb_advantages * torch.clamp(ratio, 1 - args.clip_coef, 1 + args.clip_coef)
-                        pg_loss_per_token = torch.max(pg_loss1, pg_loss2)
+                        pg_losses1 = -mb_advantages * ratio
+                        pg_losses2 = -mb_advantages * torch.clamp(ratio, 1 - cliprange_low, 1 + cliprange_high)
+                        clip_pg_losses1 = torch.maximum(pg_losses1, pg_losses2)
 
-                        pg_loss = (pg_loss_per_token * true_final_mask).sum() / true_final_mask.sum()
+                        # logging upper clipfracs
+                        upper_clipfrac_mask = (pg_losses2 > pg_losses1).float()
+                        if mb_action_masks.sum() > 0:
+                            clipfrac_upper = (upper_clipfrac_mask * mb_action_masks.float()).sum() / mb_action_masks.float().sum()
+                        else:
+                            clipfrac_upper = torch.tensor(0.0, device=upper_clipfrac_mask.device)
+                        epoch_clipfracs_upper.append(clipfrac_upper.item())
+
+                        # dual-clip PPO loss
+                        pg_losses3 = -mb_advantages * dual_clip_c
+                        clip_pg_losses2 = torch.min(pg_losses3, clip_pg_losses1)
+                        
+                        # logging lower clipfracs
+                        lower_clipfrac_mask = (clip_pg_losses1 > pg_losses3) & (mb_advantages < 0)
+                        if mb_action_masks.sum() > 0:
+                            clipfrac_lower = (lower_clipfrac_mask.float() * mb_action_masks.float()).sum() / mb_action_masks.float().sum()
+                        else:
+                            clipfrac_lower = torch.tensor(0.0, device=upper_clipfrac_mask.device)
+                        epoch_clipfracs_lower.append(clipfrac_lower.item())
+
+                        # dual-clip PPO loss
+                        if dual_clip_c > 1.0:
+                            pg_loss_per_token = torch.where(mb_advantages < 0, clip_pg_losses2, clip_pg_losses1)
+                        else:
+                            pg_loss_per_token = clip_pg_losses1
+                        
+                        # aggregate policy gradient loss
+                        pg_loss = (pg_loss_per_token * mb_action_masks).sum() / mb_action_masks.sum()
+                        
+                        # value loss
                         if args.clip_vloss:
                             v_loss_unclipped = (newvalue - mb_returns) ** 2
-                            v_clipped = mb_values + torch.clamp(newvalue - mb_values, -args.clip_coef, args.clip_coef)
+                            v_clipped = mb_values + torch.clamp(newvalue - mb_values, -cliprange_low, cliprange_high)
                             v_loss_clipped = (v_clipped - mb_returns) ** 2
                             v_loss_max = torch.max(v_loss_unclipped, v_loss_clipped)
                             v_loss = 0.5 * v_loss_max.mean()
                         else:
                             v_loss = 0.5 * ((newvalue - mb_returns) ** 2).mean()
-                        entropy_loss = (entropy_tensor * true_final_mask).sum() / true_final_mask.sum()
+
+                        # entropy loss 
+                        entropy_loss = (entropy_tensor * mb_action_masks).sum() / mb_action_masks.sum()
+                        # total loss
                         loss = pg_loss - args.ent_coef * entropy_loss + v_loss * args.vf_coef
 
                     accelerator.backward(loss)
@@ -464,14 +511,14 @@ if __name__ == "__main__":
                     optimizer.zero_grad()
 
         # clean per iteration only
-        del mb_obs, mb_input_ids, mb_prompt_lens, mb_attention_masks
+        del mb_obs, mb_input_ids, mb_prompt_lens
         del mb_logprobs, mb_advantages, mb_returns, mb_values
         if not is_critic_warmup:
-            del newlogprob, newvalue, entropy_tensor, f_mask, true_final_mask, logratio, ratio
+            del newlogprob, newvalue, entropy_tensor, mb_action_masks, logratio, ratio
         else:
             del newvalue
         gc_cuda_cleanup()
-        
+
         learning_time_completed = time.time() - learning_time_start
         # --- Logging ---
         if accelerator.is_main_process:
@@ -494,8 +541,12 @@ if __name__ == "__main__":
                 writer.add_scalar("losses/ratios_1st_epoch_1st_minibatch", np.mean(ratios_1st_epoch_1st_minibatch), global_step)
             if epoch_approx_kls:
                 writer.add_scalar("losses/approx_kl", np.mean(epoch_approx_kls), global_step)
-            if epoch_clipfracs:
-                writer.add_scalar("losses/clipfrac", np.mean(epoch_clipfracs), global_step)
+            if epoch_old_approx_kls:
+                writer.add_scalar("losses/old_approx_kl", np.mean(epoch_old_approx_kls), global_step)
+            if epoch_clipfracs_upper:
+                writer.add_scalar("losses/clipfrac_upper", np.mean(epoch_clipfracs_upper), global_step)
+            if epoch_clipfracs_lower:
+                writer.add_scalar("losses/clipfrac_lower", np.mean(epoch_clipfracs_lower), global_step)
 
             # --- Extra statistics logging for logprobs, ratio, value, etc ---
             if len(all_newlogprobs_stats) > 0:

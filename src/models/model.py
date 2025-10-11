@@ -174,19 +174,12 @@ class DecoupledActorCriticVLM(nn.Module):
         log_probs_all = torch.nn.functional.log_softmax(logits, dim=-1)
         log_probs = torch.gather(log_probs_all, 2, full_ids.unsqueeze(-1)).squeeze(-1)
 
-        indices = torch.arange(full_ids.shape[1], device=full_ids.device)
-        action_token_mask = indices[None, :] >= (prompt_lens)[:, None]
-        pad_mask = (full_ids != self.vlm.processor.tokenizer.pad_token_id)
-        final_mask = action_token_mask & pad_mask
-
-        masked_log_probs = log_probs * final_mask
         entropy = Categorical(logits=logits).entropy()
-        masked_entropy = entropy * final_mask
 
         if action_ids is None:
-            return masked_log_probs, full_ids, full_attention_mask, prompt_lens, generated_texts
+            return log_probs, full_ids, prompt_lens, generated_texts
         else:
-            return masked_log_probs, masked_entropy, final_mask
+            return log_probs, entropy
 
     def get_value(self, obs, prompt_text):
         # --- Set the active adapter to 'critic' ---
