@@ -26,8 +26,11 @@ from IPython import embed
 
 if __name__ == "__main__":
     args = tyro.cli(Args)
-
-    accelerator_cfg = {"gradient_accumulation_steps": args.gradient_accumulation_steps}
+    run_name = f"{args.env_id}__{args.exp_name}__{args.seed}__{int(time.time())}"
+    
+    accelerator_cfg = {
+        "gradient_accumulation_steps": args.gradient_accumulation_steps,
+    }
     if args.enable_compile:
         dynamo_plugin = TorchDynamoPlugin(
             backend="inductor",
@@ -36,6 +39,7 @@ if __name__ == "__main__":
             dynamic=False
         )
         accelerator_cfg["dynamo_plugin"] = dynamo_plugin
+        print("Using compilation!")
 
     accelerator = Accelerator(**accelerator_cfg)
     device = accelerator.device
@@ -77,8 +81,6 @@ if __name__ == "__main__":
 
     if accelerator.state.deepspeed_plugin is not None:
         accelerator.state.deepspeed_plugin.deepspeed_config['train_micro_batch_size_per_gpu'] = per_process_minibatch_size
-
-    run_name = f"{args.env_id}__{args.exp_name}__{args.seed}__{int(time.time())}"
 
     # --- Logging ---
     if accelerator.is_main_process:
@@ -132,7 +134,6 @@ if __name__ == "__main__":
         
     optimizer = optim.Adam(params, lr=args.learning_rate, eps=1e-5)
     agent, optimizer = accelerator.prepare(agent, optimizer)
-    gc_cuda_cleanup()
 
     # --- Storage Tensors ---
     obs = torch.zeros((args.num_steps, args.num_envs) + envs.single_observation_space.shape, device=device)
@@ -232,8 +233,9 @@ if __name__ == "__main__":
                             writer.add_scalar("charts/episodic_return", info["episode"]["r"], global_step)
                             writer.add_scalar("charts/episodic_length", info["episode"]["l"], global_step)
 
-            del reward, term, trunc, infos, logprob, f_ids, f_mask, p_len, action, value
-            gc_cuda_cleanup()
+            # TODO: is this necessary every step? 
+            #del reward, term, trunc, infos, logprob, f_ids, f_mask, p_len, action, value
+            #gc_cuda_cleanup()
             
         rollout_time_completed = time.time() - rollout_time_start
 
@@ -426,13 +428,14 @@ if __name__ == "__main__":
                     optimizer.step()
                     optimizer.zero_grad()
 
-                    del mb_obs, mb_input_ids, mb_prompt_lens, mb_attention_masks
-                    del mb_logprobs, mb_advantages, mb_returns, mb_values
-                    if not is_critic_warmup:
-                        del newlogprob, newvalue, entropy_tensor, f_mask, true_final_mask, logratio, ratio
-                    else:
-                        del newvalue
-                    gc_cuda_cleanup()
+                    # TODO: is this necessary every step? 
+                    # del mb_obs, mb_input_ids, mb_prompt_lens, mb_attention_masks
+                    # del mb_logprobs, mb_advantages, mb_returns, mb_values
+                    # if not is_critic_warmup:
+                    #     del newlogprob, newvalue, entropy_tensor, f_mask, true_final_mask, logratio, ratio
+                    # else:
+                    #     del newvalue
+                    # gc_cuda_cleanup()
 
         learning_time_completed = time.time() - learning_time_start
 
@@ -463,12 +466,6 @@ if __name__ == "__main__":
             sps = int(args.total_batch_size / (time.time() - start_time))
             writer.add_scalar("charts/SPS", sps, global_step)
             print(f"SPS: {sps} || value.loss : {v_loss.item()}, policy.loss : {pg_loss.item()}, policy.entropy : {entropy_loss.item()}")
-
-            if is_critic_warmup:
-                del minibatch_iter
-            else:
-                del minibatch_iter, epoch_clipfracs, epoch_approx_kls
-            gc_cuda_cleanup()
 
     envs.close()
     writer.close()
