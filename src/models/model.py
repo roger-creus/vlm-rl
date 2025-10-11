@@ -124,8 +124,13 @@ class DecoupledActorCriticVLM(nn.Module):
                 bias="none",
             )
 
-            self.actor_vlm.model.add_adapter(lora_config)
-            self.critic_vlm.model.add_adapter(lora_config)
+            for param in self.actor_vlm.model.parameters():
+                param.requires_grad = False
+            for param in self.critic_vlm.model.parameters():
+                param.requires_grad = False
+
+            self.actor_vlm.model = get_peft_model(self.actor_vlm.model, lora_config)
+            self.critic_vlm.model = get_peft_model(self.critic_vlm.model, lora_config)
 
     def get_trainable_params(self):
         params = []
