@@ -379,9 +379,6 @@ if __name__ == "__main__":
                                 epoch_clipfracs.append(clipfrac.item())
 
 
-                        if args.norm_adv:
-                            mb_advantages = (mb_advantages - mb_advantages.mean()) / (mb_advantages.std() + 1e-8)
-                            
                         mb_advantages = mb_advantages.unsqueeze(-1) 
                         pg_loss1 = -mb_advantages * ratio
                         pg_loss2 = -mb_advantages * torch.clamp(ratio, 1 - args.clip_coef, 1 + args.clip_coef)

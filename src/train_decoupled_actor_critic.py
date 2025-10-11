@@ -132,7 +132,7 @@ if __name__ == "__main__":
         print(f"Total trainable parameters: {sum(p.numel() for p in params)}")
         print("-" * 50)
         
-    optimizer = optim.Adam(params, lr=args.learning_rate, eps=1e-5)
+    optimizer = optim.Adam(params, lr=args.learning_rate)
     agent, optimizer = accelerator.prepare(agent, optimizer)
 
     # --- Storage Tensors ---
@@ -234,9 +234,11 @@ if __name__ == "__main__":
                             writer.add_scalar("charts/episodic_length", info["episode"]["l"], global_step)
 
             # TODO: is this necessary every step? 
-            #del reward, term, trunc, infos, logprob, f_ids, f_mask, p_len, action, value
-            #gc_cuda_cleanup()
-            
+            # del reward, term, trunc, infos, logprob, f_ids, f_mask, p_len, action, value
+            # gc_cuda_cleanup()
+        
+        del reward, term, trunc, infos, logprob, f_ids, f_mask, p_len, action, value
+        gc_cuda_cleanup()
         rollout_time_completed = time.time() - rollout_time_start
 
         # --- GAE ---
@@ -324,6 +326,13 @@ if __name__ == "__main__":
         for epoch in epoch_iter:
             epoch_clipfracs = []
             epoch_approx_kls = []
+            all_newlogprobs_stats = []
+            all_oldlogprobs_stats = []
+            all_logratios_stats = []
+            all_ratios_stats = []
+            all_values_stats = []
+            all_advantages_stats = []
+            all_returns_stats = []
 
             np.random.shuffle(b_inds)
             minibatch_iter = range(0, args.total_batch_size, args.minibatch_size)
@@ -359,6 +368,14 @@ if __name__ == "__main__":
                     mb_values = b_values[process_mb_inds].to(device)
                     mb_advantages = mb_advantages_global[proc_positions].to(device)
 
+                    # --- log statistics for values, advantages, returns at minibatch level always ---
+                    stats = lambda x: dict(
+                        mean=float(x.mean().cpu()), std=float(x.std().cpu()),
+                        min=float(x.min().cpu()), max=float(x.max().cpu()))
+                    all_values_stats.append(stats(mb_values))
+                    all_advantages_stats.append(stats(mb_advantages))
+                    all_returns_stats.append(stats(mb_returns))
+
                     if is_critic_warmup:
                         # Critic-only training step
                         newvalue = agent.get_value(obs=mb_obs, prompt_text=[prompt_text_critic] * mb_obs.shape[0]).view(-1)
@@ -389,24 +406,42 @@ if __name__ == "__main__":
                         ratio = logratio.exp()
                         ratio = torch.where(true_final_mask, ratio, 1.0)
 
+                        # --- Log statistics for (new/old) logprobs, logratio, ratio ---
+                        mask = true_final_mask
+                        mask_sum = mask.sum().cpu().item()
+                        if mask_sum > 0:
+                            # only valid positions
+                            newlogprob_masked = newlogprob[mask].detach().cpu()
+                            oldlogprob_masked = mb_logprobs[mask].detach().cpu()
+                            logratio_masked = logratio[mask].detach().cpu()
+                            ratio_masked = ratio[mask].detach().cpu()
+                            all_newlogprobs_stats.append(stats(newlogprob_masked))
+                            all_oldlogprobs_stats.append(stats(oldlogprob_masked))
+                            all_logratios_stats.append(stats(logratio_masked))
+                            all_ratios_stats.append(stats(ratio_masked))
+
                         if epoch == 0 and start == 0:
+                            all_close_to_1 = True
                             for mb_idx_inner in range(mb_obs.shape[0]):
                                 if true_final_mask[mb_idx_inner].any():
                                     ratios_debug = ratio[mb_idx_inner][torch.where(true_final_mask[mb_idx_inner])].mean().cpu().item()
                                     ratios_1st_epoch_1st_minibatch.append(ratios_debug)
-
+                                    print(ratios_debug)
+                                    if not np.isclose(ratios_debug, 1.0, rtol=1e-2, atol=1e-2):
+                                        all_close_to_1 = False
+                            
                         with torch.no_grad():
-                            valid_token_count = true_final_mask.sum()
+                            valid = true_final_mask
+                            valid_token_count = valid.sum()
                             if valid_token_count > 0:
-                                masked_logratio = torch.where(true_final_mask, logratio, 0.0)
-                                approx_kl = (((ratio - 1) - masked_logratio) * true_final_mask).sum() / valid_token_count
+                                masked_logratio = logratio[valid]
+                                masked_ratio = ratio[valid]
+                                old_approx_kl = (-masked_logratio).mean()
+                                approx_kl = ((masked_ratio - 1) - masked_logratio).mean()
                                 epoch_approx_kls.append(approx_kl.item())
-                                clipfrac = (torch.gt(torch.abs(ratio - 1.0), args.clip_coef).float() * true_final_mask).sum() / valid_token_count
-                                epoch_clipfracs.append(clipfrac.item())
+                                clipfrac = ((masked_ratio - 1.0).abs() > args.clip_coef).float().mean().item()
+                                epoch_clipfracs.append(clipfrac)
 
-                        if args.norm_adv:
-                            mb_advantages = (mb_advantages - mb_advantages.mean()) / (mb_advantages.std() + 1e-8)
-                        
                         mb_advantages = mb_advantages.unsqueeze(-1)
                         pg_loss1 = -mb_advantages * ratio
                         pg_loss2 = -mb_advantages * torch.clamp(ratio, 1 - args.clip_coef, 1 + args.clip_coef)
@@ -428,17 +463,16 @@ if __name__ == "__main__":
                     optimizer.step()
                     optimizer.zero_grad()
 
-                    # TODO: is this necessary every step? 
-                    # del mb_obs, mb_input_ids, mb_prompt_lens, mb_attention_masks
-                    # del mb_logprobs, mb_advantages, mb_returns, mb_values
-                    # if not is_critic_warmup:
-                    #     del newlogprob, newvalue, entropy_tensor, f_mask, true_final_mask, logratio, ratio
-                    # else:
-                    #     del newvalue
-                    # gc_cuda_cleanup()
-
+        # clean per iteration only
+        del mb_obs, mb_input_ids, mb_prompt_lens, mb_attention_masks
+        del mb_logprobs, mb_advantages, mb_returns, mb_values
+        if not is_critic_warmup:
+            del newlogprob, newvalue, entropy_tensor, f_mask, true_final_mask, logratio, ratio
+        else:
+            del newvalue
+        gc_cuda_cleanup()
+        
         learning_time_completed = time.time() - learning_time_start
-
         # --- Logging ---
         if accelerator.is_main_process:
             writer.add_scalar("charts/learning_rate", optimizer.param_groups[0]["lr"], global_step)
@@ -457,15 +491,66 @@ if __name__ == "__main__":
                 writer.add_scalar("warmup/value_loss", v_loss.item(), global_step)
 
             if ratios_1st_epoch_1st_minibatch:
-                writer.add_scalar("charts/ratios_1st_epoch_1st_minibatch", np.mean(ratios_1st_epoch_1st_minibatch), global_step)
+                writer.add_scalar("losses/ratios_1st_epoch_1st_minibatch", np.mean(ratios_1st_epoch_1st_minibatch), global_step)
             if epoch_approx_kls:
                 writer.add_scalar("losses/approx_kl", np.mean(epoch_approx_kls), global_step)
             if epoch_clipfracs:
                 writer.add_scalar("losses/clipfrac", np.mean(epoch_clipfracs), global_step)
 
+            # --- Extra statistics logging for logprobs, ratio, value, etc ---
+            if len(all_newlogprobs_stats) > 0:
+                keys = all_newlogprobs_stats[0].keys()
+                avgstats = lambda arr: {k: float(np.mean([d[k] for d in arr])) for k in keys}
+                writer.add_scalar("stats/newlogprob_mean", avgstats(all_newlogprobs_stats)["mean"], global_step)
+                writer.add_scalar("stats/newlogprob_std", avgstats(all_newlogprobs_stats)["std"], global_step)
+                writer.add_scalar("stats/newlogprob_min", avgstats(all_newlogprobs_stats)["min"], global_step)
+                writer.add_scalar("stats/newlogprob_max", avgstats(all_newlogprobs_stats)["max"], global_step)
+                writer.add_scalar("stats/oldlogprob_mean", avgstats(all_oldlogprobs_stats)["mean"], global_step)
+                writer.add_scalar("stats/oldlogprob_std", avgstats(all_oldlogprobs_stats)["std"], global_step)
+                writer.add_scalar("stats/oldlogprob_min", avgstats(all_oldlogprobs_stats)["min"], global_step)
+                writer.add_scalar("stats/oldlogprob_max", avgstats(all_oldlogprobs_stats)["max"], global_step)
+                writer.add_scalar("stats/logratio_mean", avgstats(all_logratios_stats)["mean"], global_step)
+                writer.add_scalar("stats/logratio_std", avgstats(all_logratios_stats)["std"], global_step)
+                writer.add_scalar("stats/logratio_min", avgstats(all_logratios_stats)["min"], global_step)
+                writer.add_scalar("stats/logratio_max", avgstats(all_logratios_stats)["max"], global_step)
+                writer.add_scalar("stats/ratio_mean", avgstats(all_ratios_stats)["mean"], global_step)
+                writer.add_scalar("stats/ratio_std", avgstats(all_ratios_stats)["std"], global_step)
+                writer.add_scalar("stats/ratio_min", avgstats(all_ratios_stats)["min"], global_step)
+                writer.add_scalar("stats/ratio_max", avgstats(all_ratios_stats)["max"], global_step)
+            if len(all_values_stats) > 0:
+                keys = all_values_stats[0].keys()
+                avgstats = lambda arr: {k: float(np.mean([d[k] for d in arr])) for k in keys}
+                writer.add_scalar("stats/values_mean", avgstats(all_values_stats)["mean"], global_step)
+                writer.add_scalar("stats/values_std", avgstats(all_values_stats)["std"], global_step)
+                writer.add_scalar("stats/values_min", avgstats(all_values_stats)["min"], global_step)
+                writer.add_scalar("stats/values_max", avgstats(all_values_stats)["max"], global_step)
+            if len(all_advantages_stats) > 0:
+                keys = all_advantages_stats[0].keys()
+                avgstats = lambda arr: {k: float(np.mean([d[k] for d in arr])) for k in keys}
+                writer.add_scalar("stats/advantages_mean", avgstats(all_advantages_stats)["mean"], global_step)
+                writer.add_scalar("stats/advantages_std", avgstats(all_advantages_stats)["std"], global_step)
+                writer.add_scalar("stats/advantages_min", avgstats(all_advantages_stats)["min"], global_step)
+                writer.add_scalar("stats/advantages_max", avgstats(all_advantages_stats)["max"], global_step)
+            if len(all_returns_stats) > 0:
+                keys = all_returns_stats[0].keys()
+                avgstats = lambda arr: {k: float(np.mean([d[k] for d in arr])) for k in keys}
+                writer.add_scalar("stats/returns_mean", avgstats(all_returns_stats)["mean"], global_step)
+                writer.add_scalar("stats/returns_std", avgstats(all_returns_stats)["std"], global_step)
+                writer.add_scalar("stats/returns_min", avgstats(all_returns_stats)["min"], global_step)
+                writer.add_scalar("stats/returns_max", avgstats(all_returns_stats)["max"], global_step)
+
             sps = int(args.total_batch_size / (time.time() - start_time))
             writer.add_scalar("charts/SPS", sps, global_step)
-            print(f"SPS: {sps} || value.loss : {v_loss.item()}, policy.loss : {pg_loss.item()}, policy.entropy : {entropy_loss.item()}")
+            print(
+                f"SPS: {sps} || value.loss : {v_loss.item()}, policy.loss : {pg_loss.item()}, policy.entropy : {entropy_loss.item()}",
+                "\n"
+                f"    newlogprob: {avgstats(all_newlogprobs_stats)['mean'] if all_newlogprobs_stats else 'n/a'} | "
+                f"oldlogprob: {avgstats(all_oldlogprobs_stats)['mean'] if all_oldlogprobs_stats else 'n/a'} | "
+                f"ratio: {avgstats(all_ratios_stats)['mean'] if all_ratios_stats else 'n/a'} | "
+                f"values: {avgstats(all_values_stats)['mean'] if all_values_stats else 'n/a'} | "
+                f"advantages: {avgstats(all_advantages_stats)['mean'] if all_advantages_stats else 'n/a'} | "
+                f"returns: {avgstats(all_returns_stats)['mean'] if all_returns_stats else 'n/a'}"
+            )
 
     envs.close()
     writer.close()
