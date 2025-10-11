@@ -98,7 +98,6 @@ class DecoupledActorCriticVLM(nn.Module):
     """
     def __init__(
         self,
-        # --- MODIFIED: Only one VLM name is needed ---
         vlm_name: str,
         max_new_tokens: int = 128,
         lora_r: int = 16,
@@ -202,7 +201,6 @@ class DecoupledActorCriticVLM(nn.Module):
         return self.critic_head(last_hidden)
     
     
-# --- SHARED ACTOR-CRITIC ---
 class SharedActorCriticVLM(BaseVLM):
     """
     Shared actor-critic: uses a single VLM for both action and value.
