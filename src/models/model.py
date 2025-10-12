@@ -43,13 +43,14 @@ class BaseVLM(nn.Module):
             trust_remote_code=True,
             min_pixels=210 * 160 * 3,
             max_pixels=210 * 160 * 3,
+            patch_size=8,
         )
         self.model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
             vlm_name,
-            #dtype=torch.bfloat16,
-            dtype=torch.float32,
+            dtype=torch.bfloat16,
+            #dtype=torch.float32,
             trust_remote_code=True,
-            #attn_implementation="flash_attention_2",
+            attn_implementation="flash_attention_2",
         )
 
     def preprocess_obs_and_text(self, obs, text_prompts):
@@ -118,7 +119,7 @@ class DecoupledActorCriticVLM(nn.Module):
             r=lora_r,
             lora_alpha=lora_alpha,
             lora_dropout=lora_dropout,
-            init_lora_weights="gaussian",
+            init_lora_weights=True,
             target_modules=default_target_modules(),
             bias="none",
         )
@@ -152,8 +153,8 @@ class DecoupledActorCriticVLM(nn.Module):
                 **inputs,
                 max_new_tokens=self.max_new_tokens,
                 do_sample=True,
-                temperature=0.7,
-                top_p=0.9,
+                #temperature=0.7,
+                #top_p=0.9,
             )
             generated_texts = self.vlm.processor.batch_decode(
                 full_ids[:, inputs.input_ids.shape[1]:], skip_special_tokens=True
@@ -162,10 +163,10 @@ class DecoupledActorCriticVLM(nn.Module):
         else:
             full_ids = action_ids
 
-        full_attention_mask = (full_ids != self.vlm.processor.tokenizer.pad_token_id).long()
+        #full_attention_mask = (full_ids != self.vlm.processor.tokenizer.pad_token_id).long()
         outputs = self.vlm.model(
             input_ids=full_ids,
-            attention_mask=full_attention_mask,
+            #attention_mask=full_attention_mask,
             image_grid_thw=image_grid_thw,
             pixel_values=pixel_values,
             output_hidden_states=True
@@ -224,8 +225,8 @@ class SharedActorCriticVLM(BaseVLM):
                 **inputs,
                 max_new_tokens=self.max_new_tokens,
                 do_sample=True,
-                temperature=0.7,
-                top_p=0.9,
+                #temperature=0.7,
+                #top_p=0.9,
             )
             generated_texts = self.processor.batch_decode(
                 full_ids[:, inputs.input_ids.shape[1]:], skip_special_tokens=True

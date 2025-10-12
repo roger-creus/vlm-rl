@@ -19,8 +19,3 @@ Your entire response must follow this exact multi-line format. Do NOT use JSON o
 
 THOUGHTS: [Your reasoning for the chosen action, based on your analysis of the game state from the image.]
 ACTION: [Your single chosen action]
-
-### Example:
-
-THOUGHTS: The path to my left is clear and leads to a large pellet cluster. The blue ghost is far right, so moving left is safe and achieves the objective of clearing pellets.
-ACTION: LEFT

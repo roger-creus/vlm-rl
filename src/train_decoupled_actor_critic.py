@@ -127,7 +127,7 @@ if __name__ == "__main__":
         print(f"Total trainable parameters: {sum(p.numel() for p in params)}")
         print("-" * 50)
         
-    optimizer = optim.AdamW(params, lr=args.learning_rate, weight_decay=args.weight_decay)
+    optimizer = optim.AdamW(params, lr=args.learning_rate, weight_decay=args.weight_decay, betas=(0.85, 0.9))
     agent, optimizer = accelerator.prepare(agent, optimizer)
 
     # --- Storage Tensors ---
@@ -388,7 +388,7 @@ if __name__ == "__main__":
                     # logging
                     stats = lambda x: dict(
                         mean=float(x.mean().cpu()), std=float(x.std().cpu()),
-                        min=float(x.min().cpu()), max=float(x.max().cpu()))
+                        min=float(x.min().cpu()), max=float(x.max().cpu()), median=float(x.median().cpu()))
                     all_values_stats.append(stats(mb_values))
                     all_advantages_stats.append(stats(mb_advantages))
                     all_returns_stats.append(stats(mb_returns))
