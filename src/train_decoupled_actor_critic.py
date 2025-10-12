@@ -189,11 +189,11 @@ if __name__ == "__main__":
             seq_len = min(f_ids.shape[1], args.max_seq_len) # length of the longest generated text in the batch (across environments)
             full_input_ids[step, :, :seq_len] = f_ids[:, :seq_len]
             prompt_lens[step] = p_len
+            truncated_ids = f_ids[:, :seq_len]
             
             # IMPORTANT: Recompute mask for the TRUNCATED sequence
             indices = torch.arange(seq_len, device=device)
             action_token_mask = indices[None, :] >= p_len[:, None]
-            truncated_ids = f_ids[:, :seq_len]
             pad_mask = (truncated_ids != agent.vlm.processor.tokenizer.pad_token_id)
             truncated_action_mask = (action_token_mask & pad_mask).long()
 
@@ -230,6 +230,10 @@ if __name__ == "__main__":
                     )
                     interaction_log_file.write(log_entry)
                     interaction_log_file.flush()
+
+                    if args.track:
+                        writer.add_text("debug/vlm_output", str(generated_texts[0]), global_step)
+                        writer.add_image("debug/observation", np.array(log_image), global_step, dataformats='HWC')
 
                 if "final_info" in infos:
                     for info in infos["final_info"]:

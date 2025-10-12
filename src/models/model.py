@@ -43,7 +43,7 @@ class BaseVLM(nn.Module):
             trust_remote_code=True,
             min_pixels=210 * 160 * 3,
             max_pixels=210 * 160 * 3,
-            patch_size=8,
+            #patch_size=7,
         )
         self.model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
             vlm_name,
