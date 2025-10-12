@@ -31,7 +31,7 @@ class Args:
     """Path to the text file containing the actor's prompt."""
 
     # --- Evaluation Arguments ---
-    num_eval_episodes: int = 1
+    num_eval_episodes: int = 5
     """The number of episodes to run for evaluation."""
     max_new_tokens: int = 128
     """The maximum number of new tokens to generate for an action."""
