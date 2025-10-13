@@ -137,7 +137,15 @@ if __name__ == "__main__":
     values = torch.zeros((args.num_steps, args.num_envs), device=device)
     prompt_lens = torch.zeros((args.num_steps, args.num_envs), dtype=torch.long, device=device)
     action_masks = torch.zeros((args.num_steps, args.num_envs, args.max_seq_len), dtype=torch.long, device=device)
-    full_input_ids = torch.zeros((args.num_steps, args.num_envs, args.max_seq_len), dtype=torch.long, device=device)
+    # initialize full_input_ids with the pad token id
+    pad_token_id = agent.vlm.processor.tokenizer.pad_token_id
+    if accelerator.is_main_process: print(f"Pad token id: {pad_token_id}")
+    full_input_ids = torch.full(
+        (args.num_steps, args.num_envs, args.max_seq_len),
+        fill_value=pad_token_id,
+        dtype=torch.long,
+        device=device
+    )
     logprobs = torch.zeros((args.num_steps, args.num_envs, args.max_seq_len), device=device)
 
     # --- Start training ---
@@ -447,7 +455,10 @@ if __name__ == "__main__":
                                 if mb_action_masks[mb_idx_inner].any():
                                     ratios_debug = ratio[mb_idx_inner][torch.where(mb_action_masks[mb_idx_inner].bool())].mean().cpu().item()
                                     ratios_1st_epoch_1st_minibatch.append(ratios_debug)
+                                    # if ratios_debug is not close to 1, embed for inspection
                                     print(ratios_debug)
+                                    if abs(ratios_debug - 1) > 0.1:
+                                        from IPython import embed; embed()
                         # logging
                         with torch.no_grad():
                             valid = mb_action_masks

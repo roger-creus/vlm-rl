@@ -42,7 +42,7 @@ class Args:
     """the number of mini-batches"""
     gradient_accumulation_steps: int = 32
     """the number of gradient accumulation steps"""
-    update_epochs: int = 2
+    update_epochs: int = 1
     """the K epochs to update the policy"""
     norm_adv: bool = True
     """Toggles advantages normalization"""

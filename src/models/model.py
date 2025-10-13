@@ -47,10 +47,10 @@ class BaseVLM(nn.Module):
         )
         self.model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
             vlm_name,
-            dtype=torch.bfloat16,
-            #dtype=torch.float32,
+            #dtype=torch.bfloat16,
+            dtype=torch.float32,
             trust_remote_code=True,
-            attn_implementation="flash_attention_2",
+            #attn_implementation="flash_attention_2",
         )
 
     def preprocess_obs_and_text(self, obs, text_prompts):
@@ -167,10 +167,8 @@ class DecoupledActorCriticVLM(nn.Module):
         else:
             full_ids = action_ids
 
-        #full_attention_mask = (full_ids != self.vlm.processor.tokenizer.pad_token_id).long()
         outputs = self.vlm.model(
             input_ids=full_ids,
-            #attention_mask=full_attention_mask,
             image_grid_thw=image_grid_thw,
             pixel_values=pixel_values,
             output_hidden_states=True
