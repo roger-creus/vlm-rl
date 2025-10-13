@@ -455,10 +455,8 @@ if __name__ == "__main__":
                                 if mb_action_masks[mb_idx_inner].any():
                                     ratios_debug = ratio[mb_idx_inner][torch.where(mb_action_masks[mb_idx_inner].bool())].mean().cpu().item()
                                     ratios_1st_epoch_1st_minibatch.append(ratios_debug)
-                                    # if ratios_debug is not close to 1, embed for inspection
                                     print(ratios_debug)
-                                    if abs(ratios_debug - 1) > 0.1:
-                                        from IPython import embed; embed()
+                                    
                         # logging
                         with torch.no_grad():
                             valid = mb_action_masks
