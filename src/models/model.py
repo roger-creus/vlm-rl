@@ -101,38 +101,41 @@ class DecoupledActorCriticVLM(nn.Module):
         self,
         vlm_name: str,
         max_new_tokens: int = 128,
+        use_lora: bool = True,
         lora_r: int = 16,
         lora_alpha: int = 32,
         lora_dropout: float = 0.0,
     ):
         super().__init__()
+        self.use_lora = use_lora
         self.vlm = BaseVLM(vlm_name, max_new_tokens)
         
         hidden_size = self.vlm.model.config.hidden_size
         self.critic_head = CriticHead(hidden_size).to(self.vlm.model.dtype)
         self.max_new_tokens = max_new_tokens
 
-        for param in self.vlm.model.parameters():
-            param.requires_grad = False
+        if self.use_lora:
+            for param in self.vlm.model.parameters():
+                param.requires_grad = False
 
-        lora_config = LoraConfig(
-            r=lora_r,
-            lora_alpha=lora_alpha,
-            lora_dropout=lora_dropout,
-            init_lora_weights=True,
-            target_modules=default_target_modules(),
-            bias="none",
-        )
+            lora_config = LoraConfig(
+                r=lora_r,
+                lora_alpha=lora_alpha,
+                lora_dropout=lora_dropout,
+                init_lora_weights=True,
+                target_modules=default_target_modules(),
+                bias="none",
+            )
 
-        self.vlm.model.add_adapter(
-            lora_config,
-            adapter_name="actor"
-        )
+            self.vlm.model.add_adapter(
+                lora_config,
+                adapter_name="actor"
+            )
 
-        self.vlm.model.add_adapter(
-            lora_config,
-            adapter_name="critic"
-        )
+            self.vlm.model.add_adapter(
+                lora_config,
+                adapter_name="critic"
+            )
         
     def get_trainable_params(self):
         params = self.vlm.get_trainable_params()
@@ -140,8 +143,9 @@ class DecoupledActorCriticVLM(nn.Module):
         return params
 
     def get_action(self, obs=None, text_prompts=None, action_ids=None, prompt_lens=None):
-        # --- Set the active adapter to 'actor' ---
-        self.vlm.model.set_adapter("actor")
+        if self.use_lora:
+            # --- Set the active adapter to 'actor' ---
+            self.vlm.model.set_adapter("actor")
         
         batch_size = len(text_prompts)
         inputs = self.vlm.preprocess_obs_and_text(obs, text_prompts)
@@ -183,8 +187,9 @@ class DecoupledActorCriticVLM(nn.Module):
             return log_probs, entropy
 
     def get_value(self, obs, prompt_text):
-        # --- Set the active adapter to 'critic' ---
-        self.vlm.model.set_adapter("critic")
+        if self.use_lora:
+            # --- Set the active adapter to 'critic' ---
+            self.vlm.model.set_adapter("critic")
         
         inputs = self.vlm.preprocess_obs_and_text(obs, prompt_text)
         outputs = self.vlm.model(
@@ -193,8 +198,7 @@ class DecoupledActorCriticVLM(nn.Module):
         )
         last_hidden = self.vlm.last_hidden_state(outputs.hidden_states[-1], inputs['attention_mask'])
         return self.critic_head(last_hidden)
-    
-    
+
 class SharedActorCriticVLM(BaseVLM):
     """
     Shared actor-critic: uses a single VLM for both action and value.
