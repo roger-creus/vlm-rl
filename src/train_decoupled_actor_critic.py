@@ -196,19 +196,41 @@ if __name__ == "__main__":
                 )
                 values[step] = value.flatten()
 
-            seq_len = min(f_ids.shape[1], args.max_seq_len) # length of the longest generated text in the batch (across environments)
-            truncated_ids = f_ids[:, :seq_len]
-            full_input_ids[step, :, :seq_len] = truncated_ids
-            prompt_lens[step] = p_len
-            
-            # IMPORTANT: Recompute mask for the TRUNCATED sequence
-            indices = torch.arange(seq_len, device=device)
-            action_token_mask = indices[None, :] >= p_len[:, None]
-            pad_mask = (truncated_ids != agent.vlm.processor.tokenizer.pad_token_id)
-            truncated_action_mask = (action_token_mask & pad_mask).long()
+            # --- START: MODIFIED CODE ---
+            # The generated full_ids (f_ids) might be shorter or longer than max_seq_len
+            seq_len = f_ids.shape[1]
+            p_len = p_len.unsqueeze(1) # Ensure p_len can be broadcast correctly
 
-            action_masks[step, :, :seq_len] = truncated_action_mask
-            logprobs[step, :, :seq_len] = logprob
+            # We need to create padded/truncated versions of everything to fit our storage tensors
+            padded_ids = torch.full(
+                (args.num_envs, args.max_seq_len),
+                fill_value=pad_token_id,
+                dtype=torch.long,
+                device=device
+            )
+            padded_logprob = torch.zeros(
+                (args.num_envs, args.max_seq_len),
+                dtype=torch.float32,
+                device=device
+            )
+
+            # Truncate or pad the generated sequence and its logprobs
+            copy_len = min(seq_len, args.max_seq_len)
+            padded_ids[:, :copy_len] = f_ids[:, :copy_len]
+            padded_logprob[:, :copy_len] = logprob[:, :copy_len]
+
+            # Now, store the consistently shaped tensors
+            full_input_ids[step] = padded_ids
+            logprobs[step] = padded_logprob
+            prompt_lens[step] = p_len.squeeze()
+
+            # Recompute mask for the correctly padded/truncated sequence
+            indices = torch.arange(args.max_seq_len, device=device).unsqueeze(0)
+            action_token_mask = indices >= p_len
+            pad_mask = (padded_ids != pad_token_id)
+            action_masks[step] = (action_token_mask & pad_mask).long()
+
+            # --- END: MODIFIED CODE ---
             
             generation_lengths.append(seq_len - p_len[0].cpu().item())
             seq_len_errors.append(1 if seq_len >= args.max_seq_len else 0)
