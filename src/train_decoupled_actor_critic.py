@@ -451,46 +451,65 @@ if __name__ == "__main__":
                             all_logratios_stats.append(stats(logratio_masked))
                             all_ratios_stats.append(stats(ratio_masked))
 
-                        # only do plots for problematic batch elements (tokens) in 1st 1st
+                        # --- Plot logprobs for problematic samples in the first minibatch of the first epoch ---
                         if (epoch == 0 and start == 0 and not logprobs_barplot_logged and accelerator.is_main_process):
+                            # Keep track of how many plots we've logged to avoid spamming TensorBoard
+                            plots_logged = 0
+                            max_plots_to_log = 5  # Set a limit for the number of plots
+
                             for mb_idx_inner in range(mb_obs.shape[0]):
                                 mask = mb_action_masks[mb_idx_inner].bool()
                                 if mask.any():
+                                    # Calculate the mean ratio for this sample's action tokens
                                     ratios_debug = ratio[mb_idx_inner][mask].mean().cpu().item()
                                     ratios_1st_epoch_1st_minibatch.append(ratios_debug)
-                                    print(ratios_debug)
-                                    try:
-                                        # Cast to float32 before .numpy() to avoid PIL error with BFloat16/Torch float16
-                                        newlogprobs_tokens = newlogprob[mb_idx_inner][mask].detach().cpu().to(torch.float32).numpy()
-                                        oldlogprobs_tokens = mb_logprobs[mb_idx_inner][mask].detach().cpu().to(torch.float32).numpy()
-                                        num_tokens = len(oldlogprobs_tokens)
-                                        x = np.arange(num_tokens)
-                                        width = 0.35
-                                        fig, ax = plt.subplots(figsize=(min(15, max(6, num_tokens/8)), 6))
-                                        ax.bar(x - width/2, oldlogprobs_tokens, width, label="old_logprob")
-                                        ax.bar(x + width/2, newlogprobs_tokens, width, label="new_logprob")
-                                        ax.set_xlabel("Token Index")
-                                        ax.set_ylabel("Log Probability")
-                                        ax.set_title(f"Old vs New logprobs (Sample {mb_idx_inner}, ratios={ratios_debug:.5f})")
-                                        ax.legend()
-                                        buf = BytesIO()
-                                        plt.tight_layout()
-                                        plt.savefig(buf, format='png')
-                                        buf.seek(0)
-                                        # Read image buffer as uint8 before writing to Tensorboard
-                                        buf_arr = np.array(plt.imread(buf))
-                                        if buf_arr.dtype != np.uint8:
-                                            buf_arr = (buf_arr * 255).astype(np.uint8)
-                                        writer.add_image(
-                                            f"debug/1st_epoch1stminibatch_logprobs_barplot/batch{mb_idx_inner}",
-                                            buf_arr, 
-                                            global_step, 
-                                            dataformats='HWC'
-                                        )
-                                        buf.close()
-                                        plt.close(fig)
-                                    except Exception as e:
-                                        print(f"Failed to plot barplot for 1st minibatch logprobs (batch {mb_idx_inner}): {e}")
+
+                                    # Define a "problematic" sample as one with a ratio far from 1.0
+                                    is_problematic = ratios_debug > 1.5 or ratios_debug < 0.7
+                                    
+                                    # If the sample is problematic and we haven't logged too many plots yet
+                                    if is_problematic and plots_logged < max_plots_to_log:
+                                        try:
+                                            newlogprobs_tokens = newlogprob[mb_idx_inner][mask].detach().cpu().to(torch.float32).numpy()
+                                            oldlogprobs_tokens = mb_logprobs[mb_idx_inner][mask].detach().cpu().to(torch.float32).numpy()
+                                            
+                                            num_tokens = len(oldlogprobs_tokens)
+                                            x = np.arange(num_tokens)
+                                            width = 0.35
+                                            
+                                            fig, ax = plt.subplots(figsize=(min(20, max(8, num_tokens * 0.8)), 6))
+                                            
+                                            ax.bar(x - width/2, oldlogprobs_tokens, width, label="Old Logprob")
+                                            ax.bar(x + width/2, newlogprobs_tokens, width, label="New Logprob")
+                                            
+                                            ax.set_xlabel("Action Token Index")
+                                            ax.set_ylabel("Log Probability")
+                                            ax.set_title(f"Logprobs for Problematic Sample {mb_idx_inner} (Ratio = {ratios_debug:.4f})")
+                                            ax.legend()
+                                            ax.grid(axis='y', linestyle='--', alpha=0.7)
+                                            
+                                            buf = BytesIO()
+                                            plt.tight_layout()
+                                            plt.savefig(buf, format='png')
+                                            buf.seek(0)
+                                            
+                                            plot_image_arr = (plt.imread(buf) * 255).astype(np.uint8)
+
+                                            writer.add_image(
+                                                f"debug/problematic_logprobs/batch_{mb_idx_inner}",
+                                                plot_image_arr, 
+                                                global_step, 
+                                                dataformats='HWC'
+                                            )
+                                            
+                                            buf.close()
+                                            plt.close(fig)
+                                            
+                                            plots_logged += 1
+                                            
+                                        except Exception as e:
+                                            print(f"Failed to plot barplot for problematic sample (batch {mb_idx_inner}): {e}")
+
                             logprobs_barplot_logged = True
 
                         # logging
