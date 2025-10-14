@@ -12,6 +12,8 @@ from collections import deque
 from accelerate.utils import TorchDynamoPlugin
 from accelerate import Accelerator 
 from tqdm import tqdm
+import matplotlib.pyplot as plt
+from io import BytesIO
 
 from src.models.model import DecoupledActorCriticVLM
 from src.utils.args import Args
@@ -195,9 +197,9 @@ if __name__ == "__main__":
                 values[step] = value.flatten()
 
             seq_len = min(f_ids.shape[1], args.max_seq_len) # length of the longest generated text in the batch (across environments)
-            full_input_ids[step, :, :seq_len] = f_ids[:, :seq_len]
-            prompt_lens[step] = p_len
             truncated_ids = f_ids[:, :seq_len]
+            full_input_ids[step, :, :seq_len] = truncated_ids
+            prompt_lens[step] = p_len
             
             # IMPORTANT: Recompute mask for the TRUNCATED sequence
             indices = torch.arange(seq_len, device=device)
@@ -206,7 +208,7 @@ if __name__ == "__main__":
             truncated_action_mask = (action_token_mask & pad_mask).long()
 
             action_masks[step, :, :seq_len] = truncated_action_mask
-            logprobs[step, :, :seq_len] = logprob[:, :seq_len]
+            logprobs[step, :, :seq_len] = logprob
             
             generation_lengths.append(seq_len - p_len[0].cpu().item())
             seq_len_errors.append(1 if seq_len >= args.max_seq_len else 0)
@@ -331,11 +333,11 @@ if __name__ == "__main__":
         
         if accelerator.is_main_process:
             print("Training...")
-        
+
         # --- Training ---
         b_inds = np.arange(args.total_batch_size)
         is_critic_warmup = iteration <= args.critic_warmup_iterations
-        
+
         epoch_iter = range(args.update_epochs)
         if accelerator.is_main_process:
             epoch_iter = tqdm(epoch_iter, desc="Epochs")
@@ -344,9 +346,9 @@ if __name__ == "__main__":
         cliprange_high = args.clip_coef_upper
         dual_clip_c = args.dual_clip_c
         ratios_1st_epoch_1st_minibatch = []
+        logprobs_barplot_logged = False
 
         learning_time_start = time.time()
-        # multiple epochs of training on the gathered data batch
         for epoch in epoch_iter:
             epoch_clipfracs_upper = []
             epoch_clipfracs_lower = []
@@ -373,10 +375,10 @@ if __name__ == "__main__":
             for mb_idx, start in enumerate(minibatch_iter):
                 if accelerator.is_main_process and hasattr(minibatch_iter, "set_postfix"):
                     minibatch_iter.set_postfix({"minibatch": mb_idx})
-                
+
                 end = start + args.minibatch_size
                 mb_inds = b_inds[start:end]
-                
+
                 # normalize advantages at minibatch level BEFORE sharding across processes
                 proc_positions = torch.tensor(np.arange(len(mb_inds))[accelerator.process_index::accelerator.num_processes], dtype=torch.long, device=device)
                 mb_advantages_global = b_advantages[mb_inds]
@@ -396,7 +398,7 @@ if __name__ == "__main__":
                     mb_values = b_values[process_mb_inds].to(device)
                     mb_advantages = mb_advantages_global[proc_positions].to(device)
                     mb_action_masks = b_action_masks[process_mb_inds].to(device)
-                    
+
                     # logging
                     stats = lambda x: dict(
                         mean=float(x.mean().cpu()), std=float(x.std().cpu()),
@@ -433,7 +435,7 @@ if __name__ == "__main__":
                         # clamp logratio for stability
                         if args.logratio_clamp > 0:
                             logratio = torch.clamp(logratio, min=-args.logratio_clamp, max=args.logratio_clamp)
-                            
+
                         logratio = torch.where(mb_action_masks.bool(), logratio, torch.zeros_like(logratio))
                         ratio = torch.exp(logratio)
 
@@ -449,14 +451,48 @@ if __name__ == "__main__":
                             all_logratios_stats.append(stats(logratio_masked))
                             all_ratios_stats.append(stats(ratio_masked))
 
-                        # logging
-                        if epoch == 0 and start == 0:
+                        # only do plots for problematic batch elements (tokens) in 1st 1st
+                        if (epoch == 0 and start == 0 and not logprobs_barplot_logged and accelerator.is_main_process):
                             for mb_idx_inner in range(mb_obs.shape[0]):
-                                if mb_action_masks[mb_idx_inner].any():
-                                    ratios_debug = ratio[mb_idx_inner][torch.where(mb_action_masks[mb_idx_inner].bool())].mean().cpu().item()
+                                mask = mb_action_masks[mb_idx_inner].bool()
+                                if mask.any():
+                                    ratios_debug = ratio[mb_idx_inner][mask].mean().cpu().item()
                                     ratios_1st_epoch_1st_minibatch.append(ratios_debug)
                                     print(ratios_debug)
-                                    
+                                    try:
+                                        # Cast to float32 before .numpy() to avoid PIL error with BFloat16/Torch float16
+                                        newlogprobs_tokens = newlogprob[mb_idx_inner][mask].detach().cpu().to(torch.float32).numpy()
+                                        oldlogprobs_tokens = mb_logprobs[mb_idx_inner][mask].detach().cpu().to(torch.float32).numpy()
+                                        num_tokens = len(oldlogprobs_tokens)
+                                        x = np.arange(num_tokens)
+                                        width = 0.35
+                                        fig, ax = plt.subplots(figsize=(min(15, max(6, num_tokens/8)), 6))
+                                        ax.bar(x - width/2, oldlogprobs_tokens, width, label="old_logprob")
+                                        ax.bar(x + width/2, newlogprobs_tokens, width, label="new_logprob")
+                                        ax.set_xlabel("Token Index")
+                                        ax.set_ylabel("Log Probability")
+                                        ax.set_title(f"Old vs New logprobs (Sample {mb_idx_inner}, ratios={ratios_debug:.5f})")
+                                        ax.legend()
+                                        buf = BytesIO()
+                                        plt.tight_layout()
+                                        plt.savefig(buf, format='png')
+                                        buf.seek(0)
+                                        # Read image buffer as uint8 before writing to Tensorboard
+                                        buf_arr = np.array(plt.imread(buf))
+                                        if buf_arr.dtype != np.uint8:
+                                            buf_arr = (buf_arr * 255).astype(np.uint8)
+                                        writer.add_image(
+                                            f"debug/1st_epoch1stminibatch_logprobs_barplot/batch{mb_idx_inner}",
+                                            buf_arr, 
+                                            global_step, 
+                                            dataformats='HWC'
+                                        )
+                                        buf.close()
+                                        plt.close(fig)
+                                    except Exception as e:
+                                        print(f"Failed to plot barplot for 1st minibatch logprobs (batch {mb_idx_inner}): {e}")
+                            logprobs_barplot_logged = True
+
                         # logging
                         with torch.no_grad():
                             valid = mb_action_masks
@@ -486,7 +522,7 @@ if __name__ == "__main__":
                         # dual-clip PPO loss
                         pg_losses3 = -mb_advantages * dual_clip_c
                         clip_pg_losses2 = torch.min(pg_losses3, clip_pg_losses1)
-                        
+
                         # logging lower clipfracs
                         lower_clipfrac_mask = (clip_pg_losses1 > pg_losses3) & (mb_advantages < 0)
                         if mb_action_masks.sum() > 0:
@@ -500,10 +536,10 @@ if __name__ == "__main__":
                             pg_loss_per_token = torch.where(mb_advantages < 0, clip_pg_losses2, clip_pg_losses1)
                         else:
                             pg_loss_per_token = clip_pg_losses1
-                        
+
                         # aggregate policy gradient loss
                         pg_loss = (pg_loss_per_token * mb_action_masks).sum() / mb_action_masks.sum()
-                        
+
                         # value loss
                         if args.clip_vloss:
                             v_loss_unclipped = (newvalue - mb_returns) ** 2

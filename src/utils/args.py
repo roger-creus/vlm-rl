@@ -59,7 +59,7 @@ class Args:
     """the directory to save interaction logs"""
 
     # VLM specific arguments
-    vlm_name: str = "Qwen/Qwen2.5-VL-3B-Instruct"
+    vlm_name: str = "Qwen/Qwen3-VL-4B-Instruct"
     """The model ID from Hugging Face."""
     prompt_actor_path: str = "prompt_actor.txt"
     """Path to a file containing the text prompt for the VLM."""

@@ -5,9 +5,8 @@ from peft import LoraConfig, get_peft_model
 
 from IPython import embed
 from torch.distributions.categorical import Categorical
-from transformers import Qwen2_5_VLForConditionalGeneration, AutoTokenizer, AutoProcessor
-
-from src.utils.utils import numpy_to_pil, gc_cuda_cleanup
+from transformers import AutoTokenizer, AutoProcessor
+from src.utils.utils import numpy_to_pil, gc_cuda_cleanup, get_model_class
 
 def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
     torch.nn.init.orthogonal_(layer.weight, std)
@@ -45,12 +44,13 @@ class BaseVLM(nn.Module):
             max_pixels=210 * 160 * 3,
             #patch_size=7,
         )
-        self.model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+        mdl_cls = get_model_class(vlm_name)
+        self.model = mdl_cls.from_pretrained(
             vlm_name,
-            #dtype=torch.bfloat16,
-            dtype=torch.float32,
+            dtype=torch.bfloat16,
+            #dtype=torch.float32,
             trust_remote_code=True,
-            #attn_implementation="flash_attention_2",
+            attn_implementation="flash_attention_2",
         )
 
     def preprocess_obs_and_text(self, obs, text_prompts):
@@ -110,7 +110,7 @@ class DecoupledActorCriticVLM(nn.Module):
         self.use_lora = use_lora
         self.vlm = BaseVLM(vlm_name, max_new_tokens)
         
-        hidden_size = self.vlm.model.config.hidden_size
+        hidden_size = self.vlm.model.config.text_config.hidden_size
         self.critic_head = CriticHead(hidden_size).to(self.vlm.model.dtype)
         self.max_new_tokens = max_new_tokens
 
@@ -157,8 +157,10 @@ class DecoupledActorCriticVLM(nn.Module):
                 **inputs,
                 max_new_tokens=self.max_new_tokens,
                 do_sample=True,
-                #temperature=0.7,
-                #top_p=0.9,
+                top_p=0.8,
+                temperature=0.7,
+                top_k=20,
+                repetition_penalty=1.0,
             )
             generated_texts = self.vlm.processor.batch_decode(
                 full_ids[:, inputs.input_ids.shape[1]:], skip_special_tokens=True
@@ -167,11 +169,13 @@ class DecoupledActorCriticVLM(nn.Module):
         else:
             full_ids = action_ids
 
+        attention_mask = (full_ids != self.vlm.processor.tokenizer.pad_token_id).long()
         outputs = self.vlm.model(
             input_ids=full_ids,
             image_grid_thw=image_grid_thw,
             pixel_values=pixel_values,
-            output_hidden_states=True
+            output_hidden_states=True,
+            attention_mask=attention_mask,
         )
         logits = outputs.logits
         log_probs_all = torch.nn.functional.log_softmax(logits, dim=-1)

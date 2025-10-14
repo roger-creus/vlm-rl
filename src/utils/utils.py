@@ -57,3 +57,12 @@ def print_trainable_parameters(model):
     print(
         f"trainable params: {trainable_params} || all params: {all_param} || trainable%: {100 * trainable_params / all_param:.2f}"
     )
+    
+from transformers import Qwen3VLForConditionalGeneration, Qwen2_5_VLForConditionalGeneration
+def get_model_class(model_name: str):
+    if "Qwen3" in model_name:
+        return Qwen3VLForConditionalGeneration
+    elif "Qwen2_5" in model_name:
+        return Qwen2_5_VLForConditionalGeneration
+    else:
+        raise ValueError(f"Model {model_name} not supported")
