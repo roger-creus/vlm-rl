@@ -32,7 +32,7 @@ class Args:
     """Path to the text file containing the actor's prompt."""
 
     # --- Evaluation Arguments ---
-    num_eval_episodes: int = 10
+    num_eval_episodes: int = 1
     """The total number of episodes to run for evaluation."""
     num_eval_envs: int = 4
     """The number of parallel environments to use for evaluation."""
