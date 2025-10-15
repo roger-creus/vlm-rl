@@ -5,5 +5,8 @@ action_maps = {
     },
     "BreakoutNoFrameskip-v4": {
         "NOOP": 0, "FIRE": 1, "RIGHT": 2, "LEFT": 3,
+    },
+    "VizdoomCorridor-v0": {
+        "MOVE_LEFT": 0, "MOVE_RIGHT": 1, "ATTACK": 2, "MOVE_FORWARD": 3, "MOVE_BACKWARD": 4, "TURN_LEFT": 5, "TURN_RIGHT": 6,
     }
 }

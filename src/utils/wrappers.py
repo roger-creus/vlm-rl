@@ -357,3 +357,45 @@ class AtariWrapper(gym.Wrapper[np.ndarray, int, np.ndarray, int]):
             env = ClipRewardEnv(env)
 
         super().__init__(env)
+        
+class DiscreteActionWrapper(gym.ActionWrapper):
+    """
+    Wrap a MultiBinary/MultiDiscrete action space to Discrete(7).
+    
+    The mapping uses this button order:
+        0: MOVE_LEFT
+        1: MOVE_RIGHT
+        2: ATTACK
+        3: MOVE_FORWARD
+        4: MOVE_BACKWARD
+        5: TURN_LEFT
+        6: TURN_RIGHT
+    At each step, the chosen button is set to 1 and others to 0.
+    """
+    def __init__(self, env):
+        super().__init__(env)
+        self.button_names = [
+            "MOVE_LEFT",
+            "MOVE_RIGHT",
+            "ATTACK",
+            "MOVE_FORWARD",
+            "MOVE_BACKWARD",
+            "TURN_LEFT",
+            "TURN_RIGHT",
+        ]
+        self.action_space = gym.spaces.Discrete(len(self.button_names))
+    
+    def action(self, act):
+        # Map Discrete int to MultiBinary/MultiDiscrete vector
+        arr = [0] * len(self.button_names)
+        if 0 <= act < len(self.button_names):
+            arr[act] = 1
+        return arr
+    
+class ScreenOnlyWrapper(gym.ObservationWrapper):
+    def __init__(self, env):
+        super().__init__(env)
+        self.observation_space = env.observation_space["screen"]
+
+    def observation(self, obs):
+        return np.asarray(obs["screen"])

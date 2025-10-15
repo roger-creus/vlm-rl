@@ -17,7 +17,7 @@ from io import BytesIO
 
 from src.models.model import DecoupledActorCriticVLM
 from src.utils.args import Args
-from src.utils.utils import numpy_to_pil, make_env, parse_action, gc_cuda_cleanup, print_trainable_parameters
+from src.utils.utils import numpy_to_pil, make_vizdoom_env, parse_action, gc_cuda_cleanup, print_trainable_parameters
 from src.utils.action_maps import action_maps
 
 from IPython import embed
@@ -102,8 +102,10 @@ if __name__ == "__main__":
 
     # --- Per-Process Environments ---
     envs = gym.vector.SyncVectorEnv(
-        [make_env(args.env_id, i, args.capture_video, run_name) for i in range(args.num_envs)],
+        [make_vizdoom_env(args.env_id, i, args.capture_video, run_name) for i in range(args.num_envs)],
     )
+    envs.single_action_space = envs.envs[0].action_space
+    envs.single_observation_space = envs.envs[0].observation_space
     action_map = action_maps[args.env_id]
     with open(args.prompt_actor_path, "r") as f:
         prompt_text_actor = f.read()
@@ -153,6 +155,7 @@ if __name__ == "__main__":
     # --- Start training ---
     global_step = 0
     start_time = time.time()
+    
     next_obs, _ = envs.reset()
     next_obs = torch.Tensor(next_obs).to(device)
     next_done = torch.zeros(args.num_envs).to(device)
@@ -455,8 +458,8 @@ if __name__ == "__main__":
                         logratio = newlogprob - mb_logprobs
 
                         # clamp logratio for stability
-                        if args.logratio_clamp > 0:
-                            logratio = torch.clamp(logratio, min=-args.logratio_clamp, max=args.logratio_clamp)
+                        #if args.logratio_clamp > 0:
+                        #    logratio = torch.clamp(logratio, min=-args.logratio_clamp, max=args.logratio_clamp)
 
                         logratio = torch.where(mb_action_masks.bool(), logratio, torch.zeros_like(logratio))
                         ratio = torch.exp(logratio)
@@ -485,6 +488,7 @@ if __name__ == "__main__":
                                     # Calculate the mean ratio for this sample's action tokens
                                     ratios_debug = ratio[mb_idx_inner][mask].mean().cpu().item()
                                     ratios_1st_epoch_1st_minibatch.append(ratios_debug)
+                                    print(f"Ratios debug: {ratios_debug}")
 
                                     # Define a "problematic" sample as one with a ratio far from 1.0
                                     is_problematic = ratios_debug > 1.5 or ratios_debug < 0.7

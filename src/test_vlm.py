@@ -18,22 +18,49 @@ import numpy as np
 import torch
 import tyro
 
-# Import your VLM wrapper (same as in your project)
 from src.models.model import DecoupledActorCriticVLM
 
 @dataclass
 class Args:
     image_path: str
     prompt: str
-    vlm_name: str = "Qwen/Qwen3-VL-8B-Instruct"
+    vlm_name: str = "Qwen/Qwen3-VL-4B-Instruct"
     device: str = "cuda"
     use_lora: bool = False
     output_dir: str = "vlm_logs"
 
 def load_image_as_obs(image_path: str) -> np.ndarray:
-    """Load image and return an obs shaped (1, H, W, 3) uint8 (compatible with your other script)."""
+    """
+    Load image, pad to square (centered), then reasonably upscale to a standard square size.
+    Saves the processed image as '{original_filename}_processed_for_vlm.png' in the same directory.
+    Returns obs of shape (1, H, W, 3) uint8.
+    """
     img = Image.open(image_path).convert("RGB")
-    arr = np.asarray(img)  # (H, W, 3), uint8
+    w, h = img.size  # Original 160x210 (width x height) for Atari
+
+    # Pad to square by centering the image on a black square
+    side = max(w, h)
+    # Typical VLM minimum input size, could use 224 or 256
+    target_side = 224 if side < 224 else side
+
+    # Center the image on a black square
+    new_img = Image.new("RGB", (side, side), (0, 0, 0))
+    paste_x = (side - w) // 2
+    paste_y = (side - h) // 2
+    new_img.paste(img, (paste_x, paste_y))
+
+    # Upscale if needed
+    if side != target_side:
+        new_img = new_img.resize((target_side, target_side), Image.BICUBIC)
+
+    # Save the processed image for inspection
+    save_dir = os.path.dirname(image_path)
+    filebase = os.path.splitext(os.path.basename(image_path))[0]
+    save_path = os.path.join(save_dir, f"{filebase}_processed_for_vlm.png")
+    new_img.save(save_path)
+    print(f"Processed (square, upscaled) image saved to: {save_path}")
+
+    arr = np.asarray(new_img)  # (target_side, target_side, 3)
     return np.expand_dims(arr, axis=0)  # (1, H, W, 3)
 
 def safe_get_generated_texts(agent, obs_tensor: torch.Tensor, prompt: str, kwargs=None):
@@ -85,7 +112,7 @@ def main(args: Args):
     obs_tensor = torch.from_numpy(obs).to(device)
 
     # Load VLM
-    agent = DecoupledActorCriticVLM(vlm_name=args.vlm_name, max_new_tokens=512, use_lora=args.use_lora)
+    agent = DecoupledActorCriticVLM(vlm_name=args.vlm_name, max_new_tokens=512, use_lora=False)
     agent.to(device)
     agent.eval()
 

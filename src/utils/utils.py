@@ -5,7 +5,7 @@ import re
 
 from PIL import Image
 
-from src.utils.wrappers import NoopResetEnv, EpisodicLifeEnv, FireResetEnv, ClipRewardEnv, MaxAndSkipEnv, FrameSkipEnv
+from src.utils.wrappers import NoopResetEnv, EpisodicLifeEnv, FireResetEnv, ClipRewardEnv, MaxAndSkipEnv, FrameSkipEnv, DiscreteActionWrapper, ScreenOnlyWrapper
 
 def numpy_to_pil(images: np.ndarray) -> list:
     """Converts a batch of numpy array images to a list of PIL Images."""
@@ -15,12 +15,27 @@ def make_env(env_id, idx, capture_video, run_name):
     def thunk():
         env = gym.make(env_id, render_mode="rgb_array")
         env = gym.wrappers.RecordEpisodeStatistics(env)
-        env = NoopResetEnv(env, noop_max=30)
+        env = NoopResetEnv(env, noop_max=60)
         env = FrameSkipEnv(env, skip=4)
         env = EpisodicLifeEnv(env)
         if "FIRE" in env.unwrapped.get_action_meanings():
             env = FireResetEnv(env)
         env = ClipRewardEnv(env)
+        return env
+    return thunk
+
+from vizdoom import gymnasium_wrapper 
+def make_vizdoom_env(env_id, idx, capture_video, run_name):
+    def thunk():
+        env = gym.make(
+            "VizdoomCorridor-v0",
+            render_mode="rgb_array",
+            max_buttons_pressed=0,
+            frame_skip=4
+        )
+        env = DiscreteActionWrapper(env)
+        env = ScreenOnlyWrapper(env)
+        env = gym.wrappers.RecordEpisodeStatistics(env)
         return env
     return thunk
 

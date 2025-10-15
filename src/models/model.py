@@ -40,8 +40,10 @@ class BaseVLM(nn.Module):
         self.processor = AutoProcessor.from_pretrained(
             vlm_name,
             trust_remote_code=True,
-            min_pixels = 1024*32*32,
-            max_pixels = 1280*32*32,
+            min_pixels = 768 * 32 * 32,
+            max_pixels = 768 * 32 * 32,
+            #min_pixels = 210 * 160 * 3,
+            #max_pixels = 210 * 160 * 3,
             #patch_size=7,
         )
         mdl_cls = get_model_class(vlm_name)
@@ -157,10 +159,10 @@ class DecoupledActorCriticVLM(nn.Module):
                 **inputs,
                 max_new_tokens=self.max_new_tokens,
                 do_sample=True,
-                #top_p=0.8,
-                #temperature=0.7,
-                #top_k=20,
-                #repetition_penalty=1.0,
+                # top_p=0.8,
+                # temperature=0.7,
+                # top_k=20,
+                # repetition_penalty=1.0,
             )
             generated_texts = self.vlm.processor.batch_decode(
                 full_ids[:, inputs.input_ids.shape[1]:], skip_special_tokens=True

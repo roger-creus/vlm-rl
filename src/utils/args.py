@@ -20,7 +20,7 @@ class Args:
     """whether to capture videos of the agent performances (check out `videos` folder)"""
 
     # Algorithm specific arguments
-    env_id: str = "MsPacmanNoFrameskip-v4"
+    env_id: str = "VizdoomCorridor-v0"
     """the id of the environment"""
     total_timesteps: int = 10000000
     """total timesteps of the experiments"""
@@ -61,9 +61,9 @@ class Args:
     # VLM specific arguments
     vlm_name: str = "Qwen/Qwen3-VL-4B-Instruct"
     """The model ID from Hugging Face."""
-    prompt_actor_path: str = "prompt_actor.txt"
+    prompt_actor_path: str = "prompt_actor_doom.txt"
     """Path to a file containing the text prompt for the VLM."""
-    prompt_critic_path: str = "prompt_critic.txt"
+    prompt_critic_path: str = "prompt_critic_doom.txt"
     """Path to a file containing the text prompt for the VLM."""
     max_new_tokens: int = 128
     """Maximum number of new tokens for the VLM to generate."""
@@ -82,7 +82,7 @@ class Args:
     """the alpha of the LoRA adapters"""
     
     # Dual-Clip PPO specific arguments
-    dual_clip_c: float = 3.0
+    dual_clip_c: float = 0.0
     """the coefficient for the Dual-Clip PPO"""
     logratio_clamp: float = 20.0
     """the clamp value for the log-ratio"""
