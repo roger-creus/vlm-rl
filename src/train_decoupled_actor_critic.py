@@ -116,6 +116,7 @@ if __name__ == "__main__":
     agent = DecoupledActorCriticVLM(
         vlm_name=args.vlm_name,
         max_new_tokens=args.max_new_tokens,
+        use_lora=True,
         lora_r=args.lora_rank,
         lora_alpha=args.lora_alpha,
         lora_dropout=0.0,
@@ -131,7 +132,7 @@ if __name__ == "__main__":
         print(f"Total trainable parameters: {sum(p.numel() for p in params)}")
         print("-" * 50)
         
-    optimizer = optim.AdamW(params, lr=args.learning_rate, weight_decay=args.weight_decay, betas=(0.85, 0.9))
+    optimizer = optim.Adam(params, lr=args.learning_rate, betas=(0.85, 0.9))
     agent, optimizer = accelerator.prepare(agent, optimizer)
 
     # --- Storage Tensors ---
@@ -373,26 +374,37 @@ if __name__ == "__main__":
         ratios_1st_epoch_1st_minibatch = []
         logprobs_barplot_logged = False
 
-        learning_time_start = time.time()
-        for epoch in epoch_iter:
-            epoch_clipfracs_upper = []
-            epoch_clipfracs_lower = []
-            epoch_approx_kls = []
-            epoch_old_approx_kls = []
-            all_newlogprobs_stats = []
-            all_oldlogprobs_stats = []
-            all_logratios_stats = []
-            all_ratios_stats = []
-            all_values_stats = []
-            all_advantages_stats = []
-            all_returns_stats = []
+        # For aggregating histogram stats across minibatches (for 1 image logging per iteration)
+        hist_newlogprobs = []
+        hist_oldlogprobs = []
+        hist_logratios = []
+        hist_ratios = []
+        hist_advantages = []
+        hist_values = []
+        hist_returns = []
 
-            np.random.shuffle(b_inds)
+        learning_time_start = time.time()
+        all_values_stats = []
+        all_advantages_stats = []
+        all_returns_stats = []
+        all_newlogprobs_stats = []
+        all_oldlogprobs_stats = []
+        all_logratios_stats = []
+        all_ratios_stats = []
+        epoch_clipfracs_upper = []
+        epoch_clipfracs_lower = []
+        epoch_approx_kls = []
+        epoch_old_approx_kls = []
+
+        np.random.shuffle(b_inds)
+
+        # ----------- ACTOR (policy) UPDATE LOOP -----------
+        for epoch in epoch_iter:
             minibatch_iter = range(0, args.total_batch_size, args.minibatch_size)
             if accelerator.is_main_process:
                 minibatch_iter = tqdm(
                     minibatch_iter,
-                    desc=f"Epoch {epoch+1}/{args.update_epochs}",
+                    desc=f"Epoch {epoch+1}/{args.update_epochs} - Policy",
                     leave=False,
                     dynamic_ncols=True,
                 )
@@ -405,7 +417,10 @@ if __name__ == "__main__":
                 mb_inds = b_inds[start:end]
 
                 # normalize advantages at minibatch level BEFORE sharding across processes
-                proc_positions = torch.tensor(np.arange(len(mb_inds))[accelerator.process_index::accelerator.num_processes], dtype=torch.long, device=device)
+                proc_positions = torch.tensor(
+                    np.arange(len(mb_inds))[accelerator.process_index::accelerator.num_processes],
+                    dtype=torch.long, device=device
+                )
                 mb_advantages_global = b_advantages[mb_inds]
                 if args.norm_adv:
                     adv_mean = mb_advantages_global.mean()
@@ -424,193 +439,258 @@ if __name__ == "__main__":
                     mb_advantages = mb_advantages_global[proc_positions].to(device)
                     mb_action_masks = b_action_masks[process_mb_inds].to(device)
 
-                    # logging
-                    stats = lambda x: dict(
-                        mean=float(x.mean().cpu()), std=float(x.std().cpu()),
-                        min=float(x.min().cpu()), max=float(x.max().cpu()), median=float(x.median().cpu()))
+                    def stats(x):
+                        x = x.float()
+                        return dict(
+                            mean=float(x.mean().cpu()), std=float(x.std().cpu()),
+                            min=float(x.min().cpu()), max=float(x.max().cpu()), median=float(x.median().cpu())
+                        )
+
                     all_values_stats.append(stats(mb_values))
                     all_advantages_stats.append(stats(mb_advantages))
                     all_returns_stats.append(stats(mb_returns))
 
-                    # --- Training ---
-                    if is_critic_warmup:
-                        newvalue = agent.get_value(obs=mb_obs, prompt_text=[prompt_text_critic] * mb_obs.shape[0]).view(-1)
-                        if args.clip_vloss:
-                            v_loss_unclipped = (newvalue - mb_returns) ** 2
-                            v_clipped = mb_values + torch.clamp(newvalue - mb_values, -cliprange_low, cliprange_high)
-                            v_loss_clipped = (v_clipped - mb_returns) ** 2
-                            v_loss_max = torch.max(v_loss_unclipped, v_loss_clipped)
-                            v_loss = 0.5 * v_loss_max.mean()
-                        else:
-                            v_loss = 0.5 * ((newvalue - mb_returns) ** 2).mean()
-                        pg_loss = torch.zeros_like(v_loss)
-                        entropy_loss = torch.zeros_like(v_loss)
-                        loss = v_loss * args.vf_coef
+                    # Policy update
+                    newlogprob, entropy_tensor = agent.get_action(
+                        obs=mb_obs,
+                        text_prompts=[prompt_text_actor] * mb_obs.shape[0],
+                        action_ids=mb_input_ids,
+                        prompt_lens=mb_prompt_lens
+                    )
+                    
+                    logratio = newlogprob - mb_logprobs
+                    logratio = torch.where(mb_action_masks.bool(), logratio, torch.zeros_like(logratio))
+                    ratio = torch.exp(logratio)
+
+                    # Collect values for aggregate histogram logging
+                    mask = mb_action_masks.bool()
+                    with torch.no_grad():
+                        if mask.sum() > 0:
+                            hist_newlogprobs.append(newlogprob[mask].detach().cpu())
+                            hist_oldlogprobs.append(mb_logprobs[mask].detach().cpu())
+                            hist_logratios.append(logratio[mask].detach().cpu())
+                            hist_ratios.append(ratio[mask].detach().cpu())
+                            hist_advantages.append(mb_advantages[mask.any(dim=1)].detach().cpu())
+                            hist_values.append(mb_values[mask.any(dim=1)].detach().cpu())
+                            hist_returns.append(mb_returns[mask.any(dim=1)].detach().cpu())
+
+                    # Per-minibatch stats for scalar/statistics logging
+                    mask_sum = mask.sum().item()
+                    if mask_sum > 0:
+                        newlogprob_masked = newlogprob[mask].detach().cpu()
+                        oldlogprob_masked = mb_logprobs[mask].detach().cpu()
+                        logratio_masked = logratio[mask].detach().cpu()
+                        ratio_masked = ratio[mask].detach().cpu()
+                        all_newlogprobs_stats.append(stats(newlogprob_masked))
+                        all_oldlogprobs_stats.append(stats(oldlogprob_masked))
+                        all_logratios_stats.append(stats(logratio_masked))
+                        all_ratios_stats.append(stats(ratio_masked))
+
+                    # --- Plot logprobs for problematic samples in the first minibatch of the first epoch ---
+                    if (epoch == 0 and start == 0 and not logprobs_barplot_logged and accelerator.is_main_process):
+                        plots_logged = 0
+                        max_plots_to_log = 5
+                        for mb_idx_inner in range(mb_obs.shape[0]):
+                            inner_mask = mb_action_masks[mb_idx_inner].bool()
+                            if inner_mask.any():
+                                # Mean ratio as "debug" metric
+                                ratios_debug = ratio[mb_idx_inner][inner_mask].mean().cpu().item()
+                                ratios_1st_epoch_1st_minibatch.append(ratios_debug)
+                                print(f"Ratios debug: {ratios_debug}")
+
+                                is_problematic = ratios_debug > 1.5 or ratios_debug < 0.7
+                                if is_problematic and plots_logged < max_plots_to_log:
+                                    try:
+                                        newlogprobs_tokens = newlogprob[mb_idx_inner][inner_mask].detach().cpu().to(torch.float32).numpy()
+                                        oldlogprobs_tokens = mb_logprobs[mb_idx_inner][inner_mask].detach().cpu().to(torch.float32).numpy()
+                                        num_tokens = len(oldlogprobs_tokens)
+                                        x = np.arange(num_tokens)
+                                        width = 0.35
+
+                                        fig, ax = plt.subplots(
+                                            figsize=(min(20, max(8, num_tokens * 0.8)), 6)
+                                        )
+                                        ax.bar(x - width/2, oldlogprobs_tokens, width, label="Old Logprob")
+                                        ax.bar(x + width/2, newlogprobs_tokens, width, label="New Logprob")
+                                        ax.set_xlabel("Action Token Index")
+                                        ax.set_ylabel("Log Probability")
+                                        ax.set_title(f"Logprobs for Problematic Sample {mb_idx_inner} (Ratio = {ratios_debug:.4f})")
+                                        ax.legend()
+                                        ax.grid(axis='y', linestyle='--', alpha=0.7)
+
+                                        buf = BytesIO()
+                                        plt.tight_layout()
+                                        plt.savefig(buf, format='png')
+                                        buf.seek(0)
+
+                                        plot_image_arr = (plt.imread(buf) * 255).astype(np.uint8)
+                                        writer.add_image(
+                                            f"debug/problematic_logprobs/batch_{mb_idx_inner}",
+                                            plot_image_arr,
+                                            global_step,
+                                            dataformats='HWC'
+                                        )
+                                        buf.close()
+                                        plt.close(fig)
+                                        plots_logged += 1
+                                    except Exception as e:
+                                        print(f"Failed to plot barplot for problematic sample (batch {mb_idx_inner}): {e}")
+                        logprobs_barplot_logged = True
+
+                    # KL and clip fraction stats (for logging plots and scalars)
+                    with torch.no_grad():
+                        valid = mb_action_masks
+                        valid_token_count = valid.sum()
+                        if valid_token_count > 0:
+                            masked_logratio = logratio[valid]
+                            masked_ratio = ratio[valid]
+                            old_approx_kl = (-masked_logratio).mean()
+                            approx_kl = ((masked_ratio - 1) - masked_logratio).mean()
+                            epoch_approx_kls.append(approx_kl.item())
+                            epoch_old_approx_kls.append(old_approx_kl.item())
+
+                    # dual-clip PPO loss and fractions
+                    mb_advantages_exp = mb_advantages.unsqueeze(-1)
+                    pg_losses1 = -mb_advantages_exp * ratio
+                    pg_losses2 = -mb_advantages_exp * torch.clamp(ratio, 1 - cliprange_low, 1 + cliprange_high)
+                    clip_pg_losses1 = torch.maximum(pg_losses1, pg_losses2)
+
+                    upper_clipfrac_mask = (pg_losses2 > pg_losses1).float()
+                    if mb_action_masks.sum() > 0:
+                        clipfrac_upper = (upper_clipfrac_mask * mb_action_masks.float()).sum() / mb_action_masks.float().sum()
                     else:
-                        newlogprob, entropy_tensor = agent.get_action(
-                            obs=mb_obs,
-                            text_prompts=[prompt_text_actor] * mb_obs.shape[0],
-                            action_ids=mb_input_ids,
-                            prompt_lens=mb_prompt_lens
-                        )
-                        newvalue = agent.get_value(obs=mb_obs, prompt_text=[prompt_text_critic] * mb_obs.shape[0]).view(-1)
+                        clipfrac_upper = torch.tensor(0.0, device=upper_clipfrac_mask.device)
+                    epoch_clipfracs_upper.append(clipfrac_upper.item())
 
-                        logratio = newlogprob - mb_logprobs
+                    pg_losses3 = -mb_advantages_exp * dual_clip_c
+                    clip_pg_losses2 = torch.min(pg_losses3, clip_pg_losses1)
 
-                        # clamp logratio for stability
-                        #if args.logratio_clamp > 0:
-                        #    logratio = torch.clamp(logratio, min=-args.logratio_clamp, max=args.logratio_clamp)
+                    lower_clipfrac_mask = (clip_pg_losses1 > pg_losses3) & (mb_advantages_exp < 0)
+                    if mb_action_masks.sum() > 0:
+                        clipfrac_lower = (lower_clipfrac_mask.float() * mb_action_masks.float()).sum() / mb_action_masks.float().sum()
+                    else:
+                        clipfrac_lower = torch.tensor(0.0, device=upper_clipfrac_mask.device)
+                    epoch_clipfracs_lower.append(clipfrac_lower.item())
 
-                        logratio = torch.where(mb_action_masks.bool(), logratio, torch.zeros_like(logratio))
-                        ratio = torch.exp(logratio)
+                    if dual_clip_c > 1.0:
+                        pg_loss_per_token = torch.where(mb_advantages_exp < 0, clip_pg_losses2, clip_pg_losses1)
+                    else:
+                        pg_loss_per_token = clip_pg_losses1
 
-                        # logging
-                        mask_sum = mb_action_masks.sum().cpu().item()
-                        if mask_sum > 0:
-                            newlogprob_masked = newlogprob[mb_action_masks].detach().cpu()
-                            oldlogprob_masked = mb_logprobs[mb_action_masks].detach().cpu()
-                            logratio_masked = logratio[mb_action_masks].detach().cpu()
-                            ratio_masked = ratio[mb_action_masks].detach().cpu()
-                            all_newlogprobs_stats.append(stats(newlogprob_masked))
-                            all_oldlogprobs_stats.append(stats(oldlogprob_masked))
-                            all_logratios_stats.append(stats(logratio_masked))
-                            all_ratios_stats.append(stats(ratio_masked))
+                    pg_loss = (pg_loss_per_token * mb_action_masks).sum() / mb_action_masks.sum()
+                    
+                    # entropy loss 
+                    entropy_loss = (entropy_tensor * mb_action_masks).sum() / mb_action_masks.sum()
 
-                        # --- Plot logprobs for problematic samples in the first minibatch of the first epoch ---
-                        if (epoch == 0 and start == 0 and not logprobs_barplot_logged and accelerator.is_main_process):
-                            # Keep track of how many plots we've logged to avoid spamming TensorBoard
-                            plots_logged = 0
-                            max_plots_to_log = 5  # Set a limit for the number of plots
-
-                            for mb_idx_inner in range(mb_obs.shape[0]):
-                                mask = mb_action_masks[mb_idx_inner].bool()
-                                if mask.any():
-                                    # Calculate the mean ratio for this sample's action tokens
-                                    ratios_debug = ratio[mb_idx_inner][mask].mean().cpu().item()
-                                    ratios_1st_epoch_1st_minibatch.append(ratios_debug)
-                                    print(f"Ratios debug: {ratios_debug}")
-
-                                    # Define a "problematic" sample as one with a ratio far from 1.0
-                                    is_problematic = ratios_debug > 1.5 or ratios_debug < 0.7
-                                    
-                                    # If the sample is problematic and we haven't logged too many plots yet
-                                    if is_problematic and plots_logged < max_plots_to_log:
-                                        try:
-                                            newlogprobs_tokens = newlogprob[mb_idx_inner][mask].detach().cpu().to(torch.float32).numpy()
-                                            oldlogprobs_tokens = mb_logprobs[mb_idx_inner][mask].detach().cpu().to(torch.float32).numpy()
-                                            
-                                            num_tokens = len(oldlogprobs_tokens)
-                                            x = np.arange(num_tokens)
-                                            width = 0.35
-                                            
-                                            fig, ax = plt.subplots(figsize=(min(20, max(8, num_tokens * 0.8)), 6))
-                                            
-                                            ax.bar(x - width/2, oldlogprobs_tokens, width, label="Old Logprob")
-                                            ax.bar(x + width/2, newlogprobs_tokens, width, label="New Logprob")
-                                            
-                                            ax.set_xlabel("Action Token Index")
-                                            ax.set_ylabel("Log Probability")
-                                            ax.set_title(f"Logprobs for Problematic Sample {mb_idx_inner} (Ratio = {ratios_debug:.4f})")
-                                            ax.legend()
-                                            ax.grid(axis='y', linestyle='--', alpha=0.7)
-                                            
-                                            buf = BytesIO()
-                                            plt.tight_layout()
-                                            plt.savefig(buf, format='png')
-                                            buf.seek(0)
-                                            
-                                            plot_image_arr = (plt.imread(buf) * 255).astype(np.uint8)
-
-                                            writer.add_image(
-                                                f"debug/problematic_logprobs/batch_{mb_idx_inner}",
-                                                plot_image_arr, 
-                                                global_step, 
-                                                dataformats='HWC'
-                                            )
-                                            
-                                            buf.close()
-                                            plt.close(fig)
-                                            
-                                            plots_logged += 1
-                                            
-                                        except Exception as e:
-                                            print(f"Failed to plot barplot for problematic sample (batch {mb_idx_inner}): {e}")
-
-                            logprobs_barplot_logged = True
-
-                        # logging
-                        with torch.no_grad():
-                            valid = mb_action_masks
-                            valid_token_count = valid.sum()
-                            if valid_token_count > 0:
-                                masked_logratio = logratio[valid]
-                                masked_ratio = ratio[valid]
-                                old_approx_kl = (-masked_logratio).mean()
-                                approx_kl = ((masked_ratio - 1) - masked_logratio).mean()
-                                epoch_approx_kls.append(approx_kl.item())
-                                epoch_old_approx_kls.append(old_approx_kl.item())
-
-                        # dual-clip PPO loss
-                        mb_advantages = mb_advantages.unsqueeze(-1)
-                        pg_losses1 = -mb_advantages * ratio
-                        pg_losses2 = -mb_advantages * torch.clamp(ratio, 1 - cliprange_low, 1 + cliprange_high)
-                        clip_pg_losses1 = torch.maximum(pg_losses1, pg_losses2)
-
-                        # logging upper clipfracs
-                        upper_clipfrac_mask = (pg_losses2 > pg_losses1).float()
-                        if mb_action_masks.sum() > 0:
-                            clipfrac_upper = (upper_clipfrac_mask * mb_action_masks.float()).sum() / mb_action_masks.float().sum()
-                        else:
-                            clipfrac_upper = torch.tensor(0.0, device=upper_clipfrac_mask.device)
-                        epoch_clipfracs_upper.append(clipfrac_upper.item())
-
-                        # dual-clip PPO loss
-                        pg_losses3 = -mb_advantages * dual_clip_c
-                        clip_pg_losses2 = torch.min(pg_losses3, clip_pg_losses1)
-
-                        # logging lower clipfracs
-                        lower_clipfrac_mask = (clip_pg_losses1 > pg_losses3) & (mb_advantages < 0)
-                        if mb_action_masks.sum() > 0:
-                            clipfrac_lower = (lower_clipfrac_mask.float() * mb_action_masks.float()).sum() / mb_action_masks.float().sum()
-                        else:
-                            clipfrac_lower = torch.tensor(0.0, device=upper_clipfrac_mask.device)
-                        epoch_clipfracs_lower.append(clipfrac_lower.item())
-
-                        # dual-clip PPO loss
-                        if dual_clip_c > 1.0:
-                            pg_loss_per_token = torch.where(mb_advantages < 0, clip_pg_losses2, clip_pg_losses1)
-                        else:
-                            pg_loss_per_token = clip_pg_losses1
-
-                        # aggregate policy gradient loss
-                        pg_loss = (pg_loss_per_token * mb_action_masks).sum() / mb_action_masks.sum()
-
-                        # value loss
-                        if args.clip_vloss:
-                            v_loss_unclipped = (newvalue - mb_returns) ** 2
-                            v_clipped = mb_values + torch.clamp(newvalue - mb_values, -cliprange_low, cliprange_high)
-                            v_loss_clipped = (v_clipped - mb_returns) ** 2
-                            v_loss_max = torch.max(v_loss_unclipped, v_loss_clipped)
-                            v_loss = 0.5 * v_loss_max.mean()
-                        else:
-                            v_loss = 0.5 * ((newvalue - mb_returns) ** 2).mean()
-
-                        # entropy loss 
-                        entropy_loss = (entropy_tensor * mb_action_masks).sum() / mb_action_masks.sum()
-                        # total loss
-                        loss = pg_loss - args.ent_coef * entropy_loss + v_loss * args.vf_coef
-
-                    accelerator.backward(loss)
+                    # backward policy loss and update
+                    accelerator.backward(pg_loss)
                     optimizer.step()
                     optimizer.zero_grad()
+
+        # ----------- CRITIC (value) UPDATE LOOP -----------
+        for epoch in epoch_iter:
+            minibatch_iter = range(0, args.total_batch_size, args.minibatch_size)
+            if accelerator.is_main_process:
+                minibatch_iter = tqdm(
+                    minibatch_iter,
+                    desc=f"Epoch {epoch+1}/{args.update_epochs} - Critic",
+                    leave=False,
+                    dynamic_ncols=True,
+                )
+
+            for mb_idx, start in enumerate(minibatch_iter):
+                if accelerator.is_main_process and hasattr(minibatch_iter, "set_postfix"):
+                    minibatch_iter.set_postfix({"minibatch": mb_idx})
+
+                end = start + args.minibatch_size
+                mb_inds = b_inds[start:end]
+
+                # normalize advantages at minibatch level BEFORE sharding across processes
+                proc_positions = torch.tensor(
+                    np.arange(len(mb_inds))[accelerator.process_index::accelerator.num_processes],
+                    dtype=torch.long, device=device
+                )
+                mb_advantages_global = b_advantages[mb_inds]
+                if args.norm_adv:
+                    adv_mean = mb_advantages_global.mean()
+                    adv_std = mb_advantages_global.std()
+                    mb_advantages_global = (mb_advantages_global - adv_mean) / (adv_std + 1e-8)
+
+                # shard the minibatch across processes
+                process_mb_inds = mb_inds[accelerator.process_index::accelerator.num_processes]
+                with accelerator.accumulate(agent):
+                    mb_obs = b_obs[process_mb_inds].to(device)
+                    mb_input_ids = b_input_ids[process_mb_inds].to(device)
+                    mb_prompt_lens = b_prompt_lens[process_mb_inds].to(device)
+                    mb_logprobs = b_logprobs[process_mb_inds].to(device)
+                    mb_returns = b_returns[process_mb_inds].to(device)
+                    mb_values = b_values[process_mb_inds].to(device)
+                    mb_advantages = mb_advantages_global[proc_positions].to(device)
+                    mb_action_masks = b_action_masks[process_mb_inds].to(device)
+
+                    # Critic update
+                    newvalue = agent.get_value(
+                        obs=mb_obs, prompt_text=[prompt_text_critic] * mb_obs.shape[0]
+                    ).view(-1)
+
+                    # value loss
+                    if args.clip_vloss:
+                        v_loss_unclipped = (newvalue - mb_returns) ** 2
+                        v_clipped = mb_values + torch.clamp(newvalue - mb_values, -cliprange_low, cliprange_high)
+                        v_loss_clipped = (v_clipped - mb_returns) ** 2
+                        v_loss_max = torch.max(v_loss_unclipped, v_loss_clipped)
+                        v_loss = 0.5 * v_loss_max.mean()
+                    else:
+                        v_loss = 0.5 * ((newvalue - mb_returns) ** 2).mean()
+
+                    # backward value loss and update
+                    accelerator.backward(v_loss)
+                    optimizer.step()
+                    optimizer.zero_grad()
+
+        # Log histograms/images (ONE per iteration, summarize across all minibatches)
+        #if accelerator.is_main_process:
+            # def _log_histogram(name, data_list, step, bins=100):
+            #     if len(data_list) > 0:
+            #         all_data = torch.cat([x.flatten() for x in data_list])
+            #         fig, ax = plt.subplots(figsize=(7, 4))
+            #         ax.hist(all_data.cpu().numpy(), bins=bins, alpha=0.85, color="royalblue")
+            #         ax.set_title(f"{name} histogram (iteration {iteration})")
+            #         ax.set_xlabel(name)
+            #         ax.set_ylabel("Count")
+            #         buf = BytesIO()
+            #         plt.tight_layout()
+            #         plt.savefig(buf, format="png")
+            #         buf.seek(0)
+            #         hist_image = (plt.imread(buf) * 255).astype(np.uint8)
+            #         writer.add_image(f"histogram/{name}", hist_image, step, dataformats="HWC")
+            #         buf.close()
+            #         plt.close(fig)
+
+            # # Only log at END of iteration to avoid slowdowns
+            # _log_histogram("ratios", hist_ratios, global_step)
+            # _log_histogram("logratios", hist_logratios, global_step)
+            # _log_histogram("newlogprob", hist_newlogprobs, global_step)
+            # _log_histogram("oldlogprob", hist_oldlogprobs, global_step)
+            # _log_histogram("advantages", hist_advantages, global_step)
+            # _log_histogram("values", hist_values, global_step)
+            # _log_histogram("returns", hist_returns, global_step)
 
         # clean per iteration only
         del mb_obs, mb_input_ids, mb_prompt_lens
         del mb_logprobs, mb_advantages, mb_returns, mb_values
-        if not is_critic_warmup:
-            del newlogprob, newvalue, entropy_tensor, mb_action_masks, logratio, ratio
-        else:
+        if 'newlogprob' in locals():
+            del newlogprob
+        if 'newvalue' in locals():
             del newvalue
+        if 'entropy_tensor' in locals():
+            del entropy_tensor
+        if 'mb_action_masks' in locals():
+            del mb_action_masks
+        if 'logratio' in locals():
+            del logratio
+        if 'ratio' in locals():
+            del ratio
         gc_cuda_cleanup()
 
         learning_time_completed = time.time() - learning_time_start
@@ -623,13 +703,14 @@ if __name__ == "__main__":
             writer.add_scalar("debug/seq_len_errors", np.mean(seq_len_errors), global_step)
             writer.add_scalar("debug/rollout_time", rollout_time_completed, global_step)
             writer.add_scalar("debug/learning_time", learning_time_completed, global_step)
-            
-            if not is_critic_warmup:
+
+            # We set v_loss and pg_loss from last minibatch; could aggregate if needed.
+            if 'v_loss' in locals():
                 writer.add_scalar("losses/value_loss", v_loss.item(), global_step)
+            if 'pg_loss' in locals():
                 writer.add_scalar("losses/policy_loss", pg_loss.item(), global_step)
+            if 'entropy_loss' in locals():
                 writer.add_scalar("losses/entropy", entropy_loss.item(), global_step)
-            else:
-                writer.add_scalar("warmup/value_loss", v_loss.item(), global_step)
 
             if ratios_1st_epoch_1st_minibatch:
                 writer.add_scalar("losses/ratios_1st_epoch_1st_minibatch", np.mean(ratios_1st_epoch_1st_minibatch), global_step)
@@ -687,7 +768,7 @@ if __name__ == "__main__":
             sps = int(args.total_batch_size / (time.time() - start_time))
             writer.add_scalar("charts/SPS", sps, global_step)
             print(
-                f"SPS: {sps} || value.loss : {v_loss.item()}, policy.loss : {pg_loss.item()}, policy.entropy : {entropy_loss.item()}",
+                f"SPS: {sps} || value.loss : {v_loss.item() if 'v_loss' in locals() else 'n/a'}, policy.loss : {pg_loss.item() if 'pg_loss' in locals() else 'n/a'}, policy.entropy : {entropy_loss.item() if 'entropy_loss' in locals() else 'n/a'}",
                 "\n"
                 f"    newlogprob: {avgstats(all_newlogprobs_stats)['mean'] if all_newlogprobs_stats else 'n/a'} | "
                 f"oldlogprob: {avgstats(all_oldlogprobs_stats)['mean'] if all_oldlogprobs_stats else 'n/a'} | "

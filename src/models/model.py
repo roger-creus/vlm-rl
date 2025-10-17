@@ -117,28 +117,33 @@ class DecoupledActorCriticVLM(nn.Module):
         self.max_new_tokens = max_new_tokens
 
         if self.use_lora:
-            for param in self.vlm.model.parameters():
-                param.requires_grad = False
-
-            lora_config = LoraConfig(
+            actor_lora_config = LoraConfig(
                 r=lora_r,
                 lora_alpha=lora_alpha,
                 lora_dropout=lora_dropout,
-                init_lora_weights=True,
+                target_modules=default_target_modules(),
+                bias="none",
+            )
+            
+            critic_lora_config = LoraConfig(
+                r=lora_r,
+                lora_alpha=lora_alpha,
+                lora_dropout=lora_dropout,
                 target_modules=default_target_modules(),
                 bias="none",
             )
 
-            self.vlm.model.add_adapter(
-                lora_config,
+            self.vlm.model = get_peft_model(
+                self.vlm.model, 
+                actor_lora_config, 
                 adapter_name="actor"
             )
 
             self.vlm.model.add_adapter(
-                lora_config,
-                adapter_name="critic"
+                "critic",
+                critic_lora_config
             )
-        
+
     def get_trainable_params(self):
         params = self.vlm.get_trainable_params()
         params.extend(list(self.critic_head.parameters()))
@@ -159,10 +164,6 @@ class DecoupledActorCriticVLM(nn.Module):
                 **inputs,
                 max_new_tokens=self.max_new_tokens,
                 do_sample=True,
-                # top_p=0.8,
-                # temperature=0.7,
-                # top_k=20,
-                # repetition_penalty=1.0,
             )
             generated_texts = self.vlm.processor.batch_decode(
                 full_ids[:, inputs.input_ids.shape[1]:], skip_special_tokens=True
@@ -201,6 +202,77 @@ class DecoupledActorCriticVLM(nn.Module):
             output_hidden_states=True,
         )
         last_hidden = self.vlm.last_hidden_state(outputs.hidden_states[-1], inputs['attention_mask'])
+        return self.critic_head(last_hidden)
+
+# --- NEW: DecoupledActorCriticVLMFull ---
+class DecoupledActorCriticVLMFull(nn.Module):
+    """
+    Decoupled actor-critic with TWO FULL VLMs (one for actor, one for critic), no LoRA.
+    """
+    def __init__(
+        self,
+        vlm_name: str,
+        max_new_tokens: int = 128,
+    ):
+        super().__init__()
+        self.actor_vlm = BaseVLM(vlm_name, max_new_tokens)
+        self.critic_vlm = BaseVLM(vlm_name, max_new_tokens)
+        hidden_size = self.critic_vlm.model.config.text_config.hidden_size
+        self.critic_head = CriticHead(hidden_size).to(self.critic_vlm.model.dtype)
+        self.max_new_tokens = max_new_tokens
+
+    def get_trainable_params(self):
+        params = []
+        params.extend(list(self.actor_vlm.parameters()))
+        params.extend(list(self.critic_vlm.parameters()))
+        params.extend(list(self.critic_head.parameters()))
+        return params
+
+    def get_action(self, obs=None, text_prompts=None, action_ids=None, prompt_lens=None):
+        batch_size = len(text_prompts)
+        inputs = self.actor_vlm.preprocess_obs_and_text(obs, text_prompts)
+        pixel_values = inputs.pixel_values
+        image_grid_thw = inputs.image_grid_thw
+
+        if action_ids is None:
+            full_ids = self.actor_vlm.model.generate(
+                **inputs,
+                max_new_tokens=self.max_new_tokens,
+                do_sample=True,
+            )
+            generated_texts = self.actor_vlm.processor.batch_decode(
+                full_ids[:, inputs.input_ids.shape[1]:], skip_special_tokens=True
+            )
+            prompt_lens = torch.tensor([inputs.input_ids.shape[1]] * batch_size, device=self.actor_vlm.model.device)
+        else:
+            full_ids = action_ids
+
+        attention_mask = (full_ids != self.actor_vlm.processor.tokenizer.pad_token_id).long()
+        outputs = self.actor_vlm.model(
+            input_ids=full_ids,
+            image_grid_thw=image_grid_thw,
+            pixel_values=pixel_values,
+            output_hidden_states=True,
+            attention_mask=attention_mask,
+        )
+        logits = outputs.logits
+        log_probs_all = torch.nn.functional.log_softmax(logits, dim=-1)
+        log_probs = torch.gather(log_probs_all, 2, full_ids.unsqueeze(-1)).squeeze(-1)
+
+        entropy = Categorical(logits=logits).entropy()
+
+        if action_ids is None:
+            return log_probs, full_ids, prompt_lens, generated_texts
+        else:
+            return log_probs, entropy
+
+    def get_value(self, obs, prompt_text):
+        inputs = self.critic_vlm.preprocess_obs_and_text(obs, prompt_text)
+        outputs = self.critic_vlm.model(
+            **inputs,
+            output_hidden_states=True,
+        )
+        last_hidden = self.critic_vlm.last_hidden_state(outputs.hidden_states[-1], inputs['attention_mask'])
         return self.critic_head(last_hidden)
 
 class SharedActorCriticVLM(BaseVLM):
