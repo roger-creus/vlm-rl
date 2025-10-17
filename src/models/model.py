@@ -16,6 +16,7 @@ def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
 def default_target_modules():
     """Provides a default list of target modules for LoRA."""
     target_modules = [
+        # --- Text Model Modules ---
         "self_attn.q_proj",
         "self_attn.k_proj",
         "self_attn.v_proj",
@@ -23,6 +24,19 @@ def default_target_modules():
         "mlp.gate_proj",
         "mlp.up_proj",
         "mlp.down_proj",
+        
+        # --- Vision Model Modules ---
+        "attn.qkv",
+        "attn.proj",
+        "mlp.linear_fc1",
+        "mlp.linear_fc2",
+
+        # --- Language Model Head ---
+        "lm_head",
+
+        # --- Vision Merger Layers ---
+        "merger.linear_fc1",
+        "merger.linear_fc2",
     ]
     # Remove duplicates while preserving order
     seen = set()

@@ -203,7 +203,7 @@ if __name__ == "__main__":
             # --- START: MODIFIED CODE ---
             # The generated full_ids (f_ids) might be shorter or longer than max_seq_len
             seq_len = f_ids.shape[1]
-            p_len = p_len.unsqueeze(1) # Ensure p_len can be broadcast correctly
+            p_len = p_len.unsqueeze(1)
 
             # We need to create padded/truncated versions of everything to fit our storage tensors
             padded_ids = torch.full(
@@ -233,11 +233,13 @@ if __name__ == "__main__":
             action_token_mask = indices >= p_len
             pad_mask = (padded_ids != pad_token_id)
             action_masks[step] = (action_token_mask & pad_mask).long()
-
-            # --- END: MODIFIED CODE ---
             
-            generation_lengths.append(seq_len - p_len[0].cpu().item())
-            seq_len_errors.append(1 if seq_len >= args.max_seq_len else 0)
+            generation_len = seq_len - p_len[0].cpu().item()
+            seq_len_error = 1 if seq_len >= args.max_seq_len else 0
+            #print(f"Generation length: {generation_len}, Prompt length: {p_len[0].cpu().item()}, Seq len error: {seq_len_error}")
+            
+            generation_lengths.append(generation_len)
+            seq_len_errors.append(seq_len_error)
             
             # step the environment
             next_obs, reward, term, trunc, infos = envs.step(action.cpu().numpy())

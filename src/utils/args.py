@@ -65,9 +65,9 @@ class Args:
     """Path to a file containing the text prompt for the VLM."""
     prompt_critic_path: str = "prompt_critic_doom.txt"
     """Path to a file containing the text prompt for the VLM."""
-    max_new_tokens: int = 128
+    max_new_tokens: int = 512
     """Maximum number of new tokens for the VLM to generate."""
-    max_seq_len: int = 1024
+    max_seq_len: int = 4096
     """Maximum sequence length for the VLM to generate. Longer sequences will be truncated."""
     critic_warmup_iterations: int = 10
     """Number of iterations to warm up the critic."""
