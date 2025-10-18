@@ -142,6 +142,7 @@ if __name__ == "__main__":
     values = torch.zeros((args.num_steps, args.num_envs), device=device)
     prompt_lens = torch.zeros((args.num_steps, args.num_envs), dtype=torch.long, device=device)
     action_masks = torch.zeros((args.num_steps, args.num_envs, args.max_seq_len), dtype=torch.long, device=device)
+    
     # initialize full_input_ids with the pad token id
     pad_token_id = agent.vlm.processor.tokenizer.pad_token_id
     if accelerator.is_main_process: print(f"Pad token id: {pad_token_id}")
@@ -279,11 +280,12 @@ if __name__ == "__main__":
                             writer.add_scalar("charts/episodic_return", info["episode"]["r"], global_step)
                             writer.add_scalar("charts/episodic_length", info["episode"]["l"], global_step)
 
-            # TODO: is this necessary every step? 
-            # del reward, term, trunc, infos, logprob, f_ids, p_len, action, value
-            # gc_cuda_cleanup()
-        del reward, term, trunc, infos, logprob, f_ids, p_len, action, value
-        gc_cuda_cleanup()
+            # Free up GPU memory after each step
+            del reward, term, trunc, infos, logprob, f_ids, p_len, action, value, generated_texts, seq_len, padded_ids, padded_logprob, indices, action_token_mask, pad_mask
+            gc_cuda_cleanup()
+        
+        #del reward, term, trunc, infos, logprob, f_ids, p_len, action, value
+        #gc_cuda_cleanup()
         rollout_time_completed = time.time() - rollout_time_start
 
         # --- bootstrap last value to do GAE ---
@@ -376,15 +378,6 @@ if __name__ == "__main__":
         ratios_1st_epoch_1st_minibatch = []
         logprobs_barplot_logged = False
 
-        # For aggregating histogram stats across minibatches (for 1 image logging per iteration)
-        hist_newlogprobs = []
-        hist_oldlogprobs = []
-        hist_logratios = []
-        hist_ratios = []
-        hist_advantages = []
-        hist_values = []
-        hist_returns = []
-
         learning_time_start = time.time()
         all_values_stats = []
         all_advantages_stats = []
@@ -400,13 +393,13 @@ if __name__ == "__main__":
 
         np.random.shuffle(b_inds)
 
-        # ----------- ACTOR (policy) UPDATE LOOP -----------
+        # ----------- UNIFIED ACTOR-CRITIC (policy & value) UPDATE LOOP -----------
         for epoch in epoch_iter:
             minibatch_iter = range(0, args.total_batch_size, args.minibatch_size)
             if accelerator.is_main_process:
                 minibatch_iter = tqdm(
                     minibatch_iter,
-                    desc=f"Epoch {epoch+1}/{args.update_epochs} - Policy",
+                    desc=f"Epoch {epoch+1}/{args.update_epochs} - Actor-Critic",
                     leave=False,
                     dynamic_ncols=True,
                 )
@@ -452,31 +445,19 @@ if __name__ == "__main__":
                     all_advantages_stats.append(stats(mb_advantages))
                     all_returns_stats.append(stats(mb_returns))
 
-                    # Policy update
+                    # ---- ACTOR POLICY LOSS ----
                     newlogprob, entropy_tensor = agent.get_action(
                         obs=mb_obs,
                         text_prompts=[prompt_text_actor] * mb_obs.shape[0],
                         action_ids=mb_input_ids,
                         prompt_lens=mb_prompt_lens
                     )
-                    
+
                     logratio = newlogprob - mb_logprobs
                     logratio = torch.where(mb_action_masks.bool(), logratio, torch.zeros_like(logratio))
                     ratio = torch.exp(logratio)
 
-                    # Collect values for aggregate histogram logging
                     mask = mb_action_masks.bool()
-                    with torch.no_grad():
-                        if mask.sum() > 0:
-                            hist_newlogprobs.append(newlogprob[mask].detach().cpu())
-                            hist_oldlogprobs.append(mb_logprobs[mask].detach().cpu())
-                            hist_logratios.append(logratio[mask].detach().cpu())
-                            hist_ratios.append(ratio[mask].detach().cpu())
-                            hist_advantages.append(mb_advantages[mask.any(dim=1)].detach().cpu())
-                            hist_values.append(mb_values[mask.any(dim=1)].detach().cpu())
-                            hist_returns.append(mb_returns[mask.any(dim=1)].detach().cpu())
-
-                    # Per-minibatch stats for scalar/statistics logging
                     mask_sum = mask.sum().item()
                     if mask_sum > 0:
                         newlogprob_masked = newlogprob[mask].detach().cpu()
@@ -488,18 +469,16 @@ if __name__ == "__main__":
                         all_logratios_stats.append(stats(logratio_masked))
                         all_ratios_stats.append(stats(ratio_masked))
 
-                    # --- Plot logprobs for problematic samples in the first minibatch of the first epoch ---
+                    # --- Plot logprobs for problematic samples in first minibatch/epoch for debugging
                     if (epoch == 0 and start == 0 and not logprobs_barplot_logged and accelerator.is_main_process):
                         plots_logged = 0
                         max_plots_to_log = 5
                         for mb_idx_inner in range(mb_obs.shape[0]):
                             inner_mask = mb_action_masks[mb_idx_inner].bool()
                             if inner_mask.any():
-                                # Mean ratio as "debug" metric
                                 ratios_debug = ratio[mb_idx_inner][inner_mask].mean().cpu().item()
                                 ratios_1st_epoch_1st_minibatch.append(ratios_debug)
                                 print(f"Ratios debug: {ratios_debug}")
-
                                 is_problematic = ratios_debug > 1.5 or ratios_debug < 0.7
                                 if is_problematic and plots_logged < max_plots_to_log:
                                     try:
@@ -580,62 +559,18 @@ if __name__ == "__main__":
                         pg_loss_per_token = clip_pg_losses1
 
                     pg_loss = (pg_loss_per_token * mb_action_masks).sum() / mb_action_masks.sum()
-                    
+
                     # entropy loss 
                     entropy_loss = (entropy_tensor * mb_action_masks).sum() / mb_action_masks.sum()
 
-                    # backward policy loss and update
+                    # backward policy loss separately
                     accelerator.backward(pg_loss)
-                    optimizer.step()
-                    optimizer.zero_grad()
 
-        # ----------- CRITIC (value) UPDATE LOOP -----------
-        for epoch in epoch_iter:
-            minibatch_iter = range(0, args.total_batch_size, args.minibatch_size)
-            if accelerator.is_main_process:
-                minibatch_iter = tqdm(
-                    minibatch_iter,
-                    desc=f"Epoch {epoch+1}/{args.update_epochs} - Critic",
-                    leave=False,
-                    dynamic_ncols=True,
-                )
-
-            for mb_idx, start in enumerate(minibatch_iter):
-                if accelerator.is_main_process and hasattr(minibatch_iter, "set_postfix"):
-                    minibatch_iter.set_postfix({"minibatch": mb_idx})
-
-                end = start + args.minibatch_size
-                mb_inds = b_inds[start:end]
-
-                # normalize advantages at minibatch level BEFORE sharding across processes
-                proc_positions = torch.tensor(
-                    np.arange(len(mb_inds))[accelerator.process_index::accelerator.num_processes],
-                    dtype=torch.long, device=device
-                )
-                mb_advantages_global = b_advantages[mb_inds]
-                if args.norm_adv:
-                    adv_mean = mb_advantages_global.mean()
-                    adv_std = mb_advantages_global.std()
-                    mb_advantages_global = (mb_advantages_global - adv_mean) / (adv_std + 1e-8)
-
-                # shard the minibatch across processes
-                process_mb_inds = mb_inds[accelerator.process_index::accelerator.num_processes]
-                with accelerator.accumulate(agent):
-                    mb_obs = b_obs[process_mb_inds].to(device)
-                    mb_input_ids = b_input_ids[process_mb_inds].to(device)
-                    mb_prompt_lens = b_prompt_lens[process_mb_inds].to(device)
-                    mb_logprobs = b_logprobs[process_mb_inds].to(device)
-                    mb_returns = b_returns[process_mb_inds].to(device)
-                    mb_values = b_values[process_mb_inds].to(device)
-                    mb_advantages = mb_advantages_global[proc_positions].to(device)
-                    mb_action_masks = b_action_masks[process_mb_inds].to(device)
-
-                    # Critic update
+                    # ---- CRITIC VALUE LOSS ----
                     newvalue = agent.get_value(
                         obs=mb_obs, prompt_text=[prompt_text_critic] * mb_obs.shape[0]
                     ).view(-1)
 
-                    # value loss
                     if args.clip_vloss:
                         v_loss_unclipped = (newvalue - mb_returns) ** 2
                         v_clipped = mb_values + torch.clamp(newvalue - mb_values, -cliprange_low, cliprange_high)
@@ -645,55 +580,30 @@ if __name__ == "__main__":
                     else:
                         v_loss = 0.5 * ((newvalue - mb_returns) ** 2).mean()
 
-                    # backward value loss and update
+                    # backward value loss separately
                     accelerator.backward(v_loss)
+
+                    # optimizer step ONCE for both actor and critic, then zero grad
                     optimizer.step()
                     optimizer.zero_grad()
 
-        # Log histograms/images (ONE per iteration, summarize across all minibatches)
-        #if accelerator.is_main_process:
-            # def _log_histogram(name, data_list, step, bins=100):
-            #     if len(data_list) > 0:
-            #         all_data = torch.cat([x.flatten() for x in data_list])
-            #         fig, ax = plt.subplots(figsize=(7, 4))
-            #         ax.hist(all_data.cpu().numpy(), bins=bins, alpha=0.85, color="royalblue")
-            #         ax.set_title(f"{name} histogram (iteration {iteration})")
-            #         ax.set_xlabel(name)
-            #         ax.set_ylabel("Count")
-            #         buf = BytesIO()
-            #         plt.tight_layout()
-            #         plt.savefig(buf, format="png")
-            #         buf.seek(0)
-            #         hist_image = (plt.imread(buf) * 255).astype(np.uint8)
-            #         writer.add_image(f"histogram/{name}", hist_image, step, dataformats="HWC")
-            #         buf.close()
-            #         plt.close(fig)
+                    # Clean up minibatch objects after joint step
+                    del mb_obs, mb_input_ids, mb_prompt_lens
+                    del mb_logprobs, mb_advantages, mb_returns, mb_values, mb_action_masks
+                    if 'newlogprob' in locals():
+                        del newlogprob
+                    if 'entropy_tensor' in locals():
+                        del entropy_tensor
+                    if 'logratio' in locals():
+                        del logratio
+                    if 'ratio' in locals():
+                        del ratio
+                    if 'mask' in locals():
+                        del mask
+                    if 'newvalue' in locals():
+                        del newvalue
+                    gc_cuda_cleanup()
 
-            # # Only log at END of iteration to avoid slowdowns
-            # _log_histogram("ratios", hist_ratios, global_step)
-            # _log_histogram("logratios", hist_logratios, global_step)
-            # _log_histogram("newlogprob", hist_newlogprobs, global_step)
-            # _log_histogram("oldlogprob", hist_oldlogprobs, global_step)
-            # _log_histogram("advantages", hist_advantages, global_step)
-            # _log_histogram("values", hist_values, global_step)
-            # _log_histogram("returns", hist_returns, global_step)
-
-        # clean per iteration only
-        del mb_obs, mb_input_ids, mb_prompt_lens
-        del mb_logprobs, mb_advantages, mb_returns, mb_values
-        if 'newlogprob' in locals():
-            del newlogprob
-        if 'newvalue' in locals():
-            del newvalue
-        if 'entropy_tensor' in locals():
-            del entropy_tensor
-        if 'mb_action_masks' in locals():
-            del mb_action_masks
-        if 'logratio' in locals():
-            del logratio
-        if 'ratio' in locals():
-            del ratio
-        gc_cuda_cleanup()
 
         learning_time_completed = time.time() - learning_time_start
         # --- Logging ---

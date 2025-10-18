@@ -24,7 +24,7 @@ class Args:
     """the id of the environment"""
     total_timesteps: int = 10000000
     """total timesteps of the experiments"""
-    learning_rate: float = 2e-5
+    learning_rate: float = 1e-4
     """the learning rate of the optimizer"""
     weight_decay: float = 0.01
     """the weight decay of the optimizer"""
@@ -67,7 +67,7 @@ class Args:
     """Path to a file containing the text prompt for the VLM."""
     max_new_tokens: int = 512
     """Maximum number of new tokens for the VLM to generate."""
-    max_seq_len: int = 4096
+    max_seq_len: int = 2048
     """Maximum sequence length for the VLM to generate. Longer sequences will be truncated."""
     critic_warmup_iterations: int = 10
     """Number of iterations to warm up the critic."""
@@ -76,9 +76,9 @@ class Args:
     """wether to compile VLM"""
     
     # LoRa specific arguments
-    lora_rank: int = 32
+    lora_rank: int = 16
     """the rank of the LoRA adapters"""
-    lora_alpha: float = 64
+    lora_alpha: float = 32
     """the alpha of the LoRA adapters"""
     
     # Dual-Clip PPO specific arguments
