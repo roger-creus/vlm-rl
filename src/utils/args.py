@@ -24,9 +24,9 @@ class Args:
     """the id of the environment"""
     total_timesteps: int = 10000000
     """total timesteps of the experiments"""
-    learning_rate: float = 1e-4
+    learning_rate: float = 2e-5
     """the learning rate of the optimizer"""
-    weight_decay: float = 0.01
+    weight_decay: float = 0.005
     """the weight decay of the optimizer"""
     num_envs: int = 8
     """the number of parallel game environments"""

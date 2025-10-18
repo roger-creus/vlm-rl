@@ -132,7 +132,7 @@ if __name__ == "__main__":
         print(f"Total trainable parameters: {sum(p.numel() for p in params)}")
         print("-" * 50)
         
-    optimizer = optim.Adam(params, lr=args.learning_rate, betas=(0.85, 0.9))
+    optimizer = optim.AdamW(params, lr=args.learning_rate, betas=(0.85, 0.9), weight_decay=args.weight_decay)
     agent, optimizer = accelerator.prepare(agent, optimizer)
 
     # --- Storage Tensors ---
