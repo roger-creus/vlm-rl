@@ -449,6 +449,11 @@ if __name__ == "__main__":
                     )
 
                     logratio = newlogprob - mb_logprobs
+                    
+                    # Clamp logratio to avoid exploding gradients
+                    if args.logratio_clamp > 0:
+                        logratio = torch.clamp(logratio, -args.logratio_clamp, args.logratio_clamp)
+                        
                     logratio = torch.where(mb_action_masks.bool(), logratio, torch.zeros_like(logratio))
                     ratio = torch.exp(logratio)
 
