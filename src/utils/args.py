@@ -76,9 +76,9 @@ class Args:
     """wether to compile VLM"""
     
     # LoRa specific arguments
-    lora_rank: int = 16
+    lora_rank: int = 32
     """the rank of the LoRA adapters"""
-    lora_alpha: float = 32
+    lora_alpha: float = 64
     """the alpha of the LoRA adapters"""
     
     # Dual-Clip PPO specific arguments
