@@ -394,6 +394,13 @@ if __name__ == "__main__":
         np.random.shuffle(b_inds)
 
         # ----------- UNIFIED ACTOR-CRITIC (policy & value) UPDATE LOOP -----------
+        
+        # Normalize advantages at batch level before epoch loop
+        if args.norm_adv:
+            adv_mean = b_advantages.mean()
+            adv_std = b_advantages.std()
+            b_advantages = (b_advantages - adv_mean) / (adv_std + 1e-8)
+
         for epoch in epoch_iter:
             minibatch_iter = range(0, args.total_batch_size, args.minibatch_size)
             if accelerator.is_main_process:
@@ -411,18 +418,6 @@ if __name__ == "__main__":
                 end = start + args.minibatch_size
                 mb_inds = b_inds[start:end]
 
-                # normalize advantages at minibatch level BEFORE sharding across processes
-                proc_positions = torch.tensor(
-                    np.arange(len(mb_inds))[accelerator.process_index::accelerator.num_processes],
-                    dtype=torch.long, device=device
-                )
-                mb_advantages_global = b_advantages[mb_inds]
-                if args.norm_adv:
-                    adv_mean = mb_advantages_global.mean()
-                    adv_std = mb_advantages_global.std()
-                    mb_advantages_global = (mb_advantages_global - adv_mean) / (adv_std + 1e-8)
-
-                # shard the minibatch across processes
                 process_mb_inds = mb_inds[accelerator.process_index::accelerator.num_processes]
                 with accelerator.accumulate(agent):
                     mb_obs = b_obs[process_mb_inds].to(device)
@@ -431,7 +426,7 @@ if __name__ == "__main__":
                     mb_logprobs = b_logprobs[process_mb_inds].to(device)
                     mb_returns = b_returns[process_mb_inds].to(device)
                     mb_values = b_values[process_mb_inds].to(device)
-                    mb_advantages = mb_advantages_global[proc_positions].to(device)
+                    mb_advantages = b_advantages[process_mb_inds].to(device)
                     mb_action_masks = b_action_masks[process_mb_inds].to(device)
 
                     def stats(x):
