@@ -25,9 +25,10 @@ from IPython import embed
 if __name__ == "__main__":
     args = tyro.cli(Args)
     run_name = f"{args.env_id}__{args.exp_name}__{args.seed}__{int(time.time())}"
+    os.makedirs(f"runs/{run_name}", exist_ok=True)
     
     # --- Accelerator ---
-    accelerator_cfg = {"gradient_accumulation_steps": args.gradient_accumulation_steps}
+    accelerator_cfg = {"project_dir": f"runs/{run_name}", "gradient_accumulation_steps": args.gradient_accumulation_steps}
     if args.enable_compile:
         dynamo_plugin = TorchDynamoPlugin(
             backend="inductor",
@@ -37,7 +38,13 @@ if __name__ == "__main__":
         )
         accelerator_cfg["dynamo_plugin"] = dynamo_plugin
         print("Compilation enabled!")
+    
     accelerator = Accelerator(**accelerator_cfg)
+    
+    # # load checkpoint
+    # if args.checkpoint_dir != "":
+    #     accelerator.load_state(os.path.join(args.checkpoint_dir, "checkpoint_0"))
+    #     print(f"Checkpoint loaded from {args.checkpoint_dir}")
 
     # --- Arguments ---
     device = accelerator.device
@@ -161,7 +168,8 @@ if __name__ == "__main__":
     next_obs, _ = envs.reset()
     next_obs = torch.Tensor(next_obs).to(device)
     next_done = torch.zeros(args.num_envs).to(device)
-
+    
+    first_model_save = True
     for iteration in range(1, args.num_iterations + 1):
         generation_lengths = []
         seq_len_errors = []
@@ -367,8 +375,14 @@ if __name__ == "__main__":
         # --- Training ---
         b_inds = np.arange(args.total_batch_size)
         is_critic_warmup = iteration <= args.critic_warmup_iterations
-
-        epoch_iter = range(args.update_epochs)
+        
+        # if accelerator.is_main_process and not is_critic_warmup and first_model_save:
+        #     accelerator.save_state(output_dir=f"checkpoint-{iteration}")
+        #     print(f"Model saved to runs/{run_name}")
+        #     first_model_save = False
+        
+        true_update_epochs = args.update_epochs * 3 if is_critic_warmup else args.update_epochs
+        epoch_iter = range(true_update_epochs)
         if accelerator.is_main_process:
             epoch_iter = tqdm(epoch_iter, desc="Epochs")
 
@@ -406,7 +420,7 @@ if __name__ == "__main__":
             if accelerator.is_main_process:
                 minibatch_iter = tqdm(
                     minibatch_iter,
-                    desc=f"Epoch {epoch+1}/{args.update_epochs} - Actor-Critic",
+                    desc=f"Epoch {epoch+1}/{args.update_epochs} - {'Critic Warmup' if is_critic_warmup else 'Actor-Critic'}",
                     leave=False,
                     dynamic_ncols=True,
                 )
@@ -440,7 +454,36 @@ if __name__ == "__main__":
                     all_advantages_stats.append(stats(mb_advantages))
                     all_returns_stats.append(stats(mb_returns))
 
-                    # ---- ACTOR POLICY LOSS ----
+                    # Only compute and backward value loss during critic warmup
+                    if is_critic_warmup:
+                        # ---- CRITIC VALUE LOSS ----
+                        newvalue = agent.get_value(
+                            obs=mb_obs, prompt_text=[prompt_text_critic] * mb_obs.shape[0]
+                        ).view(-1)
+
+                        if args.clip_vloss:
+                            v_loss_unclipped = (newvalue - mb_returns) ** 2
+                            v_clipped = mb_values + torch.clamp(newvalue - mb_values, -cliprange_low, cliprange_high)
+                            v_loss_clipped = (v_clipped - mb_returns) ** 2
+                            v_loss_max = torch.max(v_loss_unclipped, v_loss_clipped)
+                            v_loss = 0.5 * v_loss_max.mean()
+                        else:
+                            v_loss = 0.5 * ((newvalue - mb_returns) ** 2).mean()
+
+                        accelerator.backward(v_loss)
+
+                        # optimizer step and zero grad
+                        optimizer.step()
+                        optimizer.zero_grad()
+                        # Clean up minibatch objects
+                        del mb_obs, mb_input_ids, mb_prompt_lens
+                        del mb_logprobs, mb_advantages, mb_returns, mb_values, mb_action_masks
+                        if 'newvalue' in locals():
+                            del newvalue
+                        gc_cuda_cleanup()
+                        continue  # Skip policy optimization during critic warmup
+
+                    # --- ACTOR POLICY LOSS ----
                     newlogprob, entropy_tensor = agent.get_action(
                         obs=mb_obs,
                         text_prompts=[prompt_text_actor] * mb_obs.shape[0],
@@ -616,27 +659,35 @@ if __name__ == "__main__":
             writer.add_scalar("debug/rollout_time", rollout_time_completed, global_step)
             writer.add_scalar("debug/learning_time", learning_time_completed, global_step)
 
+            if is_critic_warmup:
+                writer.add_scalar("info/critic_warmup_phase", 1, global_step)
+            else:
+                writer.add_scalar("info/critic_warmup_phase", 0, global_step)
+
             # We set v_loss and pg_loss from last minibatch; could aggregate if needed.
             if 'v_loss' in locals():
                 writer.add_scalar("losses/value_loss", v_loss.item(), global_step)
-            if 'pg_loss' in locals():
-                writer.add_scalar("losses/policy_loss", pg_loss.item(), global_step)
-            if 'entropy_loss' in locals():
-                writer.add_scalar("losses/entropy", entropy_loss.item(), global_step)
+            # Only log policy loss and entropy when not in critic_warmup
+            if not is_critic_warmup:
+                if 'pg_loss' in locals():
+                    writer.add_scalar("losses/policy_loss", pg_loss.item(), global_step)
+                if 'entropy_loss' in locals():
+                    writer.add_scalar("losses/entropy", entropy_loss.item(), global_step)
 
-            if ratios_1st_epoch_1st_minibatch:
-                writer.add_scalar("losses/ratios_1st_epoch_1st_minibatch", np.mean(ratios_1st_epoch_1st_minibatch), global_step)
-            if epoch_approx_kls:
-                writer.add_scalar("losses/approx_kl", np.mean(epoch_approx_kls), global_step)
-            if epoch_old_approx_kls:
-                writer.add_scalar("losses/old_approx_kl", np.mean(epoch_old_approx_kls), global_step)
-            if epoch_clipfracs_upper:
-                writer.add_scalar("losses/clipfrac_upper", np.mean(epoch_clipfracs_upper), global_step)
-            if epoch_clipfracs_lower:
-                writer.add_scalar("losses/clipfrac_lower", np.mean(epoch_clipfracs_lower), global_step)
+            if not is_critic_warmup:
+                if ratios_1st_epoch_1st_minibatch:
+                    writer.add_scalar("losses/ratios_1st_epoch_1st_minibatch", np.mean(ratios_1st_epoch_1st_minibatch), global_step)
+                if epoch_approx_kls:
+                    writer.add_scalar("losses/approx_kl", np.mean(epoch_approx_kls), global_step)
+                if epoch_old_approx_kls:
+                    writer.add_scalar("losses/old_approx_kl", np.mean(epoch_old_approx_kls), global_step)
+                if epoch_clipfracs_upper:
+                    writer.add_scalar("losses/clipfrac_upper", np.mean(epoch_clipfracs_upper), global_step)
+                if epoch_clipfracs_lower:
+                    writer.add_scalar("losses/clipfrac_lower", np.mean(epoch_clipfracs_lower), global_step)
 
             # --- Extra statistics logging for logprobs, ratio, value, etc ---
-            if len(all_newlogprobs_stats) > 0:
+            if len(all_newlogprobs_stats) > 0 and not is_critic_warmup:
                 keys = all_newlogprobs_stats[0].keys()
                 avgstats = lambda arr: {k: float(np.mean([d[k] for d in arr])) for k in keys}
                 writer.add_scalar("stats/newlogprob_mean", avgstats(all_newlogprobs_stats)["mean"], global_step)
@@ -679,16 +730,21 @@ if __name__ == "__main__":
 
             sps = int(args.total_batch_size / (time.time() - start_time))
             writer.add_scalar("charts/SPS", sps, global_step)
-            print(
-                f"SPS: {sps} || value.loss : {v_loss.item() if 'v_loss' in locals() else 'n/a'}, policy.loss : {pg_loss.item() if 'pg_loss' in locals() else 'n/a'}, policy.entropy : {entropy_loss.item() if 'entropy_loss' in locals() else 'n/a'}",
-                "\n"
-                f"    newlogprob: {avgstats(all_newlogprobs_stats)['mean'] if all_newlogprobs_stats else 'n/a'} | "
-                f"oldlogprob: {avgstats(all_oldlogprobs_stats)['mean'] if all_oldlogprobs_stats else 'n/a'} | "
-                f"ratio: {avgstats(all_ratios_stats)['mean'] if all_ratios_stats else 'n/a'} | "
-                f"values: {avgstats(all_values_stats)['mean'] if all_values_stats else 'n/a'} | "
-                f"advantages: {avgstats(all_advantages_stats)['mean'] if all_advantages_stats else 'n/a'} | "
-                f"returns: {avgstats(all_returns_stats)['mean'] if all_returns_stats else 'n/a'}"
-            )
+            if is_critic_warmup:
+                print(
+                    f"(CRITIC WARMUP) SPS: {sps} || value.loss : {v_loss.item() if 'v_loss' in locals() else 'n/a'}"
+                )
+            else:
+                print(
+                    f"SPS: {sps} || value.loss : {v_loss.item() if 'v_loss' in locals() else 'n/a'}, policy.loss : {pg_loss.item() if 'pg_loss' in locals() else 'n/a'}, policy.entropy : {entropy_loss.item() if 'entropy_loss' in locals() else 'n/a'}",
+                    "\n"
+                    f"    newlogprob: {avgstats(all_newlogprobs_stats)['mean'] if all_newlogprobs_stats else 'n/a'} | "
+                    f"oldlogprob: {avgstats(all_oldlogprobs_stats)['mean'] if all_oldlogprobs_stats else 'n/a'} | "
+                    f"ratio: {avgstats(all_ratios_stats)['mean'] if all_ratios_stats else 'n/a'} | "
+                    f"values: {avgstats(all_values_stats)['mean'] if all_values_stats else 'n/a'} | "
+                    f"advantages: {avgstats(all_advantages_stats)['mean'] if all_advantages_stats else 'n/a'} | "
+                    f"returns: {avgstats(all_returns_stats)['mean'] if all_returns_stats else 'n/a'}"
+                )
 
     envs.close()
     writer.close()

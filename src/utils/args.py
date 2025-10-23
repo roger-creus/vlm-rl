@@ -26,11 +26,11 @@ class Args:
     """total timesteps of the experiments"""
     learning_rate: float = 2e-5
     """the learning rate of the optimizer"""
-    weight_decay: float = 0.005
+    weight_decay: float = 0.0
     """the weight decay of the optimizer"""
     num_envs: int = 8
     """the number of parallel game environments"""
-    num_steps: int = 32
+    num_steps: int = 64
     """the number of steps to run in each environment per policy rollout"""
     anneal_lr: bool = False
     """Toggle learning rate annealing for policy and value networks"""
@@ -38,9 +38,9 @@ class Args:
     """the discount factor gamma"""
     gae_lambda: float = 0.95
     """the lambda for the general advantage estimation"""
-    num_minibatches: int = 128
+    num_minibatches: int = 256
     """the number of mini-batches"""
-    gradient_accumulation_steps: int = 32
+    gradient_accumulation_steps: int = 64
     """the number of gradient accumulation steps"""
     update_epochs: int = 1
     """the K epochs to update the policy"""
@@ -74,6 +74,8 @@ class Args:
 
     enable_compile: bool = False
     """wether to compile VLM"""
+    checkpoint_dir: str = ""
+    """the directory to save checkpoints"""
     
     # LoRa specific arguments
     lora_rank: int = 32
