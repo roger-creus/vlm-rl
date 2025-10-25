@@ -24,23 +24,23 @@ class Args:
     """the id of the environment"""
     total_timesteps: int = 10000000
     """total timesteps of the experiments"""
-    learning_rate: float = 2e-5
+    learning_rate: float = 5e-5
     """the learning rate of the optimizer"""
     weight_decay: float = 0.0
     """the weight decay of the optimizer"""
     num_envs: int = 8
     """the number of parallel game environments"""
-    num_steps: int = 64
+    num_steps: int = 32
     """the number of steps to run in each environment per policy rollout"""
-    anneal_lr: bool = False
+    anneal_lr: bool = True
     """Toggle learning rate annealing for policy and value networks"""
     gamma: float = 0.99
     """the discount factor gamma"""
     gae_lambda: float = 0.95
     """the lambda for the general advantage estimation"""
-    num_minibatches: int = 256
+    num_minibatches: int = 128
     """the number of mini-batches"""
-    gradient_accumulation_steps: int = 64
+    gradient_accumulation_steps: int = 32
     """the number of gradient accumulation steps"""
     update_epochs: int = 1
     """the K epochs to update the policy"""
@@ -67,10 +67,12 @@ class Args:
     """Path to a file containing the text prompt for the VLM."""
     max_new_tokens: int = 512
     """Maximum number of new tokens for the VLM to generate."""
-    max_seq_len: int = 2048
+    max_seq_len: int = 3072
     """Maximum sequence length for the VLM to generate. Longer sequences will be truncated."""
-    critic_warmup_iterations: int = 10
+    critic_warmup_iterations: int = 5
     """Number of iterations to warm up the critic."""
+    warmup_epochs: int = 5
+    """Number of epochs to warm up the critic."""
 
     enable_compile: bool = False
     """wether to compile VLM"""

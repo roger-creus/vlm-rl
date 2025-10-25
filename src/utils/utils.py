@@ -39,7 +39,7 @@ def make_vizdoom_env(env_id, idx, capture_video, run_name):
         return env
     return thunk
 
-def parse_action(text: str, action_space: gym.spaces.Discrete, action_map: dict) -> int:
+def parse_action_cot(text: str, action_space: gym.spaces.Discrete, action_map: dict) -> int:
     """
     Parses the 'ACTION' from the VLM's multi-line text output.
     Returns a random action if parsing fails.
@@ -53,6 +53,21 @@ def parse_action(text: str, action_space: gym.spaces.Discrete, action_map: dict)
     except Exception as e:
         print(f"Error parsing action: {e}. Text: '{text}'")
     
+    return action_space.sample()
+
+def parse_action(text: str, action_space: gym.spaces.Discrete, action_map: dict) -> int:
+    """
+    Parses the action name from the VLM's raw text output.
+    Returns a random action if parsing fails.
+    """
+    try:
+        action_str = text.strip().upper()
+        if action_str in action_map:
+            return action_map[action_str]
+    except Exception as e:
+        print(f"Error parsing action: {e}. Text: '{text}'")
+    
+    print(f"Warning: Could not parse action '{text}'. Returning random action.")
     return action_space.sample()
 
 def gc_cuda_cleanup():

@@ -2,6 +2,7 @@ import os
 import random
 import time
 import gymnasium as gym
+from PIL import Image
 import numpy as np
 import torch
 import torch.optim as optim
@@ -15,9 +16,9 @@ from tqdm import tqdm
 import matplotlib.pyplot as plt
 from io import BytesIO
 
-from src.models.model import DecoupledActorCriticVLM
+from src.models.model import DecoupledActorCriticVLM_COT
 from src.utils.args import Args
-from src.utils.utils import numpy_to_pil, make_vizdoom_env, parse_action, gc_cuda_cleanup, print_trainable_parameters
+from src.utils.utils import numpy_to_pil, make_vizdoom_env, parse_action_cot, gc_cuda_cleanup, print_trainable_parameters
 from src.utils.action_maps import action_maps
 
 from IPython import embed
@@ -41,11 +42,6 @@ if __name__ == "__main__":
     
     accelerator = Accelerator(**accelerator_cfg)
     
-    # # load checkpoint
-    # if args.checkpoint_dir != "":
-    #     accelerator.load_state(os.path.join(args.checkpoint_dir, "checkpoint_0"))
-    #     print(f"Checkpoint loaded from {args.checkpoint_dir}")
-
     # --- Arguments ---
     device = accelerator.device
     args.total_batch_size = int(args.num_envs * args.num_steps * accelerator.num_processes)
@@ -120,7 +116,7 @@ if __name__ == "__main__":
         prompt_text_critic = f.read()
 
     # --- Agent and Optimizer ---
-    agent = DecoupledActorCriticVLM(
+    agent = DecoupledActorCriticVLM_COT(
         vlm_name=args.vlm_name,
         max_new_tokens=args.max_new_tokens,
         use_lora=True,
@@ -141,6 +137,12 @@ if __name__ == "__main__":
         
     optimizer = optim.AdamW(params, lr=args.learning_rate, betas=(0.85, 0.9), weight_decay=args.weight_decay)
     agent, optimizer = accelerator.prepare(agent, optimizer)
+    
+    # if args.checkpoint_dir != "":
+    #     print(f"Loading checkpoint from {args.checkpoint_dir}")
+    #     accelerator.load_state(args.checkpoint_dir)
+    #     print(f"Checkpoint loaded from {args.checkpoint_dir}")
+    # accelerator.wait_for_everyone()
 
     # --- Storage Tensors ---
     obs = torch.zeros((args.num_steps, args.num_envs) + envs.single_observation_space.shape, device=device)
@@ -170,6 +172,10 @@ if __name__ == "__main__":
     next_done = torch.zeros(args.num_envs).to(device)
     
     first_model_save = True
+    if accelerator.is_main_process:
+        current_episode_frames = []
+        last_completed_episode_frames = []
+    
     for iteration in range(1, args.num_iterations + 1):
         generation_lengths = []
         seq_len_errors = []
@@ -185,6 +191,7 @@ if __name__ == "__main__":
         for step in range(0, args.num_steps):
             if accelerator.is_main_process:
                 global_step += args.num_envs * accelerator.num_processes
+                current_episode_frames.append(next_obs[0].cpu().numpy().astype(np.uint8))
 
             obs[step] = next_obs
             dones[step] = next_done
@@ -199,7 +206,7 @@ if __name__ == "__main__":
                 )
                 # parse model outputs to environment action space
                 action = torch.tensor(
-                    [parse_action(text, envs.single_action_space, action_map) for text in generated_texts],
+                    [parse_action_cot(text, envs.single_action_space, action_map) for text in generated_texts],
                     device=device
                 )
                 # get value estimate for the current obs
@@ -209,7 +216,6 @@ if __name__ == "__main__":
                 )
                 values[step] = value.flatten()
 
-            # --- START: MODIFIED CODE ---
             # The generated full_ids (f_ids) might be shorter or longer than max_seq_len
             seq_len = f_ids.shape[1]
             p_len = p_len.unsqueeze(1)
@@ -228,9 +234,11 @@ if __name__ == "__main__":
             )
 
             # Truncate or pad the generated sequence and its logprobs
-            copy_len = min(seq_len, args.max_seq_len)
-            padded_ids[:, :copy_len] = f_ids[:, :copy_len]
-            padded_logprob[:, :copy_len] = logprob[:, :copy_len]
+            copy_len_ids = min(seq_len, args.max_seq_len)
+            padded_ids[:, :copy_len_ids] = f_ids[:, :copy_len_ids]
+            logprob_len = logprob.shape[1] # This will be seq_len - 1
+            copy_len_logprob = min(logprob_len, args.max_seq_len - 1)
+            padded_logprob[:, 1 : 1 + copy_len_logprob] = logprob[:, :copy_len_logprob]
 
             # Now, store the consistently shaped tensors
             full_input_ids[step] = padded_ids
@@ -245,7 +253,6 @@ if __name__ == "__main__":
             
             generation_len = seq_len - p_len[0].cpu().item()
             seq_len_error = 1 if seq_len >= args.max_seq_len else 0
-            #print(f"Generation length: {generation_len}, Prompt length: {p_len[0].cpu().item()}, Seq len error: {seq_len_error}")
             
             generation_lengths.append(generation_len)
             seq_len_errors.append(seq_len_error)
@@ -258,29 +265,58 @@ if __name__ == "__main__":
             next_done = np.logical_or(term, trunc)
             next_obs, next_done = torch.Tensor(next_obs).to(device), torch.Tensor(next_done).to(device)
 
+            if accelerator.is_main_process:
+                if next_done[0]:
+                    current_episode_frames.append(next_obs[0].cpu().numpy().astype(np.uint8))
+                    last_completed_episode_frames = list(current_episode_frames)
+                    current_episode_frames = []
+
             # --- Logging ---
             if accelerator.is_main_process:
                 if iteration % args.log_every == 0 and step == 0:
-                    pil_images_debug = numpy_to_pil(next_obs.cpu().numpy())
-                    log_image = pil_images_debug[0]
-                    image_path = os.path.join(log_path, f"iter_{iteration}_step_{step}.png")
-                    log_image.save(image_path)
-
-                    log_entry = (
+                    log_entry_text = (
                         f"## Iteration {iteration}, Step {step} (Global Step: {global_step})\n\n"
                         f"**Prompt Actor:**\n```\n{prompt_text_actor}\n```\n\n"
                         f"**Prompt Critic:**\n```\n{prompt_text_critic}\n```\n\n"
-                        f"**VLM Output (Env 0):**\n```json\n{generated_texts[0]}\n```\n\n"
-                        f"**Observation (Env 0):**\n"
-                        f"![Observation]({os.path.basename(image_path)})\n\n"
-                        "---\n\n"
+                        f"**VLM Output (Env 0, Step 0):**\n```json\n{generated_texts[0]}\n```\n\n"
                     )
-                    interaction_log_file.write(log_entry)
+
+                    if last_completed_episode_frames:
+                        try:
+                            pil_images_debug = [Image.fromarray(frame) for frame in last_completed_episode_frames]
+                            gif_path = os.path.join(log_path, f"iter_{iteration}_episode.gif")
+                            
+                            pil_images_debug[0].save(
+                                gif_path,
+                                save_all=True,
+                                append_images=pil_images_debug[1:],
+                                duration=150,
+                                loop=0
+                            )
+                            
+                            log_entry_text += (
+                                f"**Last Completed Episode (Env 0):**\n"
+                                f"![Episode GIF]({os.path.basename(gif_path)})\n\n"
+                            )
+
+                            if args.track:
+                                video_array = np.array(last_completed_episode_frames)
+                                video_tensor = torch.tensor(video_array).permute(0, 3, 1, 2).unsqueeze(0)
+                                writer.add_video("debug/episode_video", video_tensor, global_step, fps=10)
+                            
+                            last_completed_episode_frames = []
+
+                        except Exception as e:
+                            print(f"Warning: Failed to save episode GIF. Error: {e}")
+                            log_entry_text += f"**(Failed to save GIF: {e})**\n\n"
+                    
+                    log_entry_text += "---\n\n"
+
+                    interaction_log_file.write(log_entry_text)
                     interaction_log_file.flush()
 
                     if args.track:
                         writer.add_text("debug/vlm_output", str(generated_texts[0]), global_step)
-                        writer.add_image("debug/observation", np.array(log_image), global_step, dataformats='HWC')
 
                 if "final_info" in infos:
                     for info in infos["final_info"]:
@@ -292,8 +328,6 @@ if __name__ == "__main__":
             del reward, term, trunc, infos, logprob, f_ids, p_len, action, value, generated_texts, seq_len, padded_ids, padded_logprob, indices, action_token_mask, pad_mask
             gc_cuda_cleanup()
         
-        #del reward, term, trunc, infos, logprob, f_ids, p_len, action, value
-        #gc_cuda_cleanup()
         rollout_time_completed = time.time() - rollout_time_start
 
         # --- bootstrap last value to do GAE ---
@@ -377,11 +411,13 @@ if __name__ == "__main__":
         is_critic_warmup = iteration <= args.critic_warmup_iterations
         
         # if accelerator.is_main_process and not is_critic_warmup and first_model_save:
-        #     accelerator.save_state(output_dir=f"checkpoint-{iteration}")
-        #     print(f"Model saved to runs/{run_name}")
+        #     print(f"Saving checkpoint at iteration {iteration}")
+        #     accelerator.save_state(output_dir=f"runs/{run_name}/checkpoint-{iteration}")
+        #     print(f"Checkpoint saved to runs/{run_name}/checkpoint-{iteration}")
         #     first_model_save = False
+        # accelerator.wait_for_everyone()
         
-        true_update_epochs = args.update_epochs * 3 if is_critic_warmup else args.update_epochs
+        true_update_epochs = args.warmup_epochs if is_critic_warmup else args.update_epochs
         epoch_iter = range(true_update_epochs)
         if accelerator.is_main_process:
             epoch_iter = tqdm(epoch_iter, desc="Epochs")
@@ -404,7 +440,6 @@ if __name__ == "__main__":
         epoch_clipfracs_lower = []
         epoch_approx_kls = []
         epoch_old_approx_kls = []
-
         np.random.shuffle(b_inds)
 
         # ----------- UNIFIED ACTOR-CRITIC (policy & value) UPDATE LOOP -----------
@@ -475,6 +510,7 @@ if __name__ == "__main__":
                         # optimizer step and zero grad
                         optimizer.step()
                         optimizer.zero_grad()
+                        
                         # Clean up minibatch objects
                         del mb_obs, mb_input_ids, mb_prompt_lens
                         del mb_logprobs, mb_advantages, mb_returns, mb_values, mb_action_masks
@@ -490,80 +526,42 @@ if __name__ == "__main__":
                         action_ids=mb_input_ids,
                         prompt_lens=mb_prompt_lens
                     )
-
-                    logratio = newlogprob - mb_logprobs
+                    
+                    old_logprobs_sliced = mb_logprobs[:, 1:]
+                    action_masks_sliced = mb_action_masks[:, 1:]
+                    logratio = newlogprob - old_logprobs_sliced
                     
                     # Clamp logratio to avoid exploding gradients
                     if args.logratio_clamp > 0:
                         logratio = torch.clamp(logratio, -args.logratio_clamp, args.logratio_clamp)
                         
-                    logratio = torch.where(mb_action_masks.bool(), logratio, torch.zeros_like(logratio))
+                    logratio = torch.where(action_masks_sliced.bool(), logratio, torch.zeros_like(logratio))
                     ratio = torch.exp(logratio)
 
-                    mask = mb_action_masks.bool()
+                    mask = action_masks_sliced.bool()
                     mask_sum = mask.sum().item()
                     if mask_sum > 0:
                         newlogprob_masked = newlogprob[mask].detach().cpu()
-                        oldlogprob_masked = mb_logprobs[mask].detach().cpu()
                         logratio_masked = logratio[mask].detach().cpu()
                         ratio_masked = ratio[mask].detach().cpu()
+                        oldlogprob_masked = old_logprobs_sliced[mask].detach().cpu() 
+                        
                         all_newlogprobs_stats.append(stats(newlogprob_masked))
                         all_oldlogprobs_stats.append(stats(oldlogprob_masked))
                         all_logratios_stats.append(stats(logratio_masked))
                         all_ratios_stats.append(stats(ratio_masked))
 
-                    # --- Plot logprobs for problematic samples in first minibatch/epoch for debugging
                     if (epoch == 0 and start == 0 and not logprobs_barplot_logged and accelerator.is_main_process):
-                        plots_logged = 0
-                        max_plots_to_log = 5
                         for mb_idx_inner in range(mb_obs.shape[0]):
-                            inner_mask = mb_action_masks[mb_idx_inner].bool()
+                            inner_mask = action_masks_sliced[mb_idx_inner].bool()
                             if inner_mask.any():
                                 ratios_debug = ratio[mb_idx_inner][inner_mask].mean().cpu().item()
                                 ratios_1st_epoch_1st_minibatch.append(ratios_debug)
                                 print(f"Ratios debug: {ratios_debug}")
-                                is_problematic = ratios_debug > 1.5 or ratios_debug < 0.7
-                                if is_problematic and plots_logged < max_plots_to_log:
-                                    try:
-                                        newlogprobs_tokens = newlogprob[mb_idx_inner][inner_mask].detach().cpu().to(torch.float32).numpy()
-                                        oldlogprobs_tokens = mb_logprobs[mb_idx_inner][inner_mask].detach().cpu().to(torch.float32).numpy()
-                                        num_tokens = len(oldlogprobs_tokens)
-                                        x = np.arange(num_tokens)
-                                        width = 0.35
-
-                                        fig, ax = plt.subplots(
-                                            figsize=(min(20, max(8, num_tokens * 0.8)), 6)
-                                        )
-                                        ax.bar(x - width/2, oldlogprobs_tokens, width, label="Old Logprob")
-                                        ax.bar(x + width/2, newlogprobs_tokens, width, label="New Logprob")
-                                        ax.set_xlabel("Action Token Index")
-                                        ax.set_ylabel("Log Probability")
-                                        ax.set_title(f"Logprobs for Problematic Sample {mb_idx_inner} (Ratio = {ratios_debug:.4f})")
-                                        ax.legend()
-                                        ax.grid(axis='y', linestyle='--', alpha=0.7)
-
-                                        buf = BytesIO()
-                                        plt.tight_layout()
-                                        plt.savefig(buf, format='png')
-                                        buf.seek(0)
-
-                                        plot_image_arr = (plt.imread(buf) * 255).astype(np.uint8)
-                                        writer.add_image(
-                                            f"debug/problematic_logprobs/batch_{mb_idx_inner}",
-                                            plot_image_arr,
-                                            global_step,
-                                            dataformats='HWC'
-                                        )
-                                        buf.close()
-                                        plt.close(fig)
-                                        plots_logged += 1
-                                    except Exception as e:
-                                        print(f"Failed to plot barplot for problematic sample (batch {mb_idx_inner}): {e}")
-                        logprobs_barplot_logged = True
 
                     # KL and clip fraction stats (for logging plots and scalars)
                     with torch.no_grad():
-                        valid = mb_action_masks
+                        valid = action_masks_sliced.bool()
                         valid_token_count = valid.sum()
                         if valid_token_count > 0:
                             masked_logratio = logratio[valid]
@@ -574,14 +572,15 @@ if __name__ == "__main__":
                             epoch_old_approx_kls.append(old_approx_kl.item())
 
                     # dual-clip PPO loss and fractions
-                    mb_advantages_exp = mb_advantages.unsqueeze(-1)
+                    mb_advantages_exp = mb_advantages.unsqueeze(-1) 
+                    
                     pg_losses1 = -mb_advantages_exp * ratio
                     pg_losses2 = -mb_advantages_exp * torch.clamp(ratio, 1 - cliprange_low, 1 + cliprange_high)
                     clip_pg_losses1 = torch.maximum(pg_losses1, pg_losses2)
 
                     upper_clipfrac_mask = (pg_losses2 > pg_losses1).float()
-                    if mb_action_masks.sum() > 0:
-                        clipfrac_upper = (upper_clipfrac_mask * mb_action_masks.float()).sum() / mb_action_masks.float().sum()
+                    if action_masks_sliced.sum() > 0:
+                        clipfrac_upper = (upper_clipfrac_mask * action_masks_sliced.float()).sum() / action_masks_sliced.float().sum()
                     else:
                         clipfrac_upper = torch.tensor(0.0, device=upper_clipfrac_mask.device)
                     epoch_clipfracs_upper.append(clipfrac_upper.item())
@@ -590,8 +589,8 @@ if __name__ == "__main__":
                     clip_pg_losses2 = torch.min(pg_losses3, clip_pg_losses1)
 
                     lower_clipfrac_mask = (clip_pg_losses1 > pg_losses3) & (mb_advantages_exp < 0)
-                    if mb_action_masks.sum() > 0:
-                        clipfrac_lower = (lower_clipfrac_mask.float() * mb_action_masks.float()).sum() / mb_action_masks.float().sum()
+                    if action_masks_sliced.sum() > 0:
+                        clipfrac_lower = (lower_clipfrac_mask.float() * action_masks_sliced.float()).sum() / action_masks_sliced.float().sum()
                     else:
                         clipfrac_lower = torch.tensor(0.0, device=upper_clipfrac_mask.device)
                     epoch_clipfracs_lower.append(clipfrac_lower.item())
@@ -601,13 +600,12 @@ if __name__ == "__main__":
                     else:
                         pg_loss_per_token = clip_pg_losses1
 
-                    pg_loss = (pg_loss_per_token * mb_action_masks).sum() / mb_action_masks.sum()
+                    pg_loss = (pg_loss_per_token * action_masks_sliced).sum() / action_masks_sliced.sum()
 
                     # entropy loss 
-                    entropy_loss = (entropy_tensor * mb_action_masks).sum() / mb_action_masks.sum()
-
-                    # backward policy loss separately
-                    accelerator.backward(pg_loss)
+                    entropy_loss = (entropy_tensor * action_masks_sliced).sum() / action_masks_sliced.sum()
+                    
+                    accelerator.backward(pg_loss - args.ent_coef * entropy_loss) 
 
                     # ---- CRITIC VALUE LOSS ----
                     newvalue = agent.get_value(
@@ -629,7 +627,7 @@ if __name__ == "__main__":
                     # optimizer step ONCE for both actor and critic, then zero grad
                     optimizer.step()
                     optimizer.zero_grad()
-
+                    
                     # Clean up minibatch objects after joint step
                     del mb_obs, mb_input_ids, mb_prompt_lens
                     del mb_logprobs, mb_advantages, mb_returns, mb_values, mb_action_masks
@@ -648,6 +646,12 @@ if __name__ == "__main__":
                     gc_cuda_cleanup()
 
 
+        # if accelerator.is_main_process and iteration % 25 == 0:
+        #     print(f"Saving checkpoint at iteration {iteration}")
+        #     accelerator.save_state(output_dir=f"runs/{run_name}/checkpoint-{iteration}")
+        #     print(f"Checkpoint saved to runs/{run_name}/checkpoint-{iteration}")
+        # accelerator.wait_for_everyone()
+
         learning_time_completed = time.time() - learning_time_start
         # --- Logging ---
         if accelerator.is_main_process:
@@ -664,10 +668,9 @@ if __name__ == "__main__":
             else:
                 writer.add_scalar("info/critic_warmup_phase", 0, global_step)
 
-            # We set v_loss and pg_loss from last minibatch; could aggregate if needed.
             if 'v_loss' in locals():
                 writer.add_scalar("losses/value_loss", v_loss.item(), global_step)
-            # Only log policy loss and entropy when not in critic_warmup
+
             if not is_critic_warmup:
                 if 'pg_loss' in locals():
                     writer.add_scalar("losses/policy_loss", pg_loss.item(), global_step)
@@ -686,7 +689,6 @@ if __name__ == "__main__":
                 if epoch_clipfracs_lower:
                     writer.add_scalar("losses/clipfrac_lower", np.mean(epoch_clipfracs_lower), global_step)
 
-            # --- Extra statistics logging for logprobs, ratio, value, etc ---
             if len(all_newlogprobs_stats) > 0 and not is_critic_warmup:
                 keys = all_newlogprobs_stats[0].keys()
                 avgstats = lambda arr: {k: float(np.mean([d[k] for d in arr])) for k in keys}
