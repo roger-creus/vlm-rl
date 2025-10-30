@@ -13,4 +13,4 @@ conda deactivate
 conda activate $CONDA_ENVS_PATH/cleanrl-vlm
 
 # test this in 4-gpu node
-accelerate launch --config_file=deepspeed_zero2.yaml src/train_decoupled_actor_critic.py  --vlm_name="Qwen/Qwen3-VL-4B-Instruct" --track --num_envs=2 --num_steps=8 --num_minibatches=8 --critic_warmup_iterations=0
+accelerate launch --config_file=deepspeed_zero2.yaml src/train_decoupled_actor_critic_cot.py  --vlm_name="Qwen/Qwen3-VL-4B-Instruct" --track --num_envs=2 --num_steps=8 --num_minibatches=8 --gradient_accumulation_steps=4 --critic_warmup_iterations=0

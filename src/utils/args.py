@@ -61,9 +61,9 @@ class Args:
     # VLM specific arguments
     vlm_name: str = "Qwen/Qwen3-VL-4B-Instruct"
     """The model ID from Hugging Face."""
-    prompt_actor_path: str = "prompt_actor_doom.txt"
+    prompt_actor_path: str = "prompts/corridor/actor.txt"
     """Path to a file containing the text prompt for the VLM."""
-    prompt_critic_path: str = "prompt_critic_doom.txt"
+    prompt_critic_path: str = "prompts/corridor/critic.txt"
     """Path to a file containing the text prompt for the VLM."""
     max_new_tokens: int = 512
     """Maximum number of new tokens for the VLM to generate."""
@@ -78,6 +78,8 @@ class Args:
     """wether to compile VLM"""
     checkpoint_dir: str = ""
     """the directory to save checkpoints"""
+    checkpoint_interval: int = 25
+    """the interval to save checkpoints"""
     
     # LoRa specific arguments
     lora_rank: int = 32

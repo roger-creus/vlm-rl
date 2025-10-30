@@ -2,5 +2,6 @@ runs/
 wandb/
 launchers/
 
+*.ini
 *.pyc
 *.egg-info
