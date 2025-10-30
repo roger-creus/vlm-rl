@@ -10,7 +10,7 @@ from torch.utils.tensorboard import SummaryWriter
 from collections import deque
 
 from accelerate.utils import TorchDynamoPlugin
-from accelerate import Accelerator 
+from accelerate import Accelerator
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 from io import BytesIO
@@ -24,9 +24,9 @@ from IPython import embed
 
 if __name__ == "__main__":
     args = tyro.cli(Args)
-    run_name = f"{args.env_id}__{args.exp_name}__{args.seed}__{int(time.time())}"
+    run_name = f"env={args.env_id}_nenvs={args.num_envs}_nsteps={args.num_steps}_epochs={args.update_epochs}_seed={args.seed}_time={int(time.time())}"
     os.makedirs(f"runs/{run_name}", exist_ok=True)
-    
+
     # --- Accelerator ---
     accelerator_cfg = {"project_dir": f"runs/{run_name}", "gradient_accumulation_steps": args.gradient_accumulation_steps}
     if args.enable_compile:
@@ -38,15 +38,15 @@ if __name__ == "__main__":
         )
         accelerator_cfg["dynamo_plugin"] = dynamo_plugin
         print("Compilation enabled!")
-    
     accelerator = Accelerator(**accelerator_cfg)
-    
+
     # --- Arguments ---
     device = accelerator.device
     args.total_batch_size = int(args.num_envs * args.num_steps * accelerator.num_processes)
     args.minibatch_size = int(args.total_batch_size // args.num_minibatches)
     per_process_minibatch_size = int(args.minibatch_size // accelerator.num_processes)
     args.num_iterations = args.total_timesteps // args.total_batch_size
+
     if accelerator.is_main_process:
         print("\n" + "="*60)
         print(" VLM PPO Distributed Training Configuration")
@@ -112,7 +112,7 @@ if __name__ == "__main__":
     available_actions = list(action_map.keys())
     prompt_actor_path = args.prompt_actor_path.split(".")[0] + "_action.txt"
     prompt_critic_path = args.prompt_critic_path.split(".")[0] + "_action.txt"
-    
+
     with open(prompt_actor_path, "r") as f:
         prompt_text_actor = f.read()
     with open(prompt_critic_path, "r") as f:
@@ -126,9 +126,8 @@ if __name__ == "__main__":
         lora_alpha=args.lora_alpha,
         lora_dropout=0.0,
         available_actions=available_actions,
-        device=device,
     )
-    
+
     params = agent.get_trainable_params()
     if accelerator.is_main_process:
         print("============ Agent =============")
@@ -138,14 +137,9 @@ if __name__ == "__main__":
         print("-" * 50)
         print(f"Total trainable parameters: {sum(p.numel() for p in params)}")
         print("-" * 50)
-        
+
     optimizer = optim.AdamW(params, lr=args.learning_rate, betas=(0.85, 0.9), weight_decay=args.weight_decay)
     agent, optimizer = accelerator.prepare(agent, optimizer)
-    
-    # --- Checkpoint Manager ---
-    # if args.checkpoint_dir != "":
-    #     accelerator.load_state(args.checkpoint_dir)
-    #     print(f"Checkpoint loaded from {args.checkpoint_dir}")
 
     # --- Storage Tensors ---
     obs = torch.zeros((args.num_steps, args.num_envs) + envs.single_observation_space.shape, device=device)
@@ -155,52 +149,51 @@ if __name__ == "__main__":
     logprobs = torch.zeros((args.num_steps, args.num_envs), device=device)
     action_indices = torch.zeros((args.num_steps, args.num_envs), dtype=torch.long, device=device)
     pad_token_id = agent.vlm.processor.tokenizer.pad_token_id
-    
-    # --- Start training ---
+
     global_step = 0
     start_time = time.time()
-    
     next_obs, _ = envs.reset()
-    next_obs = torch.Tensor(next_obs).to(device)
-    next_done = torch.zeros(args.num_envs).to(device)
-    
+    next_obs = torch.as_tensor(next_obs, device=device)
+    next_done = torch.zeros(args.num_envs, device=device)
     first_model_save = True
+
+    if accelerator.is_main_process:
+        current_episode_frames = []
+        last_completed_episode_frames = []
+
     for iteration in range(1, args.num_iterations + 1):
         rollout_time_start = time.time()
-        
-        # anneal lr
+
+        # Anneal LR
         if args.anneal_lr:
             frac = 1.0 - (iteration - 1.0) / args.num_iterations
             lrnow = frac * args.learning_rate
             optimizer.param_groups[0]["lr"] = lrnow
 
-        # --- Rollout Phase: Each process collects its own data ---
-        for step in range(0, args.num_steps):
+        for step in range(args.num_steps):
             if accelerator.is_main_process:
                 global_step += args.num_envs * accelerator.num_processes
+                current_episode_frames.append(next_obs[0].cpu().numpy().astype(np.uint8))
 
             obs[step] = next_obs
             dones[step] = next_done
 
             with torch.no_grad():
-                # sample actions from actor
                 (
-                    sampled_indices,    # [B]
-                    sampled_logprob,    # [B]
-                    sampled_texts,      # List[str]
-                    _sampled_ids,       # [B, S_act]
-                    _sampled_mask,      # [B, S_act]
+                    sampled_indices,
+                    sampled_logprob,
+                    sampled_texts,
+                    _sampled_ids,
+                    _sampled_mask,
                 ) = agent.get_action(
-                    obs=next_obs, 
-                    text_prompts=[prompt_text_actor] * args.num_envs,
+                    obs=next_obs,
+                    text_prompts=[prompt_text_actor] * args.num_envs
                 )
-                
-                # parse model outputs to environment action space
+
                 action = torch.tensor(
                     [parse_action(text, envs.single_action_space, action_map) for text in sampled_texts],
                     device=device
                 )
-                # get value estimate for the current obs
                 value = agent.get_value(
                     obs=next_obs,
                     prompt_text=[prompt_text_critic] * args.num_envs
@@ -210,37 +203,61 @@ if __name__ == "__main__":
             action_indices[step] = sampled_indices
             logprobs[step] = sampled_logprob
 
-            # step the environment
             next_obs, reward, term, trunc, infos = envs.step(action.cpu().numpy())
             print(f"[Process {accelerator.process_index}] Step {step+1}/{args.num_steps}")
-            
-            rewards[step] = torch.tensor(reward).to(device).view(-1) * 0.01
+
+            rewards[step] = torch.as_tensor(reward, device=device).view(-1) * 0.01
             next_done = np.logical_or(term, trunc)
-            next_obs, next_done = torch.Tensor(next_obs).to(device), torch.Tensor(next_done).to(device)
+            next_obs, next_done = torch.as_tensor(next_obs, device=device), torch.as_tensor(next_done, device=device)
 
-            # --- Logging ---
             if accelerator.is_main_process:
-                if iteration % args.log_every == 0 and step == 0:
-                    pil_images_debug = numpy_to_pil(next_obs.cpu().numpy())
-                    log_image = pil_images_debug[0]
-                    image_path = os.path.join(log_path, f"iter_{iteration}_step_{step}.png")
-                    log_image.save(image_path)
+                # Store frames if an episode just ended (first env)
+                if next_done[0]:
+                    current_episode_frames.append(next_obs[0].cpu().numpy().astype(np.uint8))
+                    last_completed_episode_frames = list(current_episode_frames)
+                    current_episode_frames = []
 
-                    log_entry = (
+                # --- Logging ---
+                if iteration % args.log_every == 0 and step == 0:
+                    log_entry_text = (
                         f"## Iteration {iteration}, Step {step} (Global Step: {global_step})\n\n"
                         f"**Prompt Actor:**\n```\n{prompt_text_actor}\n```\n\n"
                         f"**Prompt Critic:**\n```\n{prompt_text_critic}\n```\n\n"
                         f"**VLM Output (Env 0):**\n```json\n{sampled_texts[0]}\n```\n\n"
-                        f"**Observation (Env 0):**\n"
-                        f"![Observation]({os.path.basename(image_path)})\n\n"
-                        "---\n\n"
                     )
-                    interaction_log_file.write(log_entry)
+
+                    if last_completed_episode_frames:
+                        try:
+                            from PIL import Image
+                            pil_images_debug = [Image.fromarray(frame) for frame in last_completed_episode_frames]
+                            gif_path = os.path.join(log_path, f"iter_{iteration}_episode.gif")
+                            pil_images_debug[0].save(
+                                gif_path,
+                                save_all=True,
+                                append_images=pil_images_debug[1:],
+                                duration=150,
+                                loop=0
+                            )
+                            log_entry_text += (
+                                f"**Last Completed Episode (Env 0):**\n"
+                                f"![Episode GIF]({os.path.basename(gif_path)})\n\n"
+                            )
+                            if args.track:
+                                video_array = np.array(last_completed_episode_frames)
+                                video_tensor = torch.tensor(video_array).permute(0, 3, 1, 2).unsqueeze(0)
+                                writer.add_video("debug/episode_video", video_tensor, global_step, fps=10)
+                            last_completed_episode_frames = []
+                        except Exception as e:
+                            print(f"Warning: Failed to save episode GIF. Error: {e}")
+                            log_entry_text += f"**(Failed to save GIF: {e})**\n\n"
+
+                    log_entry_text += "---\n\n"
+
+                    interaction_log_file.write(log_entry_text)
                     interaction_log_file.flush()
 
                     if args.track:
                         writer.add_text("debug/vlm_output", str(sampled_texts[0]), global_step)
-                        writer.add_image("debug/observation", np.array(log_image), global_step, dataformats='HWC')
 
                 if "final_info" in infos:
                     for info in infos["final_info"]:
@@ -248,31 +265,26 @@ if __name__ == "__main__":
                             writer.add_scalar("charts/episodic_return", info["episode"]["r"], global_step)
                             writer.add_scalar("charts/episodic_length", info["episode"]["l"], global_step)
 
-            # Free up GPU memory after each step
             del reward, term, trunc, infos, sampled_indices, sampled_logprob, sampled_texts, _sampled_ids, _sampled_mask, action, value
             gc_cuda_cleanup()
-        
-        #del reward, term, trunc, infos, logprob, f_ids, p_len, action, value
-        #gc_cuda_cleanup()
+
         rollout_time_completed = time.time() - rollout_time_start
 
-        # --- bootstrap last value to do GAE ---
         with torch.no_grad():
             next_value = agent.get_value(obs=next_obs, prompt_text=[prompt_text_critic] * args.num_envs).flatten()
-
-        # all processes will have identical data
-        gathered_rewards = accelerator.gather(rewards)
-        gathered_values = accelerator.gather(values)
-        gathered_dones = accelerator.gather(dones)
-        gathered_next_value = accelerator.gather(next_value)
-        gathered_next_done = accelerator.gather(next_done)
+        
+        gathered_rewards = accelerator.gather(rewards) # (num_steps * num_processes, num_envs)
+        gathered_values = accelerator.gather(values) # (num_steps * num_processes, num_envs)
+        gathered_dones = accelerator.gather(dones) # (num_steps * num_processes, num_envs)
+        gathered_next_value = accelerator.gather(next_value) # (num_envs * num_processes)
+        gathered_next_done = accelerator.gather(next_done) # (num_envs * num_processes)
 
         num_total_envs = args.num_envs * accelerator.num_processes
-        gathered_rewards = gathered_rewards.view(accelerator.num_processes, args.num_steps, args.num_envs).permute(1, 0, 2).reshape(args.num_steps, num_total_envs)
-        gathered_values = gathered_values.view(accelerator.num_processes, args.num_steps, args.num_envs).permute(1, 0, 2).reshape(args.num_steps, num_total_envs)
-        gathered_dones = gathered_dones.view(accelerator.num_processes, args.num_steps, args.num_envs).permute(1, 0, 2).reshape(args.num_steps, num_total_envs)
-        gathered_next_value = gathered_next_value.view(num_total_envs)
-        gathered_next_done = gathered_next_done.view(num_total_envs)
+        gathered_rewards = gathered_rewards.view(accelerator.num_processes, args.num_steps, args.num_envs).permute(1, 0, 2).reshape(args.num_steps, num_total_envs) # (num_steps, num_envs * num_processes)
+        gathered_values = gathered_values.view(accelerator.num_processes, args.num_steps, args.num_envs).permute(1, 0, 2).reshape(args.num_steps, num_total_envs) # (num_steps, num_envs * num_processes)
+        gathered_dones = gathered_dones.view(accelerator.num_processes, args.num_steps, args.num_envs).permute(1, 0, 2).reshape(args.num_steps, num_total_envs) # (num_steps, num_envs * num_processes)
+        gathered_next_value = gathered_next_value.view(num_total_envs) # (num_envs * num_processes)
+        gathered_next_done = gathered_next_done.view(num_total_envs) # (num_envs * num_processes)
 
         # all processes do GAE on the same data
         with torch.no_grad():
@@ -280,62 +292,45 @@ if __name__ == "__main__":
             lastgaelam = 0
             for t in reversed(range(args.num_steps)):
                 if t == args.num_steps - 1:
-                    nextnonterminal = 1.0 - gathered_next_done
+                    nextnonterminal = 1.0 - gathered_next_done.float()
                     nextvalues = gathered_next_value
                 else:
-                    nextnonterminal = 1.0 - gathered_dones[t + 1]
+                    nextnonterminal = 1.0 - gathered_dones[t + 1].float()
                     nextvalues = gathered_values[t + 1]
                 delta = gathered_rewards[t] + args.gamma * nextvalues * nextnonterminal - gathered_values[t]
                 advantages[t] = lastgaelam = delta + args.gamma * args.gae_lambda * nextnonterminal * lastgaelam
             returns = advantages + gathered_values
 
-        # all processes will have identical data
+        # Gather played obs, logprobs, actions with permute-view logic for b_obs, and flatten for the rest
         gathered_obs = accelerator.gather(obs)
         gathered_logprobs = accelerator.gather(logprobs)
         gathered_action_indices = accelerator.gather(action_indices)
 
-        # all processes will have identical data
         b_obs = gathered_obs.view(
             accelerator.num_processes, args.num_steps, args.num_envs, *envs.single_observation_space.shape
-        ).permute(1, 0, 2, 3, 4, 5).reshape(-1, *envs.single_observation_space.shape)
-
-        b_advantages = advantages.view(
-            accelerator.num_processes, args.num_steps, args.num_envs
-        ).permute(1, 0, 2).reshape(-1)
-        
-        b_returns = returns.view(
-            accelerator.num_processes, args.num_steps, args.num_envs
-        ).permute(1, 0, 2).reshape(-1)
-        
-        b_values = gathered_values.view(
-            accelerator.num_processes, args.num_steps, args.num_envs
-        ).permute(1, 0, 2).reshape(-1)
+        ).permute(1, 0, 2, 3, 4, 5).reshape(-1, *envs.single_observation_space.shape) # [num_envs * num_steps * num_processes, *envs.single_observation_space.shape]
         
         b_logprobs = gathered_logprobs.view(
             accelerator.num_processes, args.num_steps, args.num_envs
-        ).permute(1, 0, 2).reshape(-1)
-
+        ).permute(1, 0, 2).reshape(-1) # [num_envs * num_steps * num_processes]
+        
         b_action_indices = gathered_action_indices.view(
             accelerator.num_processes, args.num_steps, args.num_envs
-        ).permute(1, 0, 2).reshape(-1)
+        ).permute(1, 0, 2).reshape(-1) # [num_envs * num_steps * num_processes]
         
+        b_advantages = advantages.reshape(-1) # [num_envs * num_steps * num_processes]
+        b_returns = returns.reshape(-1) # [num_envs * num_steps * num_processes]
+        b_values = gathered_values.reshape(-1) # [num_envs * num_steps * num_processes]
+
         if accelerator.is_main_process:
             print("Training...")
 
         del gathered_rewards, gathered_values, gathered_dones, gathered_next_value, gathered_next_done, gathered_obs, gathered_logprobs, gathered_action_indices
         gc_cuda_cleanup()
 
-        # --- Training ---
+        # --- Training loop / Losses ---
         b_inds = np.arange(args.total_batch_size)
         is_critic_warmup = iteration <= args.critic_warmup_iterations
-        
-        # if accelerator.is_main_process and not is_critic_warmup and first_model_save:
-        #      print(f"Saving checkpoint at iteration {iteration}")
-        #      accelerator.save_state(output_dir=f"checkpoint-{iteration}")
-        #      print(f"Checkpoint saved to runs/{run_name}/checkpoint-{iteration}")
-        #      first_model_save = False
-        # accelerator.wait_for_everyone()
-        
         true_update_epochs = args.update_epochs * 3 if is_critic_warmup else args.update_epochs
         epoch_iter = range(true_update_epochs)
         if accelerator.is_main_process:
@@ -344,9 +339,9 @@ if __name__ == "__main__":
         cliprange_low = args.clip_coef_lower
         cliprange_high = args.clip_coef_upper
         dual_clip_c = args.dual_clip_c
-        ratios_1st_epoch_1st_minibatch = []
-        logprobs_barplot_logged = False
 
+        # Stat tracking
+        ratios_1st_epoch_1st_minibatch = []
         learning_time_start = time.time()
         all_values_stats = []
         all_advantages_stats = []
@@ -368,7 +363,6 @@ if __name__ == "__main__":
             adv_std = b_advantages.std()
             b_advantages = (b_advantages - adv_mean) / (adv_std + 1e-8)
 
-        # --------- Training Loop ---------
         for epoch in epoch_iter:
             minibatch_iter = range(0, args.total_batch_size, args.minibatch_size)
             if accelerator.is_main_process:
@@ -385,7 +379,6 @@ if __name__ == "__main__":
 
                 end = start + args.minibatch_size
                 mb_inds = b_inds[start:end]
-
                 process_mb_inds = mb_inds[accelerator.process_index::accelerator.num_processes]
                 with accelerator.accumulate(agent):
                     mb_obs = b_obs[process_mb_inds].to(device)
@@ -406,13 +399,11 @@ if __name__ == "__main__":
                     all_advantages_stats.append(stats(mb_advantages))
                     all_returns_stats.append(stats(mb_returns))
 
-                    # Only compute and backward value loss during critic warmup
+                    # Only compute/step value loss during critic warmup
                     if is_critic_warmup:
-                        # ---- CRITIC VALUE LOSS ----
                         newvalue = agent.get_value(
                             obs=mb_obs, prompt_text=[prompt_text_critic] * mb_obs.shape[0]
                         ).view(-1)
-
                         if args.clip_vloss:
                             v_loss_unclipped = (newvalue - mb_returns) ** 2
                             v_clipped = mb_values + torch.clamp(newvalue - mb_values, -cliprange_low, cliprange_high)
@@ -421,20 +412,16 @@ if __name__ == "__main__":
                             v_loss = 0.5 * v_loss_max.mean()
                         else:
                             v_loss = 0.5 * ((newvalue - mb_returns) ** 2).mean()
-
                         accelerator.backward(v_loss)
-
-                        # optimizer step and zero grad
                         optimizer.step()
                         optimizer.zero_grad()
-                        # Clean up minibatch objects
                         del mb_obs, mb_action_indices, mb_logprobs, mb_advantages, mb_returns, mb_values
                         if 'newvalue' in locals():
                             del newvalue
                         gc_cuda_cleanup()
-                        continue  # Skip policy optimization during critic warmup
+                        continue
 
-                    # --- ACTOR POLICY LOSS ----
+                    # Policy loss and training
                     newlogprob, entropy = agent.get_actor_outputs(
                         obs=mb_obs,
                         text_prompts=[prompt_text_actor] * mb_obs.shape[0],
@@ -442,11 +429,8 @@ if __name__ == "__main__":
                     )
 
                     logratio = newlogprob - mb_logprobs
-                    
-                    # Clamp logratio to avoid exploding gradients
                     if args.logratio_clamp > 0:
                         logratio = torch.clamp(logratio, -args.logratio_clamp, args.logratio_clamp)
-                        
                     ratio = torch.exp(logratio)
 
                     all_newlogprobs_stats.append(stats(newlogprob.detach().cpu()))
@@ -454,34 +438,28 @@ if __name__ == "__main__":
                     all_logratios_stats.append(stats(logratio.detach().cpu()))
                     all_ratios_stats.append(stats(ratio.detach().cpu()))
 
-                    # --- Plot logprobs for problematic samples in first minibatch/epoch for debugging
                     if (epoch == 0 and start == 0 and accelerator.is_main_process):
                         for mb_idx_inner in range(mb_obs.shape[0]):
                             ratios_debug = ratio[mb_idx_inner].mean().cpu().item()
                             ratios_1st_epoch_1st_minibatch.append(ratios_debug)
                             print(f"Ratios debug: {ratios_debug}")
-                                
-                    # KL and clip fraction stats (for logging plots and scalars)
+
                     with torch.no_grad():
                         old_approx_kl = (-logratio).mean()
                         approx_kl = ((ratio - 1) - logratio).mean()
                         epoch_approx_kls.append(approx_kl.item())
                         epoch_old_approx_kls.append(old_approx_kl.item())
 
-                    # dual-clip PPO loss and fractions
                     pg_losses1 = -mb_advantages * ratio
                     pg_losses2 = -mb_advantages * torch.clamp(ratio, 1 - cliprange_low, 1 + cliprange_high)
                     clip_pg_losses1 = torch.maximum(pg_losses1, pg_losses2)
-
                     upper_clipfrac_mask = (pg_losses2 > pg_losses1).float()
                     clipfrac_upper = upper_clipfrac_mask.mean()
                     epoch_clipfracs_upper.append(clipfrac_upper.item())
-
                     pg_losses3 = -mb_advantages * dual_clip_c
                     clip_pg_losses2 = torch.min(pg_losses3, clip_pg_losses1)
-
                     lower_clipfrac_mask = (clip_pg_losses1 > pg_losses3) & (mb_advantages < 0)
-                    clipfrac_lower = lower_clipfrac_mask.float().mean() # <--- Simplified
+                    clipfrac_lower = lower_clipfrac_mask.float().mean()
                     epoch_clipfracs_lower.append(clipfrac_lower.item())
 
                     if dual_clip_c > 1.0:
@@ -490,21 +468,15 @@ if __name__ == "__main__":
                         pg_loss_per_action = clip_pg_losses1
 
                     pg_loss = pg_loss_per_action.mean()
-
-                    # entropy loss 
                     entropy_loss = entropy.mean()
-                    
-                    # total policy loss
-                    total_policy_loss = pg_loss - args.ent_coef * entropy_loss
 
-                    # backward policy loss separately
+                    total_policy_loss = pg_loss - args.ent_coef * entropy_loss
                     accelerator.backward(total_policy_loss)
 
-                    # ---- CRITIC VALUE LOSS ----
+                    # Critic value
                     newvalue = agent.get_value(
                         obs=mb_obs, prompt_text=[prompt_text_critic] * mb_obs.shape[0]
                     ).view(-1)
-
                     if args.clip_vloss:
                         v_loss_unclipped = (newvalue - mb_returns) ** 2
                         v_clipped = mb_values + torch.clamp(newvalue - mb_values, -cliprange_low, cliprange_high)
@@ -513,15 +485,9 @@ if __name__ == "__main__":
                         v_loss = 0.5 * v_loss_max.mean()
                     else:
                         v_loss = 0.5 * ((newvalue - mb_returns) ** 2).mean()
-
-                    # backward value loss separately
                     accelerator.backward(v_loss)
-
-                    # optimizer step ONCE for both actor and critic, then zero grad
                     optimizer.step()
                     optimizer.zero_grad()
-
-                    # Clean up minibatch objects after joint step
                     del mb_obs, mb_logprobs, mb_advantages, mb_returns, mb_values, mb_action_indices, newvalue, entropy, logratio, ratio
                     if 'newlogprob' in locals(): del newlogprob
                     if 'entropy' in locals(): del entropy
@@ -530,16 +496,8 @@ if __name__ == "__main__":
                     if 'newvalue' in locals(): del newvalue
                     gc_cuda_cleanup()
 
-
         learning_time_completed = time.time() - learning_time_start
-        
-        # save every 25 iterations
-        # if accelerator.is_main_process and iteration % 25 == 0:
-        #     print(f"Saving checkpoint at iteration {iteration}")
-        #     accelerator.save_state(output_dir=f"checkpoint-{iteration}")
-        #     print(f"Checkpoint saved to runs/{run_name}/checkpoint-{iteration}")
-        # accelerator.wait_for_everyone()
-        
+
         # --- Logging ---
         if accelerator.is_main_process:
             writer.add_scalar("charts/learning_rate", optimizer.param_groups[0]["lr"], global_step)
@@ -547,16 +505,10 @@ if __name__ == "__main__":
             writer.add_scalar("charts/iteration", iteration, global_step)
             writer.add_scalar("debug/rollout_time", rollout_time_completed, global_step)
             writer.add_scalar("debug/learning_time", learning_time_completed, global_step)
+            writer.add_scalar("info/critic_warmup_phase", 1 if is_critic_warmup else 0, global_step)
 
-            if is_critic_warmup:
-                writer.add_scalar("info/critic_warmup_phase", 1, global_step)
-            else:
-                writer.add_scalar("info/critic_warmup_phase", 0, global_step)
-
-            # We set v_loss and pg_loss from last minibatch; could aggregate if needed.
             if 'v_loss' in locals():
                 writer.add_scalar("losses/value_loss", v_loss.item(), global_step)
-            # Only log policy loss and entropy when not in critic_warmup
             if not is_critic_warmup:
                 if 'pg_loss' in locals():
                     writer.add_scalar("losses/policy_loss", pg_loss.item(), global_step)
@@ -575,47 +527,21 @@ if __name__ == "__main__":
                 if epoch_clipfracs_lower:
                     writer.add_scalar("losses/clipfrac_lower", np.mean(epoch_clipfracs_lower), global_step)
 
-            # --- Extra statistics logging for logprobs, ratio, value, etc ---
-            if len(all_newlogprobs_stats) > 0 and not is_critic_warmup:
-                keys = all_newlogprobs_stats[0].keys()
-                avgstats = lambda arr: {k: float(np.mean([d[k] for d in arr])) for k in keys}
-                writer.add_scalar("stats/newlogprob_mean", avgstats(all_newlogprobs_stats)["mean"], global_step)
-                writer.add_scalar("stats/newlogprob_std", avgstats(all_newlogprobs_stats)["std"], global_step)
-                writer.add_scalar("stats/newlogprob_min", avgstats(all_newlogprobs_stats)["min"], global_step)
-                writer.add_scalar("stats/newlogprob_max", avgstats(all_newlogprobs_stats)["max"], global_step)
-                writer.add_scalar("stats/oldlogprob_mean", avgstats(all_oldlogprobs_stats)["mean"], global_step)
-                writer.add_scalar("stats/oldlogprob_std", avgstats(all_oldlogprobs_stats)["std"], global_step)
-                writer.add_scalar("stats/oldlogprob_min", avgstats(all_oldlogprobs_stats)["min"], global_step)
-                writer.add_scalar("stats/oldlogprob_max", avgstats(all_oldlogprobs_stats)["max"], global_step)
-                writer.add_scalar("stats/logratio_mean", avgstats(all_logratios_stats)["mean"], global_step)
-                writer.add_scalar("stats/logratio_std", avgstats(all_logratios_stats)["std"], global_step)
-                writer.add_scalar("stats/logratio_min", avgstats(all_logratios_stats)["min"], global_step)
-                writer.add_scalar("stats/logratio_max", avgstats(all_logratios_stats)["max"], global_step)
-                writer.add_scalar("stats/ratio_mean", avgstats(all_ratios_stats)["mean"], global_step)
-                writer.add_scalar("stats/ratio_std", avgstats(all_ratios_stats)["std"], global_step)
-                writer.add_scalar("stats/ratio_min", avgstats(all_ratios_stats)["min"], global_step)
-                writer.add_scalar("stats/ratio_max", avgstats(all_ratios_stats)["max"], global_step)
-            if len(all_values_stats) > 0:
-                keys = all_values_stats[0].keys()
-                avgstats = lambda arr: {k: float(np.mean([d[k] for d in arr])) for k in keys}
-                writer.add_scalar("stats/values_mean", avgstats(all_values_stats)["mean"], global_step)
-                writer.add_scalar("stats/values_std", avgstats(all_values_stats)["std"], global_step)
-                writer.add_scalar("stats/values_min", avgstats(all_values_stats)["min"], global_step)
-                writer.add_scalar("stats/values_max", avgstats(all_values_stats)["max"], global_step)
-            if len(all_advantages_stats) > 0:
-                keys = all_advantages_stats[0].keys()
-                avgstats = lambda arr: {k: float(np.mean([d[k] for d in arr])) for k in keys}
-                writer.add_scalar("stats/advantages_mean", avgstats(all_advantages_stats)["mean"], global_step)
-                writer.add_scalar("stats/advantages_std", avgstats(all_advantages_stats)["std"], global_step)
-                writer.add_scalar("stats/advantages_min", avgstats(all_advantages_stats)["min"], global_step)
-                writer.add_scalar("stats/advantages_max", avgstats(all_advantages_stats)["max"], global_step)
-            if len(all_returns_stats) > 0:
-                keys = all_returns_stats[0].keys()
-                avgstats = lambda arr: {k: float(np.mean([d[k] for d in arr])) for k in keys}
-                writer.add_scalar("stats/returns_mean", avgstats(all_returns_stats)["mean"], global_step)
-                writer.add_scalar("stats/returns_std", avgstats(all_returns_stats)["std"], global_step)
-                writer.add_scalar("stats/returns_min", avgstats(all_returns_stats)["min"], global_step)
-                writer.add_scalar("stats/returns_max", avgstats(all_returns_stats)["max"], global_step)
+            # --- More statistics (logprob, value, advantages, returns, etc) ---
+            def agg_writer_stats(arr, name):
+                if len(arr) > 0:
+                    keys = arr[0].keys()
+                    avgstats = lambda arr_: {k: float(np.mean([d[k] for d in arr_])) for k in keys}
+                    for k in keys:
+                        writer.add_scalar(f"stats/{name}_{k}", avgstats(arr)[k], global_step)
+            if not is_critic_warmup:
+                agg_writer_stats(all_newlogprobs_stats, "newlogprob")
+                agg_writer_stats(all_oldlogprobs_stats, "oldlogprob")
+                agg_writer_stats(all_logratios_stats, "logratio")
+                agg_writer_stats(all_ratios_stats, "ratio")
+            agg_writer_stats(all_values_stats, "values")
+            agg_writer_stats(all_advantages_stats, "advantages")
+            agg_writer_stats(all_returns_stats, "returns")
 
             sps = int(args.total_batch_size / (time.time() - start_time))
             writer.add_scalar("charts/SPS", sps, global_step)
@@ -624,6 +550,10 @@ if __name__ == "__main__":
                     f"(CRITIC WARMUP) SPS: {sps} || value.loss : {v_loss.item() if 'v_loss' in locals() else 'n/a'}"
                 )
             else:
+                def avgstats(arr):
+                    if not arr: return {'mean': 'n/a'}
+                    keys = arr[0].keys()
+                    return {k: float(np.mean([d[k] for d in arr])) for k in keys}
                 print(
                     f"SPS: {sps} || value.loss : {v_loss.item() if 'v_loss' in locals() else 'n/a'}, policy.loss : {pg_loss.item() if 'pg_loss' in locals() else 'n/a'}, policy.entropy : {entropy_loss.item() if 'entropy_loss' in locals() else 'n/a'}",
                     "\n"

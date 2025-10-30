@@ -25,7 +25,7 @@ from IPython import embed
 
 if __name__ == "__main__":
     args = tyro.cli(Args)
-    run_name = f"{args.env_id}__{args.exp_name}__{args.seed}__{int(time.time())}"
+    run_name = f"env={args.env_id}_nenvs={args.num_envs}_nsteps={args.num_steps}_epochs={args.update_epochs}_seed={args.seed}_time={int(time.time())}"
     os.makedirs(f"runs/{run_name}", exist_ok=True)
     
     # --- Accelerator ---
@@ -335,16 +335,16 @@ if __name__ == "__main__":
             next_value = agent.get_value(obs=next_obs, prompt_text=[prompt_text_critic] * args.num_envs).flatten()
 
         # all processes will have identical data
-        gathered_rewards = accelerator.gather(rewards)
-        gathered_values = accelerator.gather(values)
-        gathered_dones = accelerator.gather(dones)
-        gathered_next_value = accelerator.gather(next_value)
-        gathered_next_done = accelerator.gather(next_done)
+        gathered_rewards = accelerator.gather(rewards) # (num_steps * num_processes, num_envs)
+        gathered_values = accelerator.gather(values) # (num_steps * num_processes, num_envs)
+        gathered_dones = accelerator.gather(dones) # (num_steps * num_processes, num_envs)
+        gathered_next_value = accelerator.gather(next_value) # (num_envs * num_processes)
+        gathered_next_done = accelerator.gather(next_done) # (num_envs * num_processes)
 
         num_total_envs = args.num_envs * accelerator.num_processes
-        gathered_rewards = gathered_rewards.view(accelerator.num_processes, args.num_steps, args.num_envs).permute(1, 0, 2).reshape(args.num_steps, num_total_envs)
-        gathered_values = gathered_values.view(accelerator.num_processes, args.num_steps, args.num_envs).permute(1, 0, 2).reshape(args.num_steps, num_total_envs)
-        gathered_dones = gathered_dones.view(accelerator.num_processes, args.num_steps, args.num_envs).permute(1, 0, 2).reshape(args.num_steps, num_total_envs)
+        gathered_rewards = gathered_rewards.view(accelerator.num_processes, args.num_steps, args.num_envs).permute(1, 0, 2).reshape(args.num_steps, num_total_envs) # (num_steps, num_envs * num_processes)
+        gathered_values = gathered_values.view(accelerator.num_processes, args.num_steps, args.num_envs).permute(1, 0, 2).reshape(args.num_steps, num_total_envs) # (num_steps, num_envs * num_processes)
+        gathered_dones = gathered_dones.view(accelerator.num_processes, args.num_steps, args.num_envs).permute(1, 0, 2).reshape(args.num_steps, num_total_envs) # (num_steps, num_envs * num_processes)
         gathered_next_value = gathered_next_value.view(num_total_envs)
         gathered_next_done = gathered_next_done.view(num_total_envs)
 
@@ -354,10 +354,10 @@ if __name__ == "__main__":
             lastgaelam = 0
             for t in reversed(range(args.num_steps)):
                 if t == args.num_steps - 1:
-                    nextnonterminal = 1.0 - gathered_next_done
+                    nextnonterminal = 1.0 - gathered_next_done.float()
                     nextvalues = gathered_next_value
                 else:
-                    nextnonterminal = 1.0 - gathered_dones[t + 1]
+                    nextnonterminal = 1.0 - gathered_dones[t + 1].float()
                     nextvalues = gathered_values[t + 1]
                 delta = gathered_rewards[t] + args.gamma * nextvalues * nextnonterminal - gathered_values[t]
                 advantages[t] = lastgaelam = delta + args.gamma * args.gae_lambda * nextnonterminal * lastgaelam
@@ -389,19 +389,26 @@ if __name__ == "__main__":
         
         b_obs = gathered_obs.view(
             accelerator.num_processes, args.num_steps, args.num_envs, *envs.single_observation_space.shape
-        ).permute(1, 0, 2, 3, 4, 5).reshape(-1, *envs.single_observation_space.shape)
+        ).permute(1, 0, 2, 3, 4, 5).reshape(-1, *envs.single_observation_space.shape) # [num_envs * num_steps * num_processes, *envs.single_observation_space.shape]
 
-        b_advantages = advantages.view(
-            accelerator.num_processes, args.num_steps, args.num_envs
-        ).permute(1, 0, 2).reshape(-1)
+        # b_advantages = advantages.view(
+        #     accelerator.num_processes, args.num_steps, args.num_envs
+        # ).permute(1, 0, 2).reshape(-1)
         
-        b_returns = returns.view(
-            accelerator.num_processes, args.num_steps, args.num_envs
-        ).permute(1, 0, 2).reshape(-1)
+        # b_returns = returns.view(
+        #     accelerator.num_processes, args.num_steps, args.num_envs
+        # ).permute(1, 0, 2).reshape(-1)
         
-        b_values = gathered_values.view(
-            accelerator.num_processes, args.num_steps, args.num_envs
-        ).permute(1, 0, 2).reshape(-1)
+        # b_values = gathered_values.view(
+        #     accelerator.num_processes, args.num_steps, args.num_envs
+        # ).permute(1, 0, 2).reshape(-1)
+        
+        # TODO: see if this fixes stuff
+        b_advantages = advantages.reshape(-1)
+        
+        b_returns = returns.reshape(-1)
+        
+        b_values = gathered_values.reshape(-1)
         
         if accelerator.is_main_process:
             print("Training...")

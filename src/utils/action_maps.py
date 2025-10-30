@@ -8,5 +8,8 @@ action_maps = {
     },
     "VizdoomCorridor-v0": {
         "MOVE_LEFT": 0, "MOVE_RIGHT": 1, "ATTACK": 2, "MOVE_FORWARD": 3, "MOVE_BACKWARD": 4, "TURN_LEFT": 5, "TURN_RIGHT": 6,
-    }
+    },
+    "VizdoomDefendLine-v0": {
+        "TURN_LEFT": 0, "TURN_RIGHT": 1, "ATTACK": 2,
+    },
 }

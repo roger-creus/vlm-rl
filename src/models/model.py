@@ -100,7 +100,7 @@ class CriticHead(nn.Module):
         super().__init__()
         self.net = nn.Sequential(
             layer_init(nn.Linear(input_dim, 512)),
-            nn.ReLU(),
+            nn.LeakyReLU(),
             layer_init(nn.Linear(512, 1), std=1.0),
         )
 
@@ -155,52 +155,6 @@ class DecoupledActorCriticVLM_COT(nn.Module):
                 "critic",
                 critic_lora_config
             )
-            
-            # lm_head = self.vlm.model.base_model.model.lm_head
-            # for lora_param_name, lora_param in lm_head.lora_A.items():
-            #     lora_param.weight.data = lora_param.weight.data.to(torch.float32)
-            # for lora_param_name, lora_param in lm_head.lora_B.items():
-            #     lora_param.weight.data = lora_param.weight.data.to(torch.float32)
-            
-            # --- VERIFICATION ---
-            print("--- Verifying Model Dtypes ---")
-
-            # 1. Check a "normal" model LoRA layer
-            try:
-                lora_weight = self.vlm.model.base_model.model.model.language_model.layers[0].self_attn.q_proj.lora_A.actor.weight
-                print(f"LoRA Weight (q_proj):    {lora_weight.dtype}")
-            except Exception as e:
-                print(f"Could not check q_proj LoRA weight: {e}")
-
-            # 2. Check that layer's Base Weight
-            try:
-                base_weight = self.vlm.model.base_model.model.model.language_model.layers[0].self_attn.q_proj.weight
-                print(f"Base Layer (q_proj):     {base_weight.dtype}")
-            except Exception as e:
-                print(f"Could not check q_proj base weight: {e}")
-
-            # 3. Check the LM Head Base Weight
-            try:
-                lm_head_weight = self.vlm.model.base_model.model.lm_head.weight
-                print(f"Base Layer (lm_head):    {lm_head_weight.dtype}")
-            except Exception as e:
-                print(f"Could not check LM Head base weight: {e}")
-            
-            # 4. Check the "lm_head" LoRA layer
-            try:
-                lm_head_lora_weight = self.vlm.model.base_model.model.lm_head.lora_A.actor.weight
-                print(f"LoRA Weight (lm_head):   {lm_head_lora_weight.dtype}")
-            except Exception as e:
-                print(f"Could not check LM Head LoRA weight: {e}")
-
-            # 5. Check Critic Head
-            try:
-                critic_head_weight = self.critic_head.net[0].weight
-                print(f"Critic Head Weight:      {critic_head_weight.dtype}")
-            except Exception as e:
-                print(f"Could not check Critic Head weight: {e}")
-            
-            print("---------------------------------")
             
     def get_trainable_params(self):
         params = self.vlm.get_trainable_params()
@@ -273,14 +227,14 @@ class DecoupledActorCriticVLM_Action(nn.Module):
         lora_r: int = 16,
         lora_alpha: int = 32,
         lora_dropout: float = 0.0,
-        device = "cpu",
+        device: torch.device = torch.device("cuda"),
     ):
         super().__init__()
         self.use_lora = use_lora
         self.vlm = BaseVLM(vlm_name)
         
         hidden_size = self.vlm.model.config.text_config.hidden_size
-        self.critic_head = CriticHead(hidden_size).to(device, dtype=self.vlm.model.dtype)
+        self.critic_head = CriticHead(hidden_size).to(device=device, dtype=self.vlm.model.dtype)
         
         self.available_actions = available_actions
         self.num_actions = len(available_actions)
@@ -324,46 +278,6 @@ class DecoupledActorCriticVLM_Action(nn.Module):
                 "critic",
                 critic_lora_config
             )
-            
-            # --- VERIFICATION ---
-            print("--- Verifying Model Dtypes ---")
-
-            # 1. Check a "normal" model LoRA layer
-            try:
-                lora_weight = self.vlm.model.base_model.model.model.language_model.layers[0].self_attn.q_proj.lora_A.actor.weight
-                print(f"LoRA Weight (q_proj):    {lora_weight.dtype}")
-            except Exception as e:
-                print(f"Could not check q_proj LoRA weight: {e}")
-
-            # 2. Check that layer's Base Weight
-            try:
-                base_weight = self.vlm.model.base_model.model.model.language_model.layers[0].self_attn.q_proj.weight
-                print(f"Base Layer (q_proj):     {base_weight.dtype}")
-            except Exception as e:
-                print(f"Could not check q_proj base weight: {e}")
-
-            # 3. Check the LM Head Base Weight
-            try:
-                lm_head_weight = self.vlm.model.base_model.model.lm_head.weight
-                print(f"Base Layer (lm_head):    {lm_head_weight.dtype}")
-            except Exception as e:
-                print(f"Could not check LM Head base weight: {e}")
-            
-            # 4. Check the "lm_head" LoRA layer
-            try:
-                lm_head_lora_weight = self.vlm.model.base_model.model.lm_head.lora_A.actor.weight
-                print(f"LoRA Weight (lm_head):   {lm_head_lora_weight.dtype}")
-            except Exception as e:
-                print(f"Could not check LM Head LoRA weight: {e}")
-
-            # 5. Check Critic Head
-            try:
-                critic_head_weight = self.critic_head.net[0].weight
-                print(f"Critic Head Weight:      {critic_head_weight.dtype}")
-            except Exception as e:
-                print(f"Could not check Critic Head weight: {e}")
-            
-            print("---------------------------------")
             
     def get_trainable_params(self):
         params = self.vlm.get_trainable_params()
