@@ -195,6 +195,10 @@ class DecoupledActorCriticVLM_COT(nn.Module):
             print(f"Could not check Critic Head weight: {e}")
         
         print("---------------------------------")
+        
+        # IMPORTANT: by default, actor lora is trainable but critic lora is not for some reason
+        for n, p in self.vlm.model.named_parameters():
+            p.requires_grad = ("lora_" in n)
             
     def get_trainable_params(self):
         params = self.vlm.get_trainable_params()
