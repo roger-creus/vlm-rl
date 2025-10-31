@@ -67,9 +67,9 @@ if __name__ == "__main__":
         minibatch_per_worker_subst = f"{args.minibatch_size} / {accelerator.num_processes}"
         print(f"  -> Minibatch Size Per Worker ({minibatch_per_worker_formula}) = ({minibatch_per_worker_subst}) = {per_process_minibatch_size}")
         print(f"  -> Gradient Accumulation Steps (gradient_accumulation_steps): {args.gradient_accumulation_steps}")
-        true_grad_steps_formula = "num_minibatches / gradient_accumulation_steps"
-        true_grad_steps_subst = f"{args.num_minibatches} / {args.gradient_accumulation_steps}"
-        true_grad_steps = args.num_minibatches / args.gradient_accumulation_steps
+        true_grad_steps_formula = "(num_minibatches / gradient_accumulation_steps) * update_epochs"
+        true_grad_steps_subst = f"({args.num_minibatches} / {args.gradient_accumulation_steps}) * {args.update_epochs}"
+        true_grad_steps = (args.num_minibatches / args.gradient_accumulation_steps) * args.update_epochs
         print(f"  -> True Gradient Steps ({true_grad_steps_formula}) = ({true_grad_steps_subst}) = {true_grad_steps}")
         print("-" * 60)
         print(f" 🎯 Total Timesteps (total_timesteps): {args.total_timesteps:,}")

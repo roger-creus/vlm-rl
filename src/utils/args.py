@@ -78,7 +78,7 @@ class Args:
     """wether to compile VLM"""
     checkpoint_dir: str = ""
     """the directory to save checkpoints"""
-    checkpoint_interval: int = 25
+    checkpoint_interval: int = 10
     """the interval to save checkpoints"""
     
     # LoRa specific arguments
