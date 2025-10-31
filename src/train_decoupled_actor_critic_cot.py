@@ -138,12 +138,12 @@ if __name__ == "__main__":
     optimizer = optim.AdamW(params, lr=args.learning_rate, betas=(0.85, 0.9), weight_decay=args.weight_decay)
     agent, optimizer = accelerator.prepare(agent, optimizer)
     
-    # if args.checkpoint_dir != "":
-    #     print(f"Loading checkpoint from {args.checkpoint_dir}")
-    #     accelerator.load_state(args.checkpoint_dir)
-    #     print(f"Checkpoint loaded from {args.checkpoint_dir}")
-    # accelerator.wait_for_everyone()
-
+    if args.checkpoint_dir != "":
+        print(f"Loading checkpoint from {args.checkpoint_dir}")
+        accelerator.load_state(args.checkpoint_dir)
+        print(f"Checkpoint loaded from {args.checkpoint_dir}")
+    accelerator.wait_for_everyone()
+    
     # --- Storage Tensors ---
     obs = torch.zeros((args.num_steps, args.num_envs) + envs.single_observation_space.shape, device=device)
     rewards = torch.zeros((args.num_steps, args.num_envs), device=device)
@@ -403,26 +403,23 @@ if __name__ == "__main__":
         #     accelerator.num_processes, args.num_steps, args.num_envs
         # ).permute(1, 0, 2).reshape(-1)
         
-        # TODO: see if this fixes stuff
-        b_advantages = advantages.reshape(-1)
-        
+        b_advantages = advantages.reshape(-1)    
         b_returns = returns.reshape(-1)
-        
         b_values = gathered_values.reshape(-1)
         
-        if accelerator.is_main_process:
-            print("Training...")
-
         # --- Training ---
         b_inds = np.arange(args.total_batch_size)
         is_critic_warmup = iteration <= args.critic_warmup_iterations
         
-        # if accelerator.is_main_process and not is_critic_warmup and first_model_save:
-        #     print(f"Saving checkpoint at iteration {iteration}")
-        #     accelerator.save_state(output_dir=f"runs/{run_name}/checkpoint-{iteration}")
-        #     print(f"Checkpoint saved to runs/{run_name}/checkpoint-{iteration}")
-        #     first_model_save = False
-        # accelerator.wait_for_everyone()
+        if not is_critic_warmup and first_model_save and args.checkpoint_dir == "":
+            print(f"Saving checkpoint at iteration {iteration}")
+            accelerator.wait_for_everyone()
+            accelerator.save_state(output_dir=f"runs/{run_name}/post-critic-warmup-{iteration}")
+            print(f"Checkpoint saved to runs/{run_name}/post-critic-warmup-{iteration}")
+            first_model_save = False
+        
+        if accelerator.is_main_process:
+            print("Training...")
         
         true_update_epochs = args.warmup_epochs if is_critic_warmup else args.update_epochs
         epoch_iter = range(true_update_epochs)
@@ -653,11 +650,11 @@ if __name__ == "__main__":
                     gc_cuda_cleanup()
 
 
-        # if accelerator.is_main_process and iteration % 25 == 0:
-        #     print(f"Saving checkpoint at iteration {iteration}")
-        #     accelerator.save_state(output_dir=f"runs/{run_name}/checkpoint-{iteration}")
-        #     print(f"Checkpoint saved to runs/{run_name}/checkpoint-{iteration}")
-        # accelerator.wait_for_everyone()
+        if iteration % args.checkpoint_interval == 0:
+            print(f"Saving checkpoint at iteration {iteration}")
+            accelerator.wait_for_everyone()
+            accelerator.save_state(output_dir=f"runs/{run_name}/checkpoint-{iteration}")
+            print(f"Checkpoint saved to runs/{run_name}/checkpoint-{iteration}")
 
         learning_time_completed = time.time() - learning_time_start
         # --- Logging ---
