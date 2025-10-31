@@ -2,5 +2,6 @@ runs/
 wandb/
 launchers/
 
+*_vizdoom*
 *.pyc
 *.egg-info
