@@ -60,14 +60,11 @@ class BaseVLM(nn.Module):
         mdl_cls = get_model_class(vlm_name)
         self.model = mdl_cls.from_pretrained(
             vlm_name,
-            dtype=torch.bfloat16,
+            dtype=torch.float16,
             trust_remote_code=True,
             attn_implementation="flash_attention_2",
         )
         
-        # cast the lm_head to float32
-        #self.model.lm_head = self.model.lm_head.to(torch.float32)
-
     def preprocess_obs_and_text(self, obs, text_prompts):
         pil_images = numpy_to_pil(obs.cpu().numpy())
         texts = [self.processor.apply_chat_template(

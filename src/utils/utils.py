@@ -7,11 +7,8 @@ from PIL import Image
 
 from src.utils.wrappers import NoopResetEnv, EpisodicLifeEnv, FireResetEnv, ClipRewardEnv, MaxAndSkipEnv, FrameSkipEnv, DiscreteActionWrapper, ScreenOnlyWrapper
 
-def numpy_to_pil(images: np.ndarray) -> list:
-    """Converts a batch of numpy array images to a list of PIL Images."""
-    return [Image.fromarray(img.astype(np.uint8)) for img in images]
 
-def make_env(env_id, idx, capture_video, run_name):
+def make_env(env_id, idx, run_name):
     def thunk():
         env = gym.make(env_id, render_mode="rgb_array")
         env = gym.wrappers.RecordEpisodeStatistics(env)
@@ -25,7 +22,7 @@ def make_env(env_id, idx, capture_video, run_name):
     return thunk
 
 from vizdoom import gymnasium_wrapper 
-def make_vizdoom_env(env_id, idx, capture_video, run_name):
+def make_vizdoom_env(env_id):
     def thunk():
         env = gym.make(
             "VizdoomCorridor-v0",
@@ -88,6 +85,27 @@ def print_trainable_parameters(model):
         f"trainable params: {trainable_params} || all params: {all_param} || trainable%: {100 * trainable_params / all_param:.2f}"
     )
     
+def numpy_to_pil(images: np.ndarray) -> list:
+    """Converts a batch of numpy array images to a list of PIL Images."""
+    return [Image.fromarray(img.astype(np.uint8)) for img in images]
+
+def stats(x):
+    x = x.float()
+    return dict(
+        mean=float(x.mean().cpu()), std=float(x.std().cpu()),
+        min=float(x.min().cpu()), max=float(x.max().cpu()), median=float(x.median().cpu())
+    )
+    
+def log_stats(stat_arr, name, writer, global_step):
+    if stat_arr:
+        keys = stat_arr[0].keys()
+        avgstats = {k: float(np.mean([d[k] for d in stat_arr])) for k in keys}
+        for k, prefix in zip(['mean', 'std', 'min', 'max'], ['_mean', '_std', '_min', '_max']):
+            writer.add_scalar(f"stats/{name}{prefix}", avgstats[k], global_step)
+        return avgstats
+    return None
+    
+    
 from transformers import Qwen3VLForConditionalGeneration, Qwen2_5_VLForConditionalGeneration
 def get_model_class(model_name: str):
     if "Qwen3" in model_name:
@@ -96,3 +114,19 @@ def get_model_class(model_name: str):
         return Qwen2_5_VLForConditionalGeneration
     else:
         raise ValueError(f"Model {model_name} not supported")
+    
+class TrainingStateTracker:
+    def __init__(self, **kwargs):
+        self.state = kwargs
+
+    def state_dict(self):
+        return self.state
+
+    def load_state_dict(self, state_dict):
+        self.state.update(state_dict)
+
+    def __getitem__(self, key):
+        return self.state[key]
+
+    def __setitem__(self, key, value):
+        self.state[key] = value

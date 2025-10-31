@@ -10,30 +10,36 @@ class Args:
     """if toggled, `torch.backends.cudnn.deterministic=False`"""
     cuda: bool = True
     """if toggled, cuda will be enabled by default"""
+    enable_compile: bool = False
+    """whether to compile VLM"""
+    
+    # --- Logging ---
     track: bool = False
     """if toggled, this experiment will be tracked with Weights and Biases"""
     wandb_project_name: str = "cleanRL-VLM"
     """the wandb's project name"""
     wandb_entity: str = None
     """the entity (team) of wandb's project"""
-    capture_video: bool = False
-    """whether to capture videos of the agent performances (check out `videos` folder)"""
+    wandb_id: str = None
+    """the id of the wandb run to resume"""
+    log_every: int = 1
+    """the frequency of logging interactions to a file"""
+    log_dir: str = "interaction_logs"
+    """the directory to save interaction logs"""
+    checkpoint_dir: str = ""
+    """the directory to save checkpoints"""
+    checkpoint_interval: int = 10
+    """the interval to save checkpoints"""
 
-    # Algorithm specific arguments
+    # --- Config ---
     env_id: str = "VizdoomCorridor-v0"
     """the id of the environment"""
-    total_timesteps: int = 10000000
+    total_timesteps: int = 500_000
     """total timesteps of the experiments"""
-    learning_rate: float = 5e-5
-    """the learning rate of the optimizer"""
-    weight_decay: float = 0.0
-    """the weight decay of the optimizer"""
     num_envs: int = 8
     """the number of parallel game environments"""
     num_steps: int = 32
     """the number of steps to run in each environment per policy rollout"""
-    anneal_lr: bool = True
-    """Toggle learning rate annealing for policy and value networks"""
     gamma: float = 0.99
     """the discount factor gamma"""
     gae_lambda: float = 0.95
@@ -52,13 +58,28 @@ class Args:
     """coefficient of the entropy"""
     vf_coef: float = 1.0
     """coefficient of the value function"""
+    dual_clip_c: float = 0.0
+    """the coefficient for the Dual-Clip PPO"""
+    logratio_clamp: float = 20.0
+    """the clamp value for the log-ratio"""
+    clip_coef_lower: float = 0.2
+    """the lower clip coefficient for the Dual-Clip PPO"""
+    clip_coef_upper: float = 0.2
+    """the upper clip coefficient for the Dual-Clip PPO"""
     
-    log_every: int = 1
-    """the frequency of logging interactions to a file"""
-    log_dir: str = "interaction_logs"
-    """the directory to save interaction logs"""
+    # --- Optimizer ---
+    learning_rate: float = 5e-5
+    """the learning rate of the optimizer"""
+    weight_decay: float = 0.0
+    """the weight decay of the optimizer"""
+    lr_warmup_fraction: float = 0.1
+    """the fraction of the total number of iterations to warm up the learning rate"""
+    lr_decay_factor: float = 0.1
+    """the factor to decay the learning rate"""
+    reward_scale: float = 0.01
+    """the scale of the reward"""
 
-    # VLM specific arguments
+    # --- VLM specific arguments ---
     vlm_name: str = "Qwen/Qwen3-VL-4B-Instruct"
     """The model ID from Hugging Face."""
     prompt_actor_path: str = "prompts/corridor/actor.txt"
@@ -73,32 +94,14 @@ class Args:
     """Number of iterations to warm up the critic."""
     warmup_epochs: int = 5
     """Number of epochs to warm up the critic."""
-
-    enable_compile: bool = False
-    """wether to compile VLM"""
-    checkpoint_dir: str = ""
-    """the directory to save checkpoints"""
-    checkpoint_interval: int = 10
-    """the interval to save checkpoints"""
     
-    # LoRa specific arguments
+    # --- LoRa ---
     lora_rank: int = 32
     """the rank of the LoRA adapters"""
     lora_alpha: float = 64
     """the alpha of the LoRA adapters"""
     
-    # Dual-Clip PPO specific arguments
-    dual_clip_c: float = 0.0
-    """the coefficient for the Dual-Clip PPO"""
-    logratio_clamp: float = 20.0
-    """the clamp value for the log-ratio"""
-    clip_coef_lower: float = 0.2
-    """the lower clip coefficient for the Dual-Clip PPO"""
-    clip_coef_upper: float = 0.2
-    """the upper clip coefficient for the Dual-Clip PPO"""
-    
-    
-    # to be filled in runtime
+    # will be filled in runtime
     batch_size: int = 0
     """the batch size (computed in runtime)"""
     minibatch_size: int = 0

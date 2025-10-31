@@ -7,29 +7,33 @@ import numpy as np
 import torch
 import torch.optim as optim
 import tyro
+import matplotlib.pyplot as plt
+
 from torch.utils.tensorboard import SummaryWriter
-from collections import deque
 
 from accelerate.utils import TorchDynamoPlugin
 from accelerate import Accelerator 
 from tqdm import tqdm
-import matplotlib.pyplot as plt
-from io import BytesIO
+from transformers import get_linear_schedule_with_warmup
 
 from src.models.model import DecoupledActorCriticVLM_COT
 from src.utils.args import Args
-from src.utils.utils import numpy_to_pil, make_vizdoom_env, parse_action_cot, gc_cuda_cleanup, print_trainable_parameters
+from src.utils.utils import make_vizdoom_env, parse_action_cot, gc_cuda_cleanup, print_trainable_parameters, stats, log_stats, TrainingStateTracker
 from src.utils.action_maps import action_maps
 
 from IPython import embed
 
 if __name__ == "__main__":
     args = tyro.cli(Args)
-    run_name = f"env={args.env_id}_nenvs={args.num_envs}_nsteps={args.num_steps}_epochs={args.update_epochs}_seed={args.seed}_time={int(time.time())}"
+    run_name = f"exp={args.exp_name}_env={args.env_id}_seed={args.seed}_time={int(time.time())}"
     os.makedirs(f"runs/{run_name}", exist_ok=True)
     
     # --- Accelerator ---
-    accelerator_cfg = {"project_dir": f"runs/{run_name}", "gradient_accumulation_steps": args.gradient_accumulation_steps}
+    accelerator_cfg = {
+        "project_dir": f"runs/{run_name}",
+        "gradient_accumulation_steps": args.gradient_accumulation_steps,
+        "step_scheduler_with_optimizer": False
+    }
     if args.enable_compile:
         dynamo_plugin = TorchDynamoPlugin(
             backend="inductor",
@@ -39,7 +43,6 @@ if __name__ == "__main__":
         )
         accelerator_cfg["dynamo_plugin"] = dynamo_plugin
         print("Compilation enabled!")
-    
     accelerator = Accelerator(**accelerator_cfg)
     
     # --- Arguments ---
@@ -76,6 +79,15 @@ if __name__ == "__main__":
         total_iter_formula = "total_timesteps / total_batch_size"
         total_iter_subst = f"{args.total_timesteps} / {args.total_batch_size}"
         print(f" 🔄 Total Training Iterations ({total_iter_formula}) = ({total_iter_subst}) = {args.num_iterations:,}")
+        lr_warmup_iterations = int(args.num_iterations * args.lr_warmup_fraction)
+        lr_decay_iterations = int(args.num_iterations * (1 - args.lr_warmup_fraction))
+        lr_warmup_increase = args.learning_rate / lr_warmup_iterations
+        lr_decay_decrease = args.learning_rate / lr_decay_iterations
+        print(f" 📈 LR Schedule:")
+        print(f"  -> Warmup Iterations: {lr_warmup_iterations}")
+        print(f"  -> Warmup Increase: {lr_warmup_increase}")
+        print(f"  -> Decay Iterations: {lr_decay_iterations}")
+        print(f"  -> Decay Decrease: {lr_decay_decrease}")
         print("="*60 + "\n")
     accelerator.wait_for_everyone()
 
@@ -90,10 +102,20 @@ if __name__ == "__main__":
 
         if args.track:
             import wandb
-            wandb.init(
-                project=args.wandb_project_name, entity=args.wandb_entity, sync_tensorboard=True,
-                config=vars(args), name=run_name, monitor_gym=True, save_code=True,
-            )
+            wandb_kwargs = {
+                "project": args.wandb_project_name,
+                "entity": args.wandb_entity,
+                "name": run_name,
+                "sync_tensorboard": True,
+                "config": vars(args),
+                "monitor_gym": True,
+                "save_code": True,
+            }
+            if args.wandb_id is not None:
+                wandb_kwargs["id"] = args.wandb_id
+                wandb_kwargs["resume"] = "allow"
+                
+            wandb.init(**wandb_kwargs)
         writer = SummaryWriter(f"runs/{run_name}")
         writer.add_text("hyperparameters", f"|param|value|\n|-|-|\n" + "\n".join([f"|{key}|{value}|" for key, value in vars(args).items()]))
 
@@ -105,7 +127,7 @@ if __name__ == "__main__":
 
     # --- Per-Process Environments ---
     envs = gym.vector.SyncVectorEnv(
-        [make_vizdoom_env(args.env_id, i, args.capture_video, run_name) for i in range(args.num_envs)],
+        [make_vizdoom_env(args.env_id) for i in range(args.num_envs)],
     )
     envs.single_action_space = envs.envs[0].action_space
     envs.single_observation_space = envs.envs[0].observation_space
@@ -136,13 +158,24 @@ if __name__ == "__main__":
         print("-" * 50)
         
     optimizer = optim.AdamW(params, lr=args.learning_rate, betas=(0.85, 0.9), weight_decay=args.weight_decay)
+    scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=int(args.num_iterations * args.lr_warmup_fraction), num_training_steps=args.num_iterations)
+    training_state = TrainingStateTracker(iteration=1, global_step=0)
+
     agent, optimizer = accelerator.prepare(agent, optimizer)
+    accelerator.register_for_checkpointing(scheduler)
+    accelerator.register_for_checkpointing(training_state)
     
     if args.checkpoint_dir != "":
         print(f"Loading checkpoint from {args.checkpoint_dir}")
         accelerator.load_state(args.checkpoint_dir)
         print(f"Checkpoint loaded from {args.checkpoint_dir}")
+        #training_state.load_state_dict(torch.load(os.path.join(args.checkpoint_dir, "custom_checkpoint_0.pkl"))["state_dict"])
     accelerator.wait_for_everyone()
+    
+    # these will be either the initialized values or the loaded values from the checkpoint
+    start_iteration = training_state["iteration"]
+    global_step = training_state["global_step"]
+    print(f"Starting training from iteration {start_iteration} and global step {global_step}")
     
     # --- Storage Tensors ---
     obs = torch.zeros((args.num_steps, args.num_envs) + envs.single_observation_space.shape, device=device)
@@ -151,6 +184,7 @@ if __name__ == "__main__":
     values = torch.zeros((args.num_steps, args.num_envs), device=device)
     prompt_lens = torch.zeros((args.num_steps, args.num_envs), dtype=torch.long, device=device)
     action_masks = torch.zeros((args.num_steps, args.num_envs, args.max_seq_len), dtype=torch.long, device=device)
+    logprobs = torch.zeros((args.num_steps, args.num_envs, args.max_seq_len), device=device)
     
     # initialize full_input_ids with the pad token id
     pad_token_id = agent.vlm.processor.tokenizer.pad_token_id
@@ -161,36 +195,31 @@ if __name__ == "__main__":
         dtype=torch.long,
         device=device
     )
-    logprobs = torch.zeros((args.num_steps, args.num_envs, args.max_seq_len), device=device)
 
     # --- Start training ---
-    global_step = 0
+    first_model_save = True
     start_time = time.time()
     
     next_obs, _ = envs.reset()
     next_obs = torch.Tensor(next_obs).to(device)
     next_done = torch.zeros(args.num_envs).to(device)
-    
-    first_model_save = True
+
     if accelerator.is_main_process:
         current_episode_frames = []
         last_completed_episode_frames = []
     
-    for iteration in range(1, args.num_iterations + 1):
+    for iteration in range(start_iteration, args.num_iterations + 1):
         generation_lengths = []
         seq_len_errors = []
         rollout_time_start = time.time()
         
         # anneal lr
-        if args.anneal_lr:
-            frac = 1.0 - (iteration - 1.0) / args.num_iterations
-            lrnow = frac * args.learning_rate
-            optimizer.param_groups[0]["lr"] = lrnow
-
+        scheduler.step()
+        
         # --- Rollout Phase: Each process collects its own data ---
         for step in range(0, args.num_steps):
+            global_step += args.num_envs * accelerator.num_processes
             if accelerator.is_main_process:
-                global_step += args.num_envs * accelerator.num_processes
                 current_episode_frames.append(next_obs[0].cpu().numpy().astype(np.uint8))
 
             obs[step] = next_obs
@@ -216,11 +245,9 @@ if __name__ == "__main__":
                 )
                 values[step] = value.flatten()
 
-            # The generated full_ids (f_ids) might be shorter or longer than max_seq_len
             seq_len = f_ids.shape[1]
             p_len = p_len.unsqueeze(1)
 
-            # We need to create padded/truncated versions of everything to fit our storage tensors
             padded_ids = torch.full(
                 (args.num_envs, args.max_seq_len),
                 fill_value=pad_token_id,
@@ -229,23 +256,20 @@ if __name__ == "__main__":
             )
             padded_logprob = torch.zeros(
                 (args.num_envs, args.max_seq_len),
-                dtype=torch.float32,
+                dtype=torch.float16,
                 device=device
             )
 
-            # Truncate or pad the generated sequence and its logprobs
             copy_len_ids = min(seq_len, args.max_seq_len)
             padded_ids[:, :copy_len_ids] = f_ids[:, :copy_len_ids]
             logprob_len = logprob.shape[1] # This will be seq_len - 1
             copy_len_logprob = min(logprob_len, args.max_seq_len - 1)
             padded_logprob[:, 1 : 1 + copy_len_logprob] = logprob[:, :copy_len_logprob]
 
-            # Now, store the consistently shaped tensors
             full_input_ids[step] = padded_ids
             logprobs[step] = padded_logprob
             prompt_lens[step] = p_len.squeeze()
 
-            # Recompute mask for the correctly padded/truncated sequence
             indices = torch.arange(args.max_seq_len, device=device).unsqueeze(0)
             action_token_mask = indices >= p_len
             pad_mask = (padded_ids != pad_token_id)
@@ -261,7 +285,7 @@ if __name__ == "__main__":
             next_obs, reward, term, trunc, infos = envs.step(action.cpu().numpy())
             print(f"[Process {accelerator.process_index}] Step {step+1}/{args.num_steps}")
             
-            rewards[step] = torch.tensor(reward).to(device).view(-1) * 0.01
+            rewards[step] = torch.tensor(reward).to(device).view(-1) * args.reward_scale
             next_done = np.logical_or(term, trunc)
             next_obs, next_done = torch.Tensor(next_obs).to(device), torch.Tensor(next_done).to(device)
 
@@ -324,7 +348,7 @@ if __name__ == "__main__":
                             writer.add_scalar("charts/episodic_return", info["episode"]["r"], global_step)
                             writer.add_scalar("charts/episodic_length", info["episode"]["l"], global_step)
 
-            # Free up GPU memory after each step
+            # free up GPU memory after each step
             del reward, term, trunc, infos, logprob, f_ids, p_len, action, value, generated_texts, seq_len, padded_ids, padded_logprob, indices, action_token_mask, pad_mask
             gc_cuda_cleanup()
         
@@ -345,8 +369,8 @@ if __name__ == "__main__":
         gathered_rewards = gathered_rewards.view(accelerator.num_processes, args.num_steps, args.num_envs).permute(1, 0, 2).reshape(args.num_steps, num_total_envs) # (num_steps, num_envs * num_processes)
         gathered_values = gathered_values.view(accelerator.num_processes, args.num_steps, args.num_envs).permute(1, 0, 2).reshape(args.num_steps, num_total_envs) # (num_steps, num_envs * num_processes)
         gathered_dones = gathered_dones.view(accelerator.num_processes, args.num_steps, args.num_envs).permute(1, 0, 2).reshape(args.num_steps, num_total_envs) # (num_steps, num_envs * num_processes)
-        gathered_next_value = gathered_next_value.view(num_total_envs)
-        gathered_next_done = gathered_next_done.view(num_total_envs)
+        gathered_next_value = gathered_next_value.view(num_total_envs) # (num_envs * num_processes)
+        gathered_next_done = gathered_next_done.view(num_total_envs) # (num_envs * num_processes)
 
         # all processes do GAE on the same data
         with torch.no_grad():
@@ -364,45 +388,34 @@ if __name__ == "__main__":
             returns = advantages + gathered_values
 
         # all processes will have identical data
-        gathered_obs = accelerator.gather(obs)
-        gathered_logprobs = accelerator.gather(logprobs)
-        gathered_input_ids = accelerator.gather(full_input_ids)
-        gathered_prompt_lens = accelerator.gather(prompt_lens)
-        gathered_action_masks = accelerator.gather(action_masks)
+        gathered_obs = accelerator.gather(obs) # (num_steps * num_processes, num_envs, *envs.single_observation_space.shape)
+        gathered_logprobs = accelerator.gather(logprobs) # (num_steps * num_processes, num_envs, args.max_seq_len)
+        gathered_input_ids = accelerator.gather(full_input_ids) # (num_steps * num_processes, num_envs, args.max_seq_len)
+        gathered_prompt_lens = accelerator.gather(prompt_lens) # (num_steps * num_processes, num_envs)
+        gathered_action_masks = accelerator.gather(action_masks) # (num_steps * num_processes, num_envs, args.max_seq_len)
 
         # all processes will have identical data
         b_action_masks = gathered_action_masks.view(
             accelerator.num_processes, args.num_steps, args.num_envs, args.max_seq_len
-        ).permute(1, 0, 2, 3).reshape(-1, args.max_seq_len)
+        ).permute(1, 0, 2, 3).reshape(-1, args.max_seq_len) # [num_envs * num_steps * num_processes, args.max_seq_len]
 
         b_logprobs = gathered_logprobs.view(
             accelerator.num_processes, args.num_steps, args.num_envs, args.max_seq_len
-        ).permute(1, 0, 2, 3).reshape(-1, args.max_seq_len)
+        ).permute(1, 0, 2, 3).reshape(-1, args.max_seq_len) # [num_envs * num_steps * num_processes, args.max_seq_len]
 
         b_input_ids = gathered_input_ids.view(
             accelerator.num_processes, args.num_steps, args.num_envs, args.max_seq_len
-        ).permute(1, 0, 2, 3).reshape(-1, args.max_seq_len)
+        ).permute(1, 0, 2, 3).reshape(-1, args.max_seq_len) # [num_envs * num_steps * num_processes, args.max_seq_len]
 
         b_prompt_lens = gathered_prompt_lens.view(
             accelerator.num_processes, args.num_steps, args.num_envs
-        ).permute(1, 0, 2).reshape(-1)
+        ).permute(1, 0, 2).reshape(-1) # [num_envs * num_steps * num_processes]
         
         b_obs = gathered_obs.view(
             accelerator.num_processes, args.num_steps, args.num_envs, *envs.single_observation_space.shape
         ).permute(1, 0, 2, 3, 4, 5).reshape(-1, *envs.single_observation_space.shape) # [num_envs * num_steps * num_processes, *envs.single_observation_space.shape]
 
-        # b_advantages = advantages.view(
-        #     accelerator.num_processes, args.num_steps, args.num_envs
-        # ).permute(1, 0, 2).reshape(-1)
-        
-        # b_returns = returns.view(
-        #     accelerator.num_processes, args.num_steps, args.num_envs
-        # ).permute(1, 0, 2).reshape(-1)
-        
-        # b_values = gathered_values.view(
-        #     accelerator.num_processes, args.num_steps, args.num_envs
-        # ).permute(1, 0, 2).reshape(-1)
-        
+        # these were already reshaped in the previous code block so only need to flatten them
         b_advantages = advantages.reshape(-1)    
         b_returns = returns.reshape(-1)
         b_values = gathered_values.reshape(-1)
@@ -411,6 +424,7 @@ if __name__ == "__main__":
         b_inds = np.arange(args.total_batch_size)
         is_critic_warmup = iteration <= args.critic_warmup_iterations
         
+        # save 1 checkpoint after critic warmup
         if not is_critic_warmup and first_model_save and args.checkpoint_dir == "":
             print(f"Saving checkpoint at iteration {iteration}")
             accelerator.wait_for_everyone()
@@ -430,7 +444,6 @@ if __name__ == "__main__":
         cliprange_high = args.clip_coef_upper
         dual_clip_c = args.dual_clip_c
         ratios_1st_epoch_1st_minibatch = []
-        logprobs_barplot_logged = False
 
         learning_time_start = time.time()
         all_values_stats = []
@@ -448,7 +461,7 @@ if __name__ == "__main__":
 
         # ----------- UNIFIED ACTOR-CRITIC (policy & value) UPDATE LOOP -----------
         
-        # Normalize advantages at batch level before epoch loop
+        # normalize advantages at batch level before epoch loop
         if args.norm_adv:
             adv_mean = b_advantages.mean()
             adv_std = b_advantages.std()
@@ -471,6 +484,7 @@ if __name__ == "__main__":
                 end = start + args.minibatch_size
                 mb_inds = b_inds[start:end]
 
+                # each process will only process a subset of the minibatch
                 process_mb_inds = mb_inds[accelerator.process_index::accelerator.num_processes]
                 with accelerator.accumulate(agent):
                     mb_obs = b_obs[process_mb_inds].to(device)
@@ -482,18 +496,11 @@ if __name__ == "__main__":
                     mb_advantages = b_advantages[process_mb_inds].to(device)
                     mb_action_masks = b_action_masks[process_mb_inds].to(device)
 
-                    def stats(x):
-                        x = x.float()
-                        return dict(
-                            mean=float(x.mean().cpu()), std=float(x.std().cpu()),
-                            min=float(x.min().cpu()), max=float(x.max().cpu()), median=float(x.median().cpu())
-                        )
-
                     all_values_stats.append(stats(mb_values))
                     all_advantages_stats.append(stats(mb_advantages))
                     all_returns_stats.append(stats(mb_returns))
 
-                    # Only compute and backward value loss during critic warmup
+                    # only compute and backward value loss during critic warmup
                     if is_critic_warmup:
                         # ---- CRITIC VALUE LOSS ----
                         newvalue = agent.get_value(
@@ -510,18 +517,13 @@ if __name__ == "__main__":
                             v_loss = 0.5 * ((newvalue - mb_returns) ** 2).mean()
 
                         accelerator.backward(v_loss)
-
-                        # optimizer step and zero grad
                         optimizer.step()
                         optimizer.zero_grad()
                         
-                        # Clean up minibatch objects
-                        del mb_obs, mb_input_ids, mb_prompt_lens
-                        del mb_logprobs, mb_advantages, mb_returns, mb_values, mb_action_masks
-                        if 'newvalue' in locals():
-                            del newvalue
+                        # clean up minibatch objects
+                        del mb_obs, mb_input_ids, mb_prompt_lens, mb_logprobs, mb_advantages, mb_returns, mb_values, mb_action_masks, newvalue
                         gc_cuda_cleanup()
-                        continue  # Skip policy optimization during critic warmup
+                        continue  # skip policy optimization during critic warmup
 
                     # --- ACTOR POLICY LOSS ----
                     newlogprob, entropy_tensor = agent.get_action(
@@ -535,13 +537,14 @@ if __name__ == "__main__":
                     action_masks_sliced = mb_action_masks[:, 1:]
                     logratio = newlogprob - old_logprobs_sliced
                     
-                    # Clamp logratio to avoid exploding gradients
+                    # this can be done for numerical stability
                     if args.logratio_clamp > 0:
                         logratio = torch.clamp(logratio, -args.logratio_clamp, args.logratio_clamp)
                         
                     logratio = torch.where(action_masks_sliced.bool(), logratio, torch.zeros_like(logratio))
                     ratio = torch.exp(logratio)
 
+                    # logging
                     mask = action_masks_sliced.bool()
                     mask_sum = mask.sum().item()
                     if mask_sum > 0:
@@ -549,13 +552,13 @@ if __name__ == "__main__":
                         logratio_masked = logratio[mask].detach().cpu()
                         ratio_masked = ratio[mask].detach().cpu()
                         oldlogprob_masked = old_logprobs_sliced[mask].detach().cpu() 
-                        
                         all_newlogprobs_stats.append(stats(newlogprob_masked))
                         all_oldlogprobs_stats.append(stats(oldlogprob_masked))
                         all_logratios_stats.append(stats(logratio_masked))
                         all_ratios_stats.append(stats(ratio_masked))
 
-                    if (epoch == 0 and start == 0 and not logprobs_barplot_logged and accelerator.is_main_process):
+                    # logging
+                    if (epoch == 0 and start == 0 and accelerator.is_main_process):
                         for mb_idx_inner in range(mb_obs.shape[0]):
                             inner_mask = action_masks_sliced[mb_idx_inner].bool()
                             if inner_mask.any():
@@ -563,7 +566,7 @@ if __name__ == "__main__":
                                 ratios_1st_epoch_1st_minibatch.append(ratios_debug)
                                 print(f"Ratios debug: {ratios_debug}")
 
-                    # KL and clip fraction stats (for logging plots and scalars)
+                    # logging
                     with torch.no_grad():
                         valid = action_masks_sliced.bool()
                         valid_token_count = valid.sum()
@@ -575,9 +578,8 @@ if __name__ == "__main__":
                             epoch_approx_kls.append(approx_kl.item())
                             epoch_old_approx_kls.append(old_approx_kl.item())
 
-                    # dual-clip PPO loss and fractions
+                    # --- policy loss ---
                     mb_advantages_exp = mb_advantages.unsqueeze(-1) 
-                    
                     pg_losses1 = -mb_advantages_exp * ratio
                     pg_losses2 = -mb_advantages_exp * torch.clamp(ratio, 1 - cliprange_low, 1 + cliprange_high)
                     clip_pg_losses1 = torch.maximum(pg_losses1, pg_losses2)
@@ -606,12 +608,12 @@ if __name__ == "__main__":
 
                     pg_loss = (pg_loss_per_token * action_masks_sliced).sum() / action_masks_sliced.sum()
 
-                    # entropy loss 
+                    # --- entropy loss ---
                     entropy_loss = (entropy_tensor * action_masks_sliced).sum() / action_masks_sliced.sum()
                     
                     accelerator.backward(pg_loss - args.ent_coef * entropy_loss) 
 
-                    # ---- CRITIC VALUE LOSS ----
+                    # --- value loss ---
                     newvalue = agent.get_value(
                         obs=mb_obs, prompt_text=[prompt_text_critic] * mb_obs.shape[0]
                     ).view(-1)
@@ -625,31 +627,18 @@ if __name__ == "__main__":
                     else:
                         v_loss = 0.5 * ((newvalue - mb_returns) ** 2).mean()
 
-                    # backward value loss separately
+                    # --- backward value loss ---
                     accelerator.backward(v_loss)
 
-                    # optimizer step ONCE for both actor and critic, then zero grad
+                    # --- optimizer step ---
                     optimizer.step()
                     optimizer.zero_grad()
                     
                     # Clean up minibatch objects after joint step
-                    del mb_obs, mb_input_ids, mb_prompt_lens
-                    del mb_logprobs, mb_advantages, mb_returns, mb_values, mb_action_masks
-                    if 'newlogprob' in locals():
-                        del newlogprob
-                    if 'entropy_tensor' in locals():
-                        del entropy_tensor
-                    if 'logratio' in locals():
-                        del logratio
-                    if 'ratio' in locals():
-                        del ratio
-                    if 'mask' in locals():
-                        del mask
-                    if 'newvalue' in locals():
-                        del newvalue
+                    del mb_obs, mb_input_ids, mb_prompt_lens, mb_logprobs, mb_advantages, mb_returns, mb_values, mb_action_masks, newlogprob, entropy_tensor, logratio, ratio, mask, newvalue
                     gc_cuda_cleanup()
 
-
+        # save checkpoint
         if iteration % args.checkpoint_interval == 0:
             print(f"Saving checkpoint at iteration {iteration}")
             accelerator.wait_for_everyone()
@@ -657,100 +646,71 @@ if __name__ == "__main__":
             print(f"Checkpoint saved to runs/{run_name}/checkpoint-{iteration}")
 
         learning_time_completed = time.time() - learning_time_start
-        # --- Logging ---
+        
+        # --- Logging (compact) ---
         if accelerator.is_main_process:
-            writer.add_scalar("charts/learning_rate", optimizer.param_groups[0]["lr"], global_step)
-            writer.add_scalar("charts/global_step", global_step, global_step)
-            writer.add_scalar("charts/iteration", iteration, global_step)
-            writer.add_scalar("debug/generation_length", np.mean(generation_lengths), global_step)
-            writer.add_scalar("debug/seq_len_errors", np.mean(seq_len_errors), global_step)
-            writer.add_scalar("debug/rollout_time", rollout_time_completed, global_step)
-            writer.add_scalar("debug/learning_time", learning_time_completed, global_step)
-
-            if is_critic_warmup:
-                writer.add_scalar("info/critic_warmup_phase", 1, global_step)
-            else:
-                writer.add_scalar("info/critic_warmup_phase", 0, global_step)
-
+            scalar_logs = [
+                ("charts/learning_rate", scheduler.get_last_lr()[0]),
+                ("charts/global_step", global_step),
+                ("charts/iteration", iteration),
+                ("debug/generation_length", np.mean(generation_lengths)),
+                ("debug/seq_len_errors", np.mean(seq_len_errors)),
+                ("debug/rollout_time", rollout_time_completed),
+                ("debug/learning_time", learning_time_completed),
+                ("info/critic_warmup_phase", 1 if is_critic_warmup else 0),
+            ]
             if 'v_loss' in locals():
-                writer.add_scalar("losses/value_loss", v_loss.item(), global_step)
-
+                scalar_logs.append(("losses/value_loss", v_loss.item()))
             if not is_critic_warmup:
                 if 'pg_loss' in locals():
-                    writer.add_scalar("losses/policy_loss", pg_loss.item(), global_step)
+                    scalar_logs.append(("losses/policy_loss", pg_loss.item()))
                 if 'entropy_loss' in locals():
-                    writer.add_scalar("losses/entropy", entropy_loss.item(), global_step)
-
-            if not is_critic_warmup:
+                    scalar_logs.append(("losses/entropy", entropy_loss.item()))
                 if ratios_1st_epoch_1st_minibatch:
-                    writer.add_scalar("losses/ratios_1st_epoch_1st_minibatch", np.mean(ratios_1st_epoch_1st_minibatch), global_step)
+                    scalar_logs.append(("losses/ratios_1st_epoch_1st_minibatch", np.mean(ratios_1st_epoch_1st_minibatch)))
                 if epoch_approx_kls:
-                    writer.add_scalar("losses/approx_kl", np.mean(epoch_approx_kls), global_step)
+                    scalar_logs.append(("losses/approx_kl", np.mean(epoch_approx_kls)))
                 if epoch_old_approx_kls:
-                    writer.add_scalar("losses/old_approx_kl", np.mean(epoch_old_approx_kls), global_step)
+                    scalar_logs.append(("losses/old_approx_kl", np.mean(epoch_old_approx_kls)))
                 if epoch_clipfracs_upper:
-                    writer.add_scalar("losses/clipfrac_upper", np.mean(epoch_clipfracs_upper), global_step)
+                    scalar_logs.append(("losses/clipfrac_upper", np.mean(epoch_clipfracs_upper)))
                 if epoch_clipfracs_lower:
-                    writer.add_scalar("losses/clipfrac_lower", np.mean(epoch_clipfracs_lower), global_step)
+                    scalar_logs.append(("losses/clipfrac_lower", np.mean(epoch_clipfracs_lower)))
+            for key, val in scalar_logs:
+                writer.add_scalar(key, val, global_step)
 
-            if len(all_newlogprobs_stats) > 0 and not is_critic_warmup:
-                keys = all_newlogprobs_stats[0].keys()
-                avgstats = lambda arr: {k: float(np.mean([d[k] for d in arr])) for k in keys}
-                writer.add_scalar("stats/newlogprob_mean", avgstats(all_newlogprobs_stats)["mean"], global_step)
-                writer.add_scalar("stats/newlogprob_std", avgstats(all_newlogprobs_stats)["std"], global_step)
-                writer.add_scalar("stats/newlogprob_min", avgstats(all_newlogprobs_stats)["min"], global_step)
-                writer.add_scalar("stats/newlogprob_max", avgstats(all_newlogprobs_stats)["max"], global_step)
-                writer.add_scalar("stats/oldlogprob_mean", avgstats(all_oldlogprobs_stats)["mean"], global_step)
-                writer.add_scalar("stats/oldlogprob_std", avgstats(all_oldlogprobs_stats)["std"], global_step)
-                writer.add_scalar("stats/oldlogprob_min", avgstats(all_oldlogprobs_stats)["min"], global_step)
-                writer.add_scalar("stats/oldlogprob_max", avgstats(all_oldlogprobs_stats)["max"], global_step)
-                writer.add_scalar("stats/logratio_mean", avgstats(all_logratios_stats)["mean"], global_step)
-                writer.add_scalar("stats/logratio_std", avgstats(all_logratios_stats)["std"], global_step)
-                writer.add_scalar("stats/logratio_min", avgstats(all_logratios_stats)["min"], global_step)
-                writer.add_scalar("stats/logratio_max", avgstats(all_logratios_stats)["max"], global_step)
-                writer.add_scalar("stats/ratio_mean", avgstats(all_ratios_stats)["mean"], global_step)
-                writer.add_scalar("stats/ratio_std", avgstats(all_ratios_stats)["std"], global_step)
-                writer.add_scalar("stats/ratio_min", avgstats(all_ratios_stats)["min"], global_step)
-                writer.add_scalar("stats/ratio_max", avgstats(all_ratios_stats)["max"], global_step)
-            if len(all_values_stats) > 0:
-                keys = all_values_stats[0].keys()
-                avgstats = lambda arr: {k: float(np.mean([d[k] for d in arr])) for k in keys}
-                writer.add_scalar("stats/values_mean", avgstats(all_values_stats)["mean"], global_step)
-                writer.add_scalar("stats/values_std", avgstats(all_values_stats)["std"], global_step)
-                writer.add_scalar("stats/values_min", avgstats(all_values_stats)["min"], global_step)
-                writer.add_scalar("stats/values_max", avgstats(all_values_stats)["max"], global_step)
-            if len(all_advantages_stats) > 0:
-                keys = all_advantages_stats[0].keys()
-                avgstats = lambda arr: {k: float(np.mean([d[k] for d in arr])) for k in keys}
-                writer.add_scalar("stats/advantages_mean", avgstats(all_advantages_stats)["mean"], global_step)
-                writer.add_scalar("stats/advantages_std", avgstats(all_advantages_stats)["std"], global_step)
-                writer.add_scalar("stats/advantages_min", avgstats(all_advantages_stats)["min"], global_step)
-                writer.add_scalar("stats/advantages_max", avgstats(all_advantages_stats)["max"], global_step)
-            if len(all_returns_stats) > 0:
-                keys = all_returns_stats[0].keys()
-                avgstats = lambda arr: {k: float(np.mean([d[k] for d in arr])) for k in keys}
-                writer.add_scalar("stats/returns_mean", avgstats(all_returns_stats)["mean"], global_step)
-                writer.add_scalar("stats/returns_std", avgstats(all_returns_stats)["std"], global_step)
-                writer.add_scalar("stats/returns_min", avgstats(all_returns_stats)["min"], global_step)
-                writer.add_scalar("stats/returns_max", avgstats(all_returns_stats)["max"], global_step)
+            avgstats_nlp = avgstats_olp = avgstats_lr = avgstats_rat = avgstats_val = avgstats_adv = avgstats_ret = None
+            if not is_critic_warmup:
+                avgstats_nlp = log_stats(all_newlogprobs_stats, "newlogprob", writer, global_step)
+                avgstats_olp = log_stats(all_oldlogprobs_stats, "oldlogprob", writer, global_step)
+                avgstats_lr = log_stats(all_logratios_stats, "logratio", writer, global_step)
+                avgstats_rat = log_stats(all_ratios_stats, "ratio", writer, global_step)
+            avgstats_val = log_stats(all_values_stats, "values", writer, global_step)
+            avgstats_adv = log_stats(all_advantages_stats, "advantages", writer, global_step)
+            avgstats_ret = log_stats(all_returns_stats, "returns", writer, global_step)
 
             sps = int(args.total_batch_size / (time.time() - start_time))
             writer.add_scalar("charts/SPS", sps, global_step)
             if is_critic_warmup:
-                print(
-                    f"(CRITIC WARMUP) SPS: {sps} || value.loss : {v_loss.item() if 'v_loss' in locals() else 'n/a'}"
-                )
+                print(f"(CRITIC WARMUP) SPS: {sps} || value.loss : {v_loss.item() if 'v_loss' in locals() else 'n/a'}")
             else:
+                def get(stat): return stat['mean'] if stat else 'n/a'
                 print(
                     f"SPS: {sps} || value.loss : {v_loss.item() if 'v_loss' in locals() else 'n/a'}, policy.loss : {pg_loss.item() if 'pg_loss' in locals() else 'n/a'}, policy.entropy : {entropy_loss.item() if 'entropy_loss' in locals() else 'n/a'}",
                     "\n"
-                    f"    newlogprob: {avgstats(all_newlogprobs_stats)['mean'] if all_newlogprobs_stats else 'n/a'} | "
-                    f"oldlogprob: {avgstats(all_oldlogprobs_stats)['mean'] if all_oldlogprobs_stats else 'n/a'} | "
-                    f"ratio: {avgstats(all_ratios_stats)['mean'] if all_ratios_stats else 'n/a'} | "
-                    f"values: {avgstats(all_values_stats)['mean'] if all_values_stats else 'n/a'} | "
-                    f"advantages: {avgstats(all_advantages_stats)['mean'] if all_advantages_stats else 'n/a'} | "
-                    f"returns: {avgstats(all_returns_stats)['mean'] if all_returns_stats else 'n/a'}"
+                    f"    newlogprob: {get(avgstats_nlp)} | "
+                    f"oldlogprob: {get(avgstats_olp)} | "
+                    f"logratio: {get(avgstats_lr)} | "
+                    f"ratio: {get(avgstats_rat)} | "
+                    f"values: {get(avgstats_val)} | "
+                    f"advantages: {get(avgstats_adv)} | "
+                    f"returns: {get(avgstats_ret)}"
                 )
-
-    envs.close()
-    writer.close()
+    try:
+        envs.close()
+    except Exception as e:
+        print(f"Warning: Failed to close environment. Error: {e}")
+    try:
+        writer.close()
+    except Exception as e:
+        print(f"Warning: Failed to close writer. Error: {e}")
