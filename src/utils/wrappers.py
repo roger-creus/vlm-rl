@@ -358,7 +358,7 @@ class AtariWrapper(gym.Wrapper[np.ndarray, int, np.ndarray, int]):
 
         super().__init__(env)
         
-class DiscreteActionWrapper(gym.ActionWrapper):
+class DeadlyCorridorActionWrapper(gym.ActionWrapper):
     """
     Wrap a MultiBinary/MultiDiscrete action space to Discrete(7).
     
@@ -392,6 +392,21 @@ class DiscreteActionWrapper(gym.ActionWrapper):
             arr[act] = 1
         return arr
     
+class DefendTheLineActionWrapper(gym.ActionWrapper):
+    """
+    Wrap a MultiBinary/MultiDiscrete action space to Discrete(3).
+    """
+    def __init__(self, env):
+        super().__init__(env)
+        self.button_names = ["TURN_LEFT", "TURN_RIGHT", "ATTACK"]
+        self.action_space = gym.spaces.Discrete(len(self.button_names))
+    
+    def action(self, act):
+        arr = [0] * len(self.button_names)
+        if 0 <= act < len(self.button_names):
+            arr[act] = 1
+        return arr
+
 class ScreenOnlyWrapper(gym.ObservationWrapper):
     def __init__(self, env):
         super().__init__(env)

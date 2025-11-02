@@ -160,16 +160,14 @@ if __name__ == "__main__":
     optimizer = optim.AdamW(params, lr=args.learning_rate, betas=(0.85, 0.9), weight_decay=args.weight_decay)
     scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=int(args.num_iterations * args.lr_warmup_fraction), num_training_steps=args.num_iterations)
     training_state = TrainingStateTracker(iteration=1, global_step=0)
-
-    agent, optimizer = accelerator.prepare(agent, optimizer)
-    accelerator.register_for_checkpointing(scheduler)
     accelerator.register_for_checkpointing(training_state)
+    agent, optimizer, scheduler = accelerator.prepare(agent, optimizer, scheduler)
     
     if args.checkpoint_dir != "":
         print(f"Loading checkpoint from {args.checkpoint_dir}")
         accelerator.load_state(args.checkpoint_dir)
         print(f"Checkpoint loaded from {args.checkpoint_dir}")
-        #training_state.load_state_dict(torch.load(os.path.join(args.checkpoint_dir, "custom_checkpoint_0.pkl"))["state_dict"])
+
     accelerator.wait_for_everyone()
     
     # these will be either the initialized values or the loaded values from the checkpoint
@@ -212,9 +210,6 @@ if __name__ == "__main__":
         generation_lengths = []
         seq_len_errors = []
         rollout_time_start = time.time()
-        
-        # anneal lr
-        scheduler.step()
         
         # --- Rollout Phase: Each process collects its own data ---
         for step in range(0, args.num_steps):
@@ -638,6 +633,9 @@ if __name__ == "__main__":
                     del mb_obs, mb_input_ids, mb_prompt_lens, mb_logprobs, mb_advantages, mb_returns, mb_values, mb_action_masks, newlogprob, entropy_tensor, logratio, ratio, mask, newvalue
                     gc_cuda_cleanup()
 
+        # anneal lr
+        scheduler.step()
+        
         # save checkpoint
         if iteration % args.checkpoint_interval == 0:
             print(f"Saving checkpoint at iteration {iteration}")

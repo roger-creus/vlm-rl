@@ -5,7 +5,7 @@ import re
 
 from PIL import Image
 
-from src.utils.wrappers import NoopResetEnv, EpisodicLifeEnv, FireResetEnv, ClipRewardEnv, MaxAndSkipEnv, FrameSkipEnv, DiscreteActionWrapper, ScreenOnlyWrapper
+from src.utils.wrappers import NoopResetEnv, EpisodicLifeEnv, FireResetEnv, ClipRewardEnv, MaxAndSkipEnv, FrameSkipEnv, DeadlyCorridorActionWrapper, DefendTheLineActionWrapper, ScreenOnlyWrapper
 
 
 def make_env(env_id, idx, run_name):
@@ -25,12 +25,15 @@ from vizdoom import gymnasium_wrapper
 def make_vizdoom_env(env_id):
     def thunk():
         env = gym.make(
-            "VizdoomCorridor-v0",
+            env_id,
             render_mode="rgb_array",
             max_buttons_pressed=0,
             frame_skip=4
         )
-        env = DiscreteActionWrapper(env)
+        if env_id == "VizdoomCorridor-v0":
+            env = DeadlyCorridorActionWrapper(env)
+        elif env_id == "VizdoomDefendLine-v0":
+            env = DefendTheLineActionWrapper(env)
         env = ScreenOnlyWrapper(env)
         env = gym.wrappers.RecordEpisodeStatistics(env)
         return env
