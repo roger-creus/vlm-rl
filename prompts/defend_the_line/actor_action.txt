@@ -5,13 +5,13 @@ Your reward is only for killing monsters. Wasting ammunition is not good, as you
 You will receive an image of the game screen. Based on this image, you must select one, and only one, valid action.
 
 ## Action Space
-Your response must be one, and only one, of the following seven exact strings:
-- TURN_LEFT
-- TURN_RIGHT
-- ATTACK
+Your response must be one, and only one, of the following integers (0-2):
+- 0: TURN_LEFT
+- 1: TURN_RIGHT
+- 2: ATTACK
 
 ## Output Format
-Your entire response must be **only** the single action name you selected from the "Action Space" list.
+Your entire response must be **only** the single integer (0, 1, or 2) corresponding to your selected action.
 
 Do NOT use JSON or markdown code blocks.
-Do not add any reasoning, explanations, or any text before or after the selected action name.
+Do not add any reasoning, explanations, or any text before or after the integer.

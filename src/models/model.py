@@ -280,17 +280,26 @@ class DecoupledActorCriticVLM_Action(nn.Module):
         self.available_actions = available_actions
         self.num_actions = len(available_actions)
 
-        # --- Tokenize and store available actions ---
+        # --- Tokenize integer actions (0, 1, 2, ...) as single tokens ---
+        # Convert action indices to string representations for tokenization
+        action_int_strings = [str(i) for i in range(self.num_actions)]
         tokenized_actions = self.vlm.processor.tokenizer(
-            self.available_actions, 
+            action_int_strings, 
             padding=True, 
             return_tensors="pt",
             add_special_tokens=False
         )
         
-        self.action_ids = tokenized_actions.input_ids.to(device)
+        # Each action should be a single token
+        self.action_ids = tokenized_actions.input_ids.to(device)  # [num_actions, 1] (or [num_actions, seq_len])
         self.action_mask = tokenized_actions.attention_mask.to(device)
-        self.action_lens = self.action_mask.sum(dim=1)
+        
+        # Verify each action is a single token
+        action_seq_lens = self.action_mask.sum(dim=1)
+        assert (action_seq_lens == 1).all(), f"Expected single token per action, but got lengths: {action_seq_lens}"
+        
+        # Extract single token IDs for each action: [num_actions]
+        self.action_token_ids = self.action_ids[:, 0]  # [num_actions]
 
         if self.use_lora:
             actor_lora_config = LoraConfig(
@@ -320,6 +329,10 @@ class DecoupledActorCriticVLM_Action(nn.Module):
                 critic_lora_config
             )
             
+        # IMPORTANT: by default, actor lora is trainable but critic lora is not
+        for n, p in self.vlm.model.named_parameters():
+            p.requires_grad = ("lora_" in n)
+            
     def get_trainable_params(self):
         params = self.vlm.get_trainable_params()
         params.extend(list(self.critic_head.parameters()))
@@ -342,25 +355,22 @@ class DecoupledActorCriticVLM_Action(nn.Module):
         expanded_prompt_mask = prompt_mask.unsqueeze(1).repeat(1, self.num_actions, 1)
         assert expanded_prompt_ids.shape == (batch_size, self.num_actions, prompt_len)
         
-        # [B, N_act, S_act]
-        expanded_action_ids = self.action_ids.unsqueeze(0).repeat(batch_size, 1, 1)
-        expanded_action_mask = self.action_mask.unsqueeze(0).repeat(batch_size, 1, 1)
-        assert expanded_action_ids.shape == (batch_size, self.num_actions, self.action_ids.shape[1])
-        assert expanded_action_mask.shape == (batch_size, self.num_actions, self.action_mask.shape[1])
+        # 3. Append each action token to the prompt
+        # Since each action is a single token, we append [num_actions] tokens
+        # [B, N_act, S_prompt + 1]
+        expanded_action_token_ids = self.action_token_ids.unsqueeze(0).unsqueeze(-1).repeat(batch_size, 1, 1)  # [B, N_act, 1]
+        combined_ids = torch.cat([expanded_prompt_ids, expanded_action_token_ids], dim=2)  # [B, N_act, S_prompt + 1]
         
-        # 3. Concatenate prompts and actions
-        # [B, N_act, S_prompt + S_act]
-        combined_ids = torch.cat([expanded_prompt_ids, expanded_action_ids], dim=2)
-        combined_mask = torch.cat([expanded_prompt_mask, expanded_action_mask], dim=2)
-        assert combined_ids.shape == (batch_size, self.num_actions, prompt_len + self.action_ids.shape[1])
-        assert combined_mask.shape == (batch_size, self.num_actions, prompt_len + self.action_mask.shape[1])
+        # Expand attention mask for the action token
+        expanded_action_mask = torch.ones(batch_size, self.num_actions, 1, device=prompt_mask.device, dtype=prompt_mask.dtype)
+        combined_mask = torch.cat([expanded_prompt_mask, expanded_action_mask], dim=2)  # [B, N_act, S_prompt + 1]
         
         # 4. Flatten for a single batch forward pass
-        # [B * N_act, S_prompt + S_act]
+        # [B * N_act, S_prompt + 1]
         flat_ids = combined_ids.view(batch_size * self.num_actions, -1)
         flat_mask = combined_mask.view(batch_size * self.num_actions, -1)
-        assert flat_ids.shape == (batch_size * self.num_actions, prompt_len + self.action_ids.shape[1])
-        assert flat_mask.shape == (batch_size * self.num_actions, prompt_len + self.action_mask.shape[1])
+        assert flat_ids.shape == (batch_size * self.num_actions, prompt_len + 1)
+        assert flat_mask.shape == (batch_size * self.num_actions, prompt_len + 1)
         
         # 5. Expand vision features
         # [B * num_patches, dim]
@@ -395,40 +405,31 @@ class DecoupledActorCriticVLM_Action(nn.Module):
             image_grid_thw=expanded_image_grid,
             output_hidden_states=False,
         )
-        # [B * N_act, S_comb, V]
+        # [B * N_act, S_prompt + 1, V]
         logits = outputs.logits
-        assert logits.shape == (batch_size * self.num_actions, prompt_len + self.action_ids.shape[1], self.vlm.model.config.text_config.vocab_size)
+        assert logits.shape == (batch_size * self.num_actions, prompt_len + 1, self.vlm.model.config.text_config.vocab_size)
         
         # 7. Calculate log-probabilities for the action tokens
-        # We need logits from index (prompt_len - 1) up to (end - 1)
-        # to predict tokens from index prompt_len to end
+        # Since each action is a single token, we only need logits at position prompt_len (the action token position)
+        # Logits at position i predict token at position i+1, so we need logits at prompt_len-1 to predict token at prompt_len
         log_probs_all = torch.nn.functional.log_softmax(logits, dim=-1)
         
-        # Get the logits corresponding to the *action* part
-        # [B * N_act, S_act, Vocab]
-        action_logits = log_probs_all[:, prompt_len - 1 : -1, :]
+        # Get logits at position prompt_len-1 (which predicts the token at prompt_len, i.e., our action token)
+        # [B * N_act, Vocab]
+        action_logits = log_probs_all[:, prompt_len - 1, :]
         
-        # Get the target action token IDs
-        # [B * N_act, S_act]
-        action_ids_for_gather = flat_ids[:, prompt_len:]
+        # Get the target action token IDs (the actual tokens we're evaluating)
+        # [B * N_act]
+        action_token_ids_for_gather = flat_ids[:, prompt_len]
         
-        # Gather the log-probabilities of the target tokens
-        # [B * N_act, S_act]
-        log_probs_gathered = torch.gather(
-            action_logits, 2, action_ids_for_gather.unsqueeze(-1)
+        # Gather the log-probabilities of the target action tokens
+        # [B * N_act]
+        action_log_probs = torch.gather(
+            action_logits, 1, action_token_ids_for_gather.unsqueeze(-1)
         ).squeeze(-1)
         
-        # 8. Mask out padding tokens within the actions
-        # [B * N_act, S_act]
-        flat_action_mask = expanded_action_mask.view(batch_size * self.num_actions, -1)
-        log_probs_masked = log_probs_gathered * flat_action_mask
-        
-        # 9. Sum log-probabilities to get score for each full action
-        # [B * N_act]
-        action_total_logprobs = log_probs_masked.sum(dim=1)
-        
-        # 10. Reshape to [B, N_act]
-        action_scores = action_total_logprobs.view(batch_size, self.num_actions)
+        # 8. Reshape to [B, N_act]
+        action_scores = action_log_probs.view(batch_size, self.num_actions)
         return action_scores
 
     def get_action(self, obs=None, text_prompts=None):
@@ -441,16 +442,19 @@ class DecoupledActorCriticVLM_Action(nn.Module):
         sampled_log_prob = dist.log_prob(sampled_action_indices) # [B]
         
         batch_size = action_scores.shape[0]
-        sampled_actions_str = [self.available_actions[i] for i in sampled_action_indices]
-        sampled_action_ids = self.action_ids[sampled_action_indices] # [B, S_act]
-        sampled_action_mask = self.action_mask[sampled_action_indices] # [B, S_act]
+        # Return integer strings (e.g., "0", "1", "2") instead of action names
+        sampled_actions_str = [str(i.item()) for i in sampled_action_indices]
+        # Get the single token ID for each sampled action
+        sampled_action_ids = self.action_token_ids[sampled_action_indices].unsqueeze(-1)  # [B, 1]
+        # All actions are single tokens, so mask is all ones
+        sampled_action_mask = torch.ones_like(sampled_action_ids)  # [B, 1]
         
         return (
             sampled_action_indices, # [B]
             sampled_log_prob,       # [B]
-            sampled_actions_str,    # List[str] of len B
-            sampled_action_ids,     # [B, S_act]
-            sampled_action_mask,    # [B, S_act]
+            sampled_actions_str,    # List[str] of len B (integer strings like "0", "1", "2")
+            sampled_action_ids,     # [B, 1]
+            sampled_action_mask,    # [B, 1]
         )
 
     def get_actor_outputs(self, obs, text_prompts, taken_action_indices):
