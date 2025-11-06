@@ -222,7 +222,7 @@ if __name__ == "__main__":
             next_obs, reward, term, trunc, infos = envs.step(action.cpu().numpy())
             print(f"[Process {accelerator.process_index}] Step {step+1}/{args.num_steps}")
 
-            rewards[step] = torch.as_tensor(reward, device=device).view(-1) * 0.01
+            rewards[step] = torch.as_tensor(reward, device=device).view(-1) * args.reward_scale
             next_done = np.logical_or(term, trunc)
             next_obs, next_done = torch.as_tensor(next_obs, device=device), torch.as_tensor(next_done, device=device)
 

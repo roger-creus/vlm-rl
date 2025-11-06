@@ -74,8 +74,6 @@ class Args:
     """the weight decay of the optimizer"""
     lr_warmup_fraction: float = 0.1
     """the fraction of the total number of iterations to warm up the learning rate"""
-    lr_decay_factor: float = 0.1
-    """the factor to decay the learning rate"""
     reward_scale: float = 0.01
     """the scale of the reward"""
 
