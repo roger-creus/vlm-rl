@@ -15,7 +15,7 @@ from accelerate import Accelerator
 from tqdm import tqdm
 from transformers import get_linear_schedule_with_warmup
 
-from src.models.model import DecoupledActorCriticVLM_Action
+from src.models.model import DecoupledActorCriticVLM_ActionHead
 from src.utils.args import Args
 from src.utils.utils import make_vizdoom_env, gc_cuda_cleanup, print_trainable_parameters
 from src.utils.action_maps import action_maps
@@ -132,8 +132,9 @@ if __name__ == "__main__":
     envs.single_observation_space = envs.envs[0].observation_space
     action_map = action_maps[args.env_id]
     available_actions = list(action_map.keys())
-    prompt_actor_path = args.prompt_actor_path.split(".")[0] + "_action.txt"
-    prompt_critic_path = args.prompt_critic_path.split(".")[0] + "_action.txt"
+    # Use prompts without "_action" suffix - these should be representation-focused, not action-selection prompts
+    prompt_actor_path = args.prompt_actor_path.split(".")[0] + "_head.txt"
+    prompt_critic_path = args.prompt_critic_path.split(".")[0] + "_head.txt"
 
     with open(prompt_actor_path, "r") as f:
         prompt_text_actor = f.read()
@@ -141,13 +142,14 @@ if __name__ == "__main__":
         prompt_text_critic = f.read()
 
     # --- Agent and Optimizer ---
-    agent = DecoupledActorCriticVLM_Action(
+    agent = DecoupledActorCriticVLM_ActionHead(
         vlm_name=args.vlm_name,
         use_lora=True,
         lora_r=args.lora_rank,
         lora_alpha=args.lora_alpha,
         lora_dropout=0.0,
         available_actions=available_actions,
+        device=device,
     )
 
     params = agent.get_trainable_params()
@@ -179,7 +181,6 @@ if __name__ == "__main__":
     values = torch.zeros((args.num_steps, args.num_envs), device=device)
     logprobs = torch.zeros((args.num_steps, args.num_envs), device=device)
     action_indices = torch.zeros((args.num_steps, args.num_envs), dtype=torch.long, device=device)
-    pad_token_id = agent.vlm.processor.tokenizer.pad_token_id
 
     global_step = 0
     start_time = time.time()
@@ -238,7 +239,7 @@ if __name__ == "__main__":
                         f"## Iteration {iteration}, Step {step} (Global Step: {global_step})\n\n"
                         f"**Prompt Actor:**\n```\n{prompt_text_actor}\n```\n\n"
                         f"**Prompt Critic:**\n```\n{prompt_text_critic}\n```\n\n"
-                        f"**VLM Output (Env 0):**\n```json\n{sampled_texts[0]}\n```\n\n"
+                        f"**Sampled Action (Env 0):** {sampled_texts[0]}\n\n"
                     )
                     if last_completed_episode_frames:
                         try:
@@ -268,7 +269,7 @@ if __name__ == "__main__":
                     interaction_log_file.write(log_entry_text)
                     interaction_log_file.flush()
                     if args.track:
-                        writer.add_text("debug/vlm_output", str(sampled_texts[0]), global_step)
+                        writer.add_text("debug/sampled_action", str(sampled_texts[0]), global_step)
                 if "final_info" in infos:
                     for info in infos["final_info"]:
                         if info and "episode" in info:

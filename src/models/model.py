@@ -65,11 +65,11 @@ class BaseVLM(nn.Module):
             attn_implementation="flash_attention_2",
         )
         
-    def preprocess_obs_and_text(self, obs, text_prompts):
+    def preprocess_obs_and_text(self, obs, text_prompts, add_generation_prompt=True):
         pil_images = numpy_to_pil(obs.cpu().numpy())
         texts = [self.processor.apply_chat_template(
             [{"role": "user", "content": [{"type": "image"}, {"type": "text", "text": t}]}],
-            tokenize=False, add_generation_prompt=True
+            tokenize=False, add_generation_prompt=add_generation_prompt
         ) for t in text_prompts]
         inputs = self.processor(
             text=texts, images=pil_images, return_tensors="pt", padding=True,
@@ -99,6 +99,19 @@ class CriticHead(nn.Module):
             layer_init(nn.Linear(input_dim, 512)),
             nn.LeakyReLU(),
             layer_init(nn.Linear(512, 1), std=1.0),
+        )
+
+    def forward(self, hidden):
+        return self.net(hidden)
+
+# --- ACTOR HEAD ---
+class ActorHead(nn.Module):
+    def __init__(self, input_dim, num_actions):
+        super().__init__()
+        self.net = nn.Sequential(
+            layer_init(nn.Linear(input_dim, 512)),
+            nn.LeakyReLU(),
+            layer_init(nn.Linear(512, num_actions), std=0.01),
         )
 
     def forward(self, hidden):
@@ -208,7 +221,7 @@ class DecoupledActorCriticVLM_COT(nn.Module):
             self.vlm.model.set_adapter("actor")
         
         batch_size = len(text_prompts)
-        inputs = self.vlm.preprocess_obs_and_text(obs, text_prompts)
+        inputs = self.vlm.preprocess_obs_and_text(obs, text_prompts, add_generation_prompt=False)
         pixel_values = inputs.pixel_values
         image_grid_thw = inputs.image_grid_thw
 
@@ -484,6 +497,183 @@ class DecoupledActorCriticVLM_Action(nn.Module):
             self.vlm.model.set_adapter("critic")
         
         inputs = self.vlm.preprocess_obs_and_text(obs, prompt_text)
+        outputs = self.vlm.model(
+            **inputs,
+            output_hidden_states=True,
+        )
+        # Use the last non-padded token's hidden state
+        last_hidden = self.vlm.last_hidden_state(
+            outputs.hidden_states[-1], inputs['attention_mask']
+        )
+        return self.critic_head(last_hidden)
+
+
+class DecoupledActorCriticVLM_ActionHead(nn.Module):
+    """
+    Decoupled actor-critic with MLP heads on top of VLM hidden states.
+    No token generation - actor head directly outputs action logits.
+    """
+    def __init__(
+        self,
+        vlm_name: str,
+        available_actions,
+        use_lora: bool = True,
+        lora_r: int = 16,
+        lora_alpha: int = 32,
+        lora_dropout: float = 0.0,
+        device: torch.device = torch.device("cuda"),
+    ):
+        super().__init__()
+        self.use_lora = use_lora
+        self.vlm = BaseVLM(vlm_name)
+        
+        hidden_size = self.vlm.model.config.text_config.hidden_size
+        self.critic_head = CriticHead(hidden_size).to(device=device, dtype=self.vlm.model.dtype)
+        
+        self.available_actions = available_actions
+        self.num_actions = len(available_actions)
+        self.actor_head = ActorHead(hidden_size, self.num_actions).to(device=device, dtype=self.vlm.model.dtype)
+
+        if self.use_lora:
+            actor_lora_config = LoraConfig(
+                r=lora_r,
+                lora_alpha=lora_alpha,
+                lora_dropout=lora_dropout,
+                target_modules=default_target_modules(),
+                bias="none",
+            )
+            
+            critic_lora_config = LoraConfig(
+                r=lora_r,
+                lora_alpha=lora_alpha,
+                lora_dropout=lora_dropout,
+                target_modules=default_target_modules(),
+                bias="none",
+            )
+
+            self.vlm.model = get_peft_model(
+                self.vlm.model, 
+                actor_lora_config, 
+                adapter_name="actor"
+            )
+
+            self.vlm.model.add_adapter(
+                "critic",
+                critic_lora_config
+            )
+            
+        # IMPORTANT: by default, actor lora is trainable but critic lora is not
+        for n, p in self.vlm.model.named_parameters():
+            p.requires_grad = ("lora_" in n)
+            
+    def get_trainable_params(self):
+        params = self.vlm.get_trainable_params()
+        params.extend(list(self.critic_head.parameters()))
+        params.extend(list(self.actor_head.parameters()))
+        return params
+
+    def get_action(self, obs=None, text_prompts=None):
+        """
+        Gets action by using actor head on VLM hidden state.
+        Returns action indices, log probabilities, and dummy text outputs for compatibility.
+        """
+        if self.use_lora:
+            self.vlm.model.set_adapter("actor")
+        
+        inputs = self.vlm.preprocess_obs_and_text(obs, text_prompts, add_generation_prompt=False)
+        outputs = self.vlm.model(
+            **inputs,
+            output_hidden_states=True,
+        )
+        # Use the last non-padded token's hidden state
+        last_hidden = self.vlm.last_hidden_state(
+            outputs.hidden_states[-1], inputs['attention_mask']
+        )
+        
+        # Get action logits from actor head
+        action_logits = self.actor_head(last_hidden)  # [B, num_actions]
+        
+        # Sample from categorical distribution
+        dist = Categorical(logits=action_logits)
+        sampled_action_indices = dist.sample()  # [B]
+        sampled_log_prob = dist.log_prob(sampled_action_indices)  # [B]
+        
+        # Return dummy text outputs for compatibility with existing code
+        batch_size = action_logits.shape[0]
+        sampled_actions_str = [str(i.item()) for i in sampled_action_indices]
+        sampled_action_ids = torch.zeros(batch_size, 1, dtype=torch.long, device=action_logits.device)
+        sampled_action_mask = torch.ones(batch_size, 1, dtype=torch.long, device=action_logits.device)
+        
+        return (
+            sampled_action_indices,  # [B]
+            sampled_log_prob,        # [B]
+            sampled_actions_str,     # List[str] of len B
+            sampled_action_ids,      # [B, 1] (dummy)
+            sampled_action_mask,     # [B, 1] (dummy)
+        )
+
+    def get_actor_outputs(self, obs, text_prompts, taken_action_indices):
+        """
+        Gets log probabilities and entropy for taken actions.
+        """
+        if self.use_lora:
+            self.vlm.model.set_adapter("actor")
+        
+        inputs = self.vlm.preprocess_obs_and_text(obs, text_prompts, add_generation_prompt=False)
+        outputs = self.vlm.model(
+            **inputs,
+            output_hidden_states=True,
+        )
+        # Use the last non-padded token's hidden state
+        last_hidden = self.vlm.last_hidden_state(
+            outputs.hidden_states[-1], inputs['attention_mask']
+        )
+        
+        # Get action logits from actor head
+        action_logits = self.actor_head(last_hidden)  # [B, num_actions]
+        
+        # Form distribution
+        dist = Categorical(logits=action_logits)
+        
+        # Get log-prob of the actions that were *actually taken*
+        log_prob = dist.log_prob(taken_action_indices.long())  # [B]
+        
+        # Get entropy of the distribution
+        entropy = dist.entropy()  # [B]
+        
+        return log_prob, entropy
+
+    def _get_action_scores(self, obs, text_prompts):
+        """
+        Gets action logits (scores) for visualization/logging purposes.
+        """
+        if self.use_lora:
+            self.vlm.model.set_adapter("actor")
+        
+        inputs = self.vlm.preprocess_obs_and_text(obs, text_prompts, add_generation_prompt=False)
+        outputs = self.vlm.model(
+            **inputs,
+            output_hidden_states=True,
+        )
+        # Use the last non-padded token's hidden state
+        last_hidden = self.vlm.last_hidden_state(
+            outputs.hidden_states[-1], inputs['attention_mask']
+        )
+        
+        # Get action logits from actor head
+        action_logits = self.actor_head(last_hidden)  # [B, num_actions]
+        
+        return action_logits
+
+    def get_value(self, obs, prompt_text):
+        """
+        Gets the value (critic) estimate for the current state.
+        """
+        if self.use_lora:
+            # --- Set the active adapter to 'critic' ---
+            self.vlm.model.set_adapter("critic")
+        
+        inputs = self.vlm.preprocess_obs_and_text(obs, prompt_text, add_generation_prompt=False)
         outputs = self.vlm.model(
             **inputs,
             output_hidden_states=True,
