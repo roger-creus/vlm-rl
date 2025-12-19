@@ -228,11 +228,13 @@ if __name__ == "__main__":
                     action_ids=None,
                     prompt_lens=None,
                 )
+
                 # parse model outputs to environment action space
                 action = torch.tensor(
                     [parse_action_cot(text, envs.single_action_space, action_map) for text in generated_texts],
                     device=device
                 )
+                
                 # get value estimate for the current obs
                 value = agent.get_value(
                     obs=next_obs,
@@ -452,7 +454,6 @@ if __name__ == "__main__":
         epoch_clipfracs_lower = []
         epoch_approx_kls = []
         epoch_old_approx_kls = []
-        np.random.shuffle(b_inds)
 
         # ----------- UNIFIED ACTOR-CRITIC (policy & value) UPDATE LOOP -----------
         
@@ -463,6 +464,7 @@ if __name__ == "__main__":
             b_advantages = (b_advantages - adv_mean) / (adv_std + 1e-8)
 
         for epoch in epoch_iter:
+            np.random.shuffle(b_inds)
             minibatch_iter = range(0, args.total_batch_size, args.minibatch_size)
             if accelerator.is_main_process:
                 minibatch_iter = tqdm(
@@ -635,6 +637,7 @@ if __name__ == "__main__":
 
         # anneal lr
         scheduler.step()
+        learning_time_completed = time.time() - learning_time_start
         
         # save checkpoint
         if iteration % args.checkpoint_interval == 0:
@@ -642,8 +645,6 @@ if __name__ == "__main__":
             accelerator.wait_for_everyone()
             accelerator.save_state(output_dir=f"runs/{run_name}/checkpoint-{iteration}")
             print(f"Checkpoint saved to runs/{run_name}/checkpoint-{iteration}")
-
-        learning_time_completed = time.time() - learning_time_start
         
         # --- Logging (compact) ---
         if accelerator.is_main_process:

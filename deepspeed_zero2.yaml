@@ -1,6 +1,6 @@
 compute_environment: LOCAL_MACHINE
 deepspeed_config:
-  gradient_clipping: 0.5
+  gradient_clipping: 1.0
   offload_optimizer_device: none
   offload_param_device: none
   zero3_init_flag: false

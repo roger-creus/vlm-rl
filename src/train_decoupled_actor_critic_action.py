@@ -417,14 +417,13 @@ if __name__ == "__main__":
         epoch_approx_kls = []
         epoch_old_approx_kls = []
 
-        np.random.shuffle(b_inds)
-
         if args.norm_adv:
             adv_mean = b_advantages.mean()
             adv_std = b_advantages.std()
             b_advantages = (b_advantages - adv_mean) / (adv_std + 1e-8)
 
         for epoch in epoch_iter:
+            np.random.shuffle(b_inds)
             minibatch_iter = range(0, args.total_batch_size, args.minibatch_size)
             if accelerator.is_main_process:
                 minibatch_iter = tqdm(

@@ -53,6 +53,7 @@ def parse_action_cot(text: str, action_space: gym.spaces.Discrete, action_map: d
     except Exception as e:
         print(f"Error parsing action: {e}. Text: '{text}'")
     
+    print(f"Warning: Could not parse action '{text}'. Returning random action.")
     return action_space.sample()
 
 def parse_action(text: str, action_space: gym.spaces.Discrete, action_map: dict) -> int:

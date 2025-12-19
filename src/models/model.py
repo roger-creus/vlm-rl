@@ -35,8 +35,8 @@ def default_target_modules():
         "lm_head",
 
         # --- Vision Merger Layers ---
-        "merger.linear_fc1",
-        "merger.linear_fc2",
+        #"merger.linear_fc1",
+        #"merger.linear_fc2",
     ]
     # Remove duplicates while preserving order
     seen = set()
@@ -54,8 +54,8 @@ class BaseVLM(nn.Module):
         self.processor = AutoProcessor.from_pretrained(
             vlm_name,
             trust_remote_code=True,
-            min_pixels = 768 * 32 * 32,
-            max_pixels = 768 * 32 * 32,
+            min_pixels = 1280 * 32 * 32,
+            max_pixels = 1280 * 32 * 32,
         )
         mdl_cls = get_model_class(vlm_name)
         self.model = mdl_cls.from_pretrained(
@@ -98,6 +98,8 @@ class CriticHead(nn.Module):
         self.net = nn.Sequential(
             layer_init(nn.Linear(input_dim, 512)),
             nn.LeakyReLU(),
+            layer_init(nn.Linear(512, 512)),
+            nn.LeakyReLU(),
             layer_init(nn.Linear(512, 1), std=1.0),
         )
 
@@ -110,6 +112,8 @@ class ActorHead(nn.Module):
         super().__init__()
         self.net = nn.Sequential(
             layer_init(nn.Linear(input_dim, 512)),
+            nn.LeakyReLU(),
+            layer_init(nn.Linear(512, 512)),
             nn.LeakyReLU(),
             layer_init(nn.Linear(512, num_actions), std=0.01),
         )
@@ -220,8 +224,9 @@ class DecoupledActorCriticVLM_COT(nn.Module):
             # --- Set the active adapter to 'actor' ---
             self.vlm.model.set_adapter("actor")
         
+        
         batch_size = len(text_prompts)
-        inputs = self.vlm.preprocess_obs_and_text(obs, text_prompts, add_generation_prompt=False)
+        inputs = self.vlm.preprocess_obs_and_text(obs, text_prompts, add_generation_prompt=True)
         pixel_values = inputs.pixel_values
         image_grid_thw = inputs.image_grid_thw
 
@@ -238,7 +243,8 @@ class DecoupledActorCriticVLM_COT(nn.Module):
         else:
             full_ids = action_ids
 
-        attention_mask = (full_ids != self.vlm.processor.tokenizer.pad_token_id).long()
+        # mask special tokens like generation token too
+        attention_mask = (full_ids != self.vlm.processor.tokenizer.pad_token_id).long() 
         outputs = self.vlm.model(
             input_ids=full_ids,
             image_grid_thw=image_grid_thw,
@@ -580,7 +586,7 @@ class DecoupledActorCriticVLM_ActionHead(nn.Module):
         if self.use_lora:
             self.vlm.model.set_adapter("actor")
         
-        inputs = self.vlm.preprocess_obs_and_text(obs, text_prompts, add_generation_prompt=False)
+        inputs = self.vlm.preprocess_obs_and_text(obs, text_prompts, add_generation_prompt=True)
         outputs = self.vlm.model(
             **inputs,
             output_hidden_states=True,
@@ -619,7 +625,7 @@ class DecoupledActorCriticVLM_ActionHead(nn.Module):
         if self.use_lora:
             self.vlm.model.set_adapter("actor")
         
-        inputs = self.vlm.preprocess_obs_and_text(obs, text_prompts, add_generation_prompt=False)
+        inputs = self.vlm.preprocess_obs_and_text(obs, text_prompts, add_generation_prompt=True)
         outputs = self.vlm.model(
             **inputs,
             output_hidden_states=True,
@@ -650,7 +656,7 @@ class DecoupledActorCriticVLM_ActionHead(nn.Module):
         if self.use_lora:
             self.vlm.model.set_adapter("actor")
         
-        inputs = self.vlm.preprocess_obs_and_text(obs, text_prompts, add_generation_prompt=False)
+        inputs = self.vlm.preprocess_obs_and_text(obs, text_prompts, add_generation_prompt=True)
         outputs = self.vlm.model(
             **inputs,
             output_hidden_states=True,
@@ -673,7 +679,7 @@ class DecoupledActorCriticVLM_ActionHead(nn.Module):
             # --- Set the active adapter to 'critic' ---
             self.vlm.model.set_adapter("critic")
         
-        inputs = self.vlm.preprocess_obs_and_text(obs, prompt_text, add_generation_prompt=False)
+        inputs = self.vlm.preprocess_obs_and_text(obs, prompt_text, add_generation_prompt=True)
         outputs = self.vlm.model(
             **inputs,
             output_hidden_states=True,

@@ -48,11 +48,11 @@ class Args:
     """the number of mini-batches"""
     gradient_accumulation_steps: int = 32
     """the number of gradient accumulation steps"""
-    update_epochs: int = 1
+    update_epochs: int = 4
     """the K epochs to update the policy"""
     norm_adv: bool = True
     """Toggles advantages normalization"""
-    clip_vloss: bool = True
+    clip_vloss: bool = False
     """Toggles whether or not to use a clipped loss for the value function, as per the paper."""
     ent_coef: float = 0.0
     """coefficient of the entropy"""
@@ -60,7 +60,7 @@ class Args:
     """coefficient of the value function"""
     dual_clip_c: float = 0.0
     """the coefficient for the Dual-Clip PPO"""
-    logratio_clamp: float = 20.0
+    logratio_clamp: float = 0.0
     """the clamp value for the log-ratio"""
     clip_coef_lower: float = 0.2
     """the lower clip coefficient for the Dual-Clip PPO"""
@@ -68,7 +68,7 @@ class Args:
     """the upper clip coefficient for the Dual-Clip PPO"""
     
     # --- Optimizer ---
-    learning_rate: float = 5e-5
+    learning_rate: float = 8e-5
     """the learning rate of the optimizer"""
     weight_decay: float = 0.0
     """the weight decay of the optimizer"""
@@ -84,7 +84,7 @@ class Args:
     """Path to a file containing the text prompt for the VLM."""
     prompt_critic_path: str = "prompts/corridor/critic.txt"
     """Path to a file containing the text prompt for the VLM."""
-    max_new_tokens: int = 512
+    max_new_tokens: int = 1024
     """Maximum number of new tokens for the VLM to generate."""
     max_seq_len: int = 3072
     """Maximum sequence length for the VLM to generate. Longer sequences will be truncated."""

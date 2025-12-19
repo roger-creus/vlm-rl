@@ -173,6 +173,13 @@ if __name__ == "__main__":
     )
 
     agent, optimizer, scheduler = accelerator.prepare(agent, optimizer, scheduler)
+    
+    if args.checkpoint_dir != "":
+        print(f"Loading checkpoint from {args.checkpoint_dir}")
+        accelerator.load_state(args.checkpoint_dir)
+        print(f"Checkpoint loaded from {args.checkpoint_dir}")
+
+    accelerator.wait_for_everyone()
 
     # --- Storage Tensors ---
     obs = torch.zeros((args.num_steps, args.num_envs) + envs.single_observation_space.shape, device=device)
@@ -395,6 +402,16 @@ if __name__ == "__main__":
 
         b_inds = np.arange(args.total_batch_size)
         is_critic_warmup = iteration <= args.critic_warmup_iterations
+        
+        # save 1 checkpoint after critic warmup
+        if not is_critic_warmup and first_model_save and args.checkpoint_dir == "":
+            print(f"Saving checkpoint at iteration {iteration}")
+            accelerator.wait_for_everyone()
+            accelerator.save_state(output_dir=f"runs/{run_name}/post-critic-warmup-{iteration}")
+            print(f"Checkpoint saved to runs/{run_name}/post-critic-warmup-{iteration}")
+            first_model_save = False
+        
+        
         true_update_epochs = args.update_epochs * 3 if is_critic_warmup else args.update_epochs
         epoch_iter = range(true_update_epochs)
         if accelerator.is_main_process:
@@ -417,15 +434,14 @@ if __name__ == "__main__":
         epoch_clipfracs_lower = []
         epoch_approx_kls = []
         epoch_old_approx_kls = []
-
-        np.random.shuffle(b_inds)
-
+        
         if args.norm_adv:
             adv_mean = b_advantages.mean()
             adv_std = b_advantages.std()
             b_advantages = (b_advantages - adv_mean) / (adv_std + 1e-8)
 
         for epoch in epoch_iter:
+            np.random.shuffle(b_inds)
             minibatch_iter = range(0, args.total_batch_size, args.minibatch_size)
             if accelerator.is_main_process:
                 minibatch_iter = tqdm(
@@ -557,6 +573,13 @@ if __name__ == "__main__":
         # --- anneal learning rate ---
         scheduler.step()
         learning_time_completed = time.time() - learning_time_start
+        
+        # save checkpoint
+        if iteration % args.checkpoint_interval == 0:
+            print(f"Saving checkpoint at iteration {iteration}")
+            accelerator.wait_for_everyone()
+            accelerator.save_state(output_dir=f"runs/{run_name}/checkpoint-{iteration}")
+            print(f"Checkpoint saved to runs/{run_name}/checkpoint-{iteration}")
 
         if accelerator.is_main_process:
             writer.add_scalar("charts/learning_rate", optimizer.param_groups[0]["lr"], global_step)
