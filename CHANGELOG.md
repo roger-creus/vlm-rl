@@ -6,6 +6,63 @@ One entry per iteration, not per commit within an iteration.
 
 ---
 
+## 2026-04-20 — iter 24 — code-reviewer subagent + per-finding fixes (plan task 26)
+
+**What.** `superpowers:code-reviewer` subagent dispatched on the full
+`dfc3c4d..HEAD` diff (iter 5 plan commit through iter-23 BF16 fix).
+Returned no BLOCKERs, 7 MAJORs, 8 MINORs, 3 suggestions. Addressed 5
+of the 7 MAJORs with per-finding commits:
+
+- `39a8998` — **M1**: `batch_size` formula included `num_processes` but
+  buffer shape is per-process `[num_steps, num_envs]`. Split into
+  per-process `batch_size` and `global_batch_size` (used only for the
+  total-timesteps budget). Latent bug for multi-process Tier-2 runs.
+- `5ebb3ae` — **M6**: `_extract_ep_returns` scanned both
+  `info["episode"]` and `info["final_info"]` on the same step; modern
+  gymnasium populates both → double-counted terminal returns. Made
+  the branches mutually exclusive with precedence modern > older >
+  intermediate.
+- `647a50e` — **M4**: `pad_token_id or 0` fallback could silently
+  mask valid content tokens on non-Qwen backbones (token id 0 is a
+  legit SentencePiece token in many vocabs). `BaseVLM.__init__` now
+  sets `pad_token=eos_token` when missing, raises if both are None,
+  and downstream call sites dropped the `or 0` guard.
+- `3a15ebb` — **M3**: Critic re-score ran at batch = `steps_per_mb ×
+  num_envs` while rollout's critic forward was batch = `num_envs` →
+  the same flash-attn pad-aware kernel divergence that iter-22 fixed
+  on the actor side was latent on the critic side. Moved `get_value`
+  inside the per-step inner loop so both actor and critic re-score
+  at batch=num_envs (same kernel dispatch as rollout).
+- `0f7a8d5` — **M2**: Documented `probe_microbatch`'s conservative-
+  placeholder nature. No behavior change.
+
+Deferred for a later iter (not blockers):
+- **M7** (Inv-1 status timing flakiness after per-minibatch
+  `requires_grad_(True)` — self-healing at next set_adapter).
+- MINORs m1–m8 (mostly nice-to-haves: dead args, CsvWriter empty
+  columns, prompt builder colocation, etc.).
+
+**Evidence.**
+- CPU regression 49/49 pass.
+- GPU integration 8/8 pass in 97.14 s (wiring + trainer-short-run).
+- Integration test CSV post-stack: `inv_4_status=green`, `grad_norm`
+  finite, all blocker invariants green.
+
+**Invariants run.**
+- Inv-1/2/3/4/8: green through all commits.
+- Inv-5/6/9/10/11/13: green on CPU.
+
+**Follow-ups (iter 25+).**
+- Plan task 27 pivot to `C-envs-tier1-expand` (ALE/Pong-v5 +
+  MiniGrid-Empty-5x5-v0).
+- Long Tier-2 training run on VizdoomBasic-v1 — all blocker signals
+  now green.
+- Address review MINORs as a simplify batch.
+- Consider adding "Inv-4b" for critic-side re-score drift (review
+  SUGGESTION).
+
+---
+
 ## 2026-04-20 — iter 23 — BF16 default (fixes grad_norm=nan)
 
 **What.** 1 commit (`b4e3950`) resolving the long-standing

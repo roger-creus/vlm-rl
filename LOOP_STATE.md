@@ -1,6 +1,6 @@
 # LOOP_STATE.md
 
-**Last updated:** 2026-04-20 (iter 23 — BF16 default fixes grad_norm=nan; all blocker signals green).
+**Last updated:** 2026-04-20 (iter 24 — code-reviewer M1/M2/M3/M4/M6 addressed; all blockers clear).
 **Maintained by:** the autonomous `/loop` agent; humans read only.
 
 ## Current phase
@@ -25,11 +25,9 @@ signals green.** Plan tasks 1-25/27 + task 28 (Inv-4 drift) + task 29
 
 ## Immediate next task (fresh session resumes here)
 
-**Iter 24+ priority queue** (loose order; agent judges):
+**Iter 25+ priority queue** (loose order; agent judges):
 
-1. **Plan task 26 — `superpowers:code-reviewer` subagent** on the full
-   diff (iter 6..`b4e3950`). Address findings with per-finding commits.
-2. **Plan task 27 — pivot LOOP_STATE to `C-envs-tier1-expand`**
+1. **Plan task 27 — pivot LOOP_STATE to `C-envs-tier1-expand`**
    (adds `ALE/Pong-v5` + `MiniGrid-Empty-5x5-v0` as Tier-1 envs per
    §11 S-7 ritual).
 3. **Long Tier-2 training run** on VizdoomBasic-v1 — now that
@@ -44,7 +42,7 @@ signals green.** Plan tasks 1-25/27 + task 28 (Inv-4 drift) + task 29
    reclaiming single-batched fast path. Only if Tier-2 throughput
    becomes the bottleneck.
 
-## Handoff state (as of commit `b4e3950`)
+## Handoff state (as of commit `0f7a8d5`)
 
 Everything needed for a fresh `/loop` session to continue from this
 exact point is on disk + in git:
@@ -162,7 +160,7 @@ available, verifies locally, commits.
 - [x] Task 23 — **training run kickoff** (iter 17-19; smoke runs only; long-campaign deferred post-plan)
 - [x] Task 24 — docs update (ALGORITHMS / ENVS / RECIPES / RESULTS / BACKBONES) — iter 19
 - [x] Task 25 — simplify pass (m12) — iter 20 (@ `8dab039`)
-- [ ] Task 26 — code-reviewer subagent pass (on iter-6..`29a484b` diff)
+- [x] Task 26 — code-reviewer subagent pass (iter 24; 5/7 MAJORs addressed, 2 deferred per triage; 8 MINORs + 3 SUGGESTIONs on backlog)
 - [ ] Task 27 — journals + LOOP_STATE pivot to `C-envs-tier1-expand`
 - [x] Task 28 (iter-20 addition) — investigate + fix batched Inv-4 drift on Qwen3.5-2B — iter 21 (@ `bb138b8`, row-by-row) + iter 22 (@ `29a484b`, step-grouped)
 - [x] Task 29 (iter-20 addition) — investigate + fix grad_norm=nan — iter 23 (@ `b4e3950`, BF16 default per DeltaNet FP16 backward instability)

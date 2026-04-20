@@ -2065,3 +2065,73 @@ pulled to the top of the queue.
 - Plan task 27 pivot to `C-envs-tier1-expand`.
 - Long Tier-2 training run on VizdoomBasic-v1 (all blocker signals
   now green).
+
+---
+
+### 2026-04-20 — iter 24 — code-reviewer subagent + per-finding fixes — @39a8998..0f7a8d5
+
+**Context.** Plan Task 26. Dispatched `superpowers:code-reviewer`
+subagent on the full `dfc3c4d..HEAD` diff. Returned 0 BLOCKERs /
+7 MAJORs / 8 MINORs / 3 suggestions. Triage: address 5 MAJORs with
+per-finding commits; defer M7 (Inv-1 timing) as not-a-bug; defer
+MINORs to a later simplify-pass batch.
+
+**Per-finding commits.**
+
+- `39a8998` **(M1)**: `batch_size` formula mis-sized for
+  num_processes > 1. Buffer shape is per-process. Split.
+- `5ebb3ae` **(M6)**: `_extract_ep_returns` scanned both channels on
+  same terminal step — double count. Made mutually exclusive.
+- `647a50e` **(M4)**: `pad_token_id or 0` fallback could mask valid
+  tokens on non-Qwen backbones. Set `pad_token = eos_token` at
+  `BaseVLM.__init__` when missing; drop `or 0` guards downstream.
+- `3a15ebb` **(M3)**: Critic re-score was batched at
+  `steps_per_mb × num_envs`, not matching rollout's batch=num_envs.
+  Same pad-aware kernel divergence as iter-22's actor Inv-4 issue,
+  just on the critic side. Moved `get_value` into per-step inner
+  loop; `newvalue` concatenated across steps.
+- `0f7a8d5` **(M2)**: Documented `probe_microbatch` as conservative
+  placeholder, not a real OOM-doubling probe.
+
+**Deferrals.**
+
+- **M7** (Inv-1 status timing): After per-minibatch
+  `requires_grad_(True)` restoration, state is self-healing at the
+  next forward's `set_adapter` call. Not a correctness issue. Log
+  as a future invariant-monitor timing nit if it surfaces.
+- **MINORs m1–m8**: dead Args fields (`anneal_lr`, `grad_accum`),
+  CsvWriter empty columns breaking pandas dtype inference, prompt
+  builder env-slug duplication. Batch these into a simplify pass
+  once they impact a real user scenario.
+- **SUGGESTIONs**: critic-side Inv-4b (separate drift check) — real
+  value but needs a design doc; defer.
+
+**Evidence.**
+- Integration test passes after each commit in the chain (60-70 s per run).
+- CPU regression 49/49 after iter 24 close.
+- GPU integration 8/8 in 97.14 s.
+- Integration metrics post-stack: `approx_kl=0`, `grad_norm≈92`,
+  `inv_4_status=green`, no NaN anywhere.
+
+**Skills invoked.**
+- `superpowers:code-reviewer` subagent dispatch (Agent tool).
+- `superpowers:verification-before-completion` — pytest after every
+  per-finding commit.
+- `superpowers:test-driven-development` — integration test already had
+  inv_4/grad-finite assertions; M3 required no new tests because
+  same assertions gate parity.
+
+**Commits.**
+- `39a8998` fix(trainer): batch_size per-process (M1)
+- `5ebb3ae` fix(trainer): disjoint ep_return sources (M6)
+- `647a50e` fix(base_vlm): guarantee pad_token_id (M4)
+- `3a15ebb` fix(trainer): critic re-score step-grouped (M3)
+- `0f7a8d5` docs(trainer): microbatch probe TODO (M2)
+
+**Follow-ups (iter 25+).**
+- Plan task 27 pivot LOOP_STATE to `C-envs-tier1-expand` (ALE/Pong +
+  MiniGrid-Empty).
+- Long Tier-2 training run on VizdoomBasic-v1 (all blocker signals
+  now green).
+- Simplify-pass batch for MINORs m1-m8 + SUGGESTIONs.
+- Consider critic-side Inv-4b (review SUGGESTION).
