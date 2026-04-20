@@ -1,6 +1,6 @@
 # LOOP_STATE.md
 
-**Last updated:** 2026-04-20 (iter 24 — code-reviewer M1/M2/M3/M4/M6 addressed; all blockers clear).
+**Last updated:** 2026-04-20 (iter 25 — ALE/Pong-v5 onboarded as second Tier-1 env).
 **Maintained by:** the autonomous `/loop` agent; humans read only.
 
 ## Current phase
@@ -25,9 +25,25 @@ signals green.** Plan tasks 1-25/27 + task 28 (Inv-4 drift) + task 29
 
 ## Immediate next task (fresh session resumes here)
 
-**Iter 25+ priority queue** (loose order; agent judges):
+**Iter 26+ priority queue** (loose order; agent judges):
 
-1. **Plan task 27 — pivot LOOP_STATE to `C-envs-tier1-expand`**
+1. **Phase `C-envs-tier1-expand` — third Tier-1 env:
+   `MiniGrid-Empty-5x5-v0`.** Mirror the Pong S-7 ritual. Simpler
+   because minigrid is already registered via `minigrid` pip pkg and
+   renders symbolic → RGB natively. Add minigrid factory + action
+   tables + prompts + YAML + targets + parametrized test row.
+2. **Frame-stack horizontal-tile wrapper for Atari** (§4 default).
+   Spec calls for 4 frames rendered as a single tiled image. Landing
+   with the third Tier-1 env keeps the wrapper generalizable to both
+   families.
+3. **Pong vision-probe (Inv-15) run + artifact.**
+4. **Long Tier-2 training** on VizdoomBasic + Pong — all blocker
+   signals are green; time to check actual learning curves (hours,
+   run in background via Monitor).
+5. **Simplify-pass backlog** (iter-24 MINOR findings m1-m8).
+6. **Perf ablation**: install `flash-linear-attention` +
+   `causal-conv1d`; compare BF16-fast-path throughput vs current
+   BF16-fallback.
    (adds `ALE/Pong-v5` + `MiniGrid-Empty-5x5-v0` as Tier-1 envs per
    §11 S-7 ritual).
 3. **Long Tier-2 training run** on VizdoomBasic-v1 — now that
@@ -42,7 +58,7 @@ signals green.** Plan tasks 1-25/27 + task 28 (Inv-4 drift) + task 29
    reclaiming single-batched fast path. Only if Tier-2 throughput
    becomes the bottleneck.
 
-## Handoff state (as of commit `0f7a8d5`)
+## Handoff state (as of commit `7bb16f6`)
 
 Everything needed for a fresh `/loop` session to continue from this
 exact point is on disk + in git:

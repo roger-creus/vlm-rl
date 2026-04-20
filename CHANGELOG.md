@@ -6,6 +6,46 @@ One entry per iteration, not per commit within an iteration.
 
 ---
 
+## 2026-04-20 — iter 25 — ALE/Pong-v5 onboarded (§11 S-7 second env)
+
+**What.** 1 commit (`7bb16f6`) adding `ALE/Pong-v5` as the second
+Tier-1 env per master-spec §4.
+
+- New Atari package under `src/cleanrl_vlm/envs/atari/` with factory +
+  per-game action tables. Unified `action_tables` dispatcher so
+  trainers import once. Registry now dispatches on env-id prefix
+  ("Vizdoom*" / "ALE/*").
+- Pong-specific COT prompts (actor / critic / vision_probe) under
+  `src/cleanrl_vlm/prompts/templates/atari/pong/`.
+- `PromptBuilder._env_id_to_slug` refactored from if/elif chain to a
+  class-level dict so adding future envs is one-line.
+- `configs/envs/ALE-Pong-v5.yaml`: native 210×160 obs, pixel budget
+  33600 (no silent upscale), EpisodicLife disabled per §4,
+  max_episode_steps=27000.
+- `_build_run_name` replaces "/" with "-" for filesystem safety.
+- Integration test parametrized: `TIER1_ENVS = [VizdoomBasic-v1,
+  ALE/Pong-v5]`. Inv-4 and finite-grad-norm assertions apply to both.
+- `docs/backbone_probes/qwen3.5-2b.md` now covers both resolutions:
+  76800 px (280 image tokens) and 33600 px (120 image tokens). Inv-8
+  PASS both.
+
+**Evidence.**
+- 49/49 CPU tests + 2/2 GPU integration tests pass.
+- Pong post-fix metrics: `loss_value≈3.3e-2`, `loss_entropy≈0.42`,
+  `grad_norm≈197`, `inv_4_status=green`, `approx_kl=0` (ratio=1
+  preserved across env families).
+
+**Invariants run.**
+- Inv-4/8: green on Pong.
+- Inv-1/3: green (env-independent).
+
+**Deferred (iter 26+).**
+- 4-frame horizontal-tile wrapper for Atari (§4 default).
+- MiniGrid-Empty-5x5-v0 onboarding (third Tier-1 env).
+- Pong vision-probe (Inv-15) artifact.
+
+---
+
 ## 2026-04-20 — iter 24 — code-reviewer subagent + per-finding fixes (plan task 26)
 
 **What.** `superpowers:code-reviewer` subagent dispatched on the full

@@ -2135,3 +2135,72 @@ MINORs to a later simplify-pass batch.
   now green).
 - Simplify-pass batch for MINORs m1-m8 + SUGGESTIONs.
 - Consider critic-side Inv-4b (review SUGGESTION).
+
+---
+
+### 2026-04-20 — iter 25 — atari-pong-onboarding — @7bb16f6
+
+**Context.** Phase-C first env: ALE/Pong-v5 per master-spec §4's Tier-1
+triad (VizdoomBasic + Pong + MiniGrid-Empty). VizdoomBasic was already
+onboarded; iter 25 adds Pong following §11 S-7 ritual.
+
+**Approach.** Mirror the VizDoom onboarding pattern. Keep it MVP —
+no frame-stack-horizontal-tile wrapper this iter (that's the §4
+default but requires a new obs wrapper; defer to iter 26 with the
+third Tier-1 env). Native 210×160 RGB, Discrete(6) actions.
+
+**Decisions.**
+
+1. **Unified action_tables dispatcher** at
+   `src/cleanrl_vlm/envs/action_tables.py` that merges per-family
+   tables. Keeps per-family code co-located with factories while
+   giving trainers a single import. Standing pattern for future env
+   families (minigrid, babyai, etc.).
+
+2. **Prompt-builder ENV_ID_SLUGS class-dict** replacing if/elif chain.
+   Reviewer M6-adjacent: adding an env is now a single-line edit
+   instead of a new conditional branch.
+
+3. **_build_run_name replaces "/" with "-"** so Atari env ids like
+   "ALE/Pong-v5" don't create nested dirs under runs/.
+
+4. **Full 6-action set for Pong**, not the reduced 3 set some
+   baselines use. Matches ALE's default. Parser regex `[A-Z_]+`
+   correctly handles "RIGHTFIRE" / "LEFTFIRE" (no underscore in
+   compound button names but matches the char class).
+
+5. **Pixel budget 33600** = native 210×160. Tight match avoids silent
+   upscale; Inv-8 probe confirms 120 image tokens at that budget.
+
+6. **ALE-v5 native frame_skip=4 + sticky_action_probability=0.25**
+   retained. Didn't wrap NoopReset this iter; ALE-v5's internal
+   frameskip already dominates and the NoopReset ablation can land
+   alongside the frame-stack wrapper.
+
+7. **EpisodicLife DISABLED** per master-spec §4 — full ALE lifetime
+   is the paper-standard horizon.
+
+8. **Integration test parametrized** over TIER1_ENVS. Both envs run
+   through the full PPO-COT pipeline at num_envs=1, num_steps=2.
+   Assertions apply uniformly (inv_4_status=green, grad_norm finite).
+
+**Verification.**
+- 49/49 CPU + 2/2 GPU integration (vizdoom_basic + ale_pong) pass.
+- Pong integration metrics at iter 1: loss_value≈3.3e-2,
+  loss_entropy≈0.42, grad_norm≈197, inv_4=green, approx_kl=0
+  (ratio=1 bit-exact via step-grouped re-score — works across env
+  families).
+- Backbone probe at Pong resolution: 120 image tokens, input_ids
+  length 48, Inv-8 PASS.
+
+**Skills invoked.**
+- `superpowers:verification-before-completion` — pytest both envs.
+- Adapted `superpowers:subagent-driven-development` into direct
+  implementation since the spec was prescriptive (S-7 checklist).
+
+**Follow-ups (iter 26+).**
+- Third Tier-1 env: MiniGrid-Empty-5x5-v0. Simpler wrappers (symbolic
+  obs → RGB render or direct dict obs), different prompt semantics.
+- Frame-stack horizontal-tile wrapper for Atari (§4 default).
+- Pong vision-probe (Inv-15) run and artifact.
+- Long Tier-2 training on both VizDoom and Pong (kick off background).
