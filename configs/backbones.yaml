@@ -9,7 +9,7 @@ Qwen/Qwen3.5-0.8B:
     min_pixels: 262144
     max_pixels: 1310720
   attn_implementation: flash_attention_2
-  dtype: float16
+  dtype: bfloat16
   thinking_mode: off
   lora_groups_default: [text_attn, text_mlp, vision_attn, vision_mlp, merger, lm_head]
   lora_rank: 32
@@ -25,7 +25,7 @@ Qwen/Qwen3.5-2B:
     min_pixels: 262144
     max_pixels: 1310720
   attn_implementation: flash_attention_2
-  dtype: float16
+  dtype: bfloat16
   thinking_mode: off
   lora_groups_default: [text_attn, text_mlp, vision_attn, vision_mlp, merger, lm_head]
   lora_rank: 32
@@ -39,7 +39,7 @@ Qwen/Qwen3.5-4B:
     min_pixels: 262144
     max_pixels: 1310720
   attn_implementation: flash_attention_2
-  dtype: float16
+  dtype: bfloat16
   thinking_mode: off
   lora_groups_default: [text_attn, text_mlp, vision_attn, vision_mlp, merger, lm_head]
   lora_rank: 32

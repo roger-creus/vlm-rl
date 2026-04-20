@@ -76,14 +76,21 @@ def test_ppo_cot_short_run(tmp_path: Path):
     for col in ["gen_truncated_rate", "lora_weight_norm_actor", "inv_4_status"]:
         assert col in header
 
-    # Inv-4 single-path drift at epoch=0 / minibatch=0 must be green: the
-    # re-score path runs under the same actor adapter on the same cached
-    # full_ids as the rollout — before any gradient step, ratio must be 1
-    # within fp16 noise. Red here means the re-score forward has fp16
-    # divergence vs the rollout forward (e.g., padding-induced drift in a
-    # batched re-score vs batch=1 rollout).
-    row = dict(zip(header, body[1].split(","), strict=True))
+    # Read the LAST metrics row (CsvWriter opens in append mode — re-running
+    # the trainer under the same run_name adds rows rather than truncating,
+    # which matches the §10 resume story but means the latest run's data is
+    # always at the tail).
+    row = dict(zip(header, body[-1].split(","), strict=True))
     assert row["inv_4_status"] == "green", (
         f"Inv-4 single-path parity red on iter 1. "
         f"approx_kl={row.get('approx_kl')} (mean); re-score path has diverged from rollout."
+    )
+    # Gradients must be finite. Qwen3.5's Gated DeltaNet backward produces
+    # NaNs under FP16 without the flash-linear-attention fast path; the
+    # BF16 default (amendment 2026-04-20-bf16-default-for-qwen3.5.md)
+    # avoids this. Any "nan"/"inf" string in grad_norm_global means we
+    # regressed.
+    grad_norm = row.get("grad_norm_global", "")
+    assert grad_norm and grad_norm.lower() not in {"nan", "inf", "-inf"}, (
+        f"grad_norm_global not finite: {grad_norm!r}. " f"Check precision + DeltaNet backward stability."
     )

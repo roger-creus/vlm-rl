@@ -100,7 +100,13 @@ class Args:
 
     # Distributed
     sharding: str = "deepspeed_zero2"
-    precision: str = "fp16"
+    # BF16 default (not FP16 as master-spec §1 suggested): Qwen3.5's Gated
+    # DeltaNet backward is numerically unstable in FP16 when the fast-path
+    # flash-linear-attention is not installed — produces NaN gradients at
+    # linear_attn.in_proj_qkv despite finite forward output. BF16's wider
+    # exponent avoids the underflow path. See amendment
+    # 2026-04-20-bf16-default-for-qwen3.5.md.
+    precision: str = "bf16"
     num_processes: int = 1
     grad_accum: int = 1
 
