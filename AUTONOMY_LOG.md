@@ -364,3 +364,107 @@ substituted for the web-fetch; summary landed in the amendment.
 - Mila-specific env needs: `CUDA_HOME=/cvmfs/.../cuda/12.5.0`. Scripts
   that run flash-attn-dependent code should set this via a shared
   helper or document it prominently. Candidate: `scripts/_cluster_env.sh`.
+
+---
+
+### 2026-04-20 — iter 4 — ppo-cot-design — @794e7a9..f7b7fe7
+
+**Context.** First canon trainer kickoff. Per §13.1, skip the
+brainstorming skill's HARD-GATE by writing the design spec to
+`amendments/` (not asking the user).
+
+**Artifacts produced.**
+
+- `docs/superpowers/specs/amendments/2026-04-20-ppo-cot-vizdoom-basic-design.md`
+  — the design spec, committed first at `794e7a9`, revised at `f7b7fe7`.
+  14 sections covering goal, scope, architecture (module table),
+  PPO-COT algorithm, prompts, invariants, test strategy, configs,
+  logging, deliverable sequence (§10), risks, non-goals, reviewer
+  findings, sign-off.
+
+**Code-reviewer subagent findings (summary; full text
+in the subagent's tool result, not transcribed here).**
+
+- 3 blockers (B1 entropy sign / B2 cheap Inv-4 / B3 pixel budget).
+- 8 majors (M1 typed rollout return / M2 parser split / M3 regex
+  parser / M4 Inv-1 base-weight identity / M5 Inv-11 bitwise /
+  M6 frame_stack / M7 microbatch probe / M8 VizdoomBasic cap).
+- 12 minors folded into simplify pass + §9 schema additions + §10
+  ordering.
+
+**Decisions (§13.1 autonomous).**
+
+1. **Design location: `amendments/`, not `specs/`.** Per spec §2 the
+   top-level `specs/` holds the master spec only; amendments + plans
+   are the only writable subdirs. `amendments/` was the closest match
+   in intent (per-feature design doc that lives alongside the master
+   spec). Writing-plans output will go to `plans/` next iter.
+
+2. **All reviewer blockers resolved in-spec this iter.** Per reviewer
+   recommendation, these are not deferrable — they would break the
+   first trainer silently. B1 took 2 lines (loss formula
+   unambiguation). B2 added ~15 lines (single-path Inv-4 table row).
+   B3 took 6 lines (per-env YAML pixel override).
+
+3. **M5 Inv-11 committed to bitwise per master-spec §0 + §8.** First
+   design draft softened Inv-11 to "fp16 tolerance" under §0's
+   signal-not-cliff principle; reviewer correctly noted that §0
+   specifically lists "non-deterministic behavior under a fixed seed"
+   as a *hard-fail* item. The softening would have been a silent
+   master-spec override. Revised: §11 risk row lists the full
+   deterministic-fixture settings required (`use_deterministic_algorithms`,
+   `CUBLAS_WORKSPACE_CONFIG`, `cudnn.benchmark=False`,
+   `cudnn.deterministic=True`, vizdoom seed, HF seed). Components
+   that provably cannot honor bitwise will `pytest.xfail()` with
+   justification, not loosen the invariant.
+
+4. **Majors M1–M8 assigned to named §10 tasks rather than resolved
+   here.** The reviewer explicitly said "fine to address inside the
+   iter-4 implementation PRs *provided* the plan explicitly assigns
+   them to named tasks." Writing-plans next iter will see the §13
+   enumeration and encode each fix into the corresponding plan task.
+
+5. **Minors folded into simplify pass (§10 task 25).** Reviewer's
+   suggestion to reorder simplify-before-code-review adopted.
+
+6. **VizdoomBasic pixel budget = 76800 exactly.** Chose reviewer
+   option (a) — per-env YAML override with `processor_min_pixels =
+   processor_max_pixels = 76800` — rather than option (b) re-rendering
+   at higher res. Rationale: smaller pixel budget → fewer image tokens
+   → faster generation, which is the bottleneck of a 2B VLM on
+   in-process HF generation. Higher resolution is worthwhile only if
+   perception fails (Inv-15 signal); cheaper to start small and scale
+   up than vice versa.
+
+**Skills invoked this iter.**
+- `superpowers:using-superpowers` (auto at session start)
+- `superpowers:brainstorming` — exercised per §13.1 substitution:
+  design written to amendments instead of dialog
+- `superpowers:code-reviewer` — subagent dispatched on `794e7a9`,
+  thorough 800-word review across all 13 design sections
+
+**Skills deferred.**
+- `superpowers:writing-plans` — produces the 27-task plan from §10.
+  Substantial (2-3k lines of plan content). Own iter (iter 5).
+- `superpowers:test-driven-development` — starts iter 6 with the
+  first code task.
+- `superpowers:subagent-driven-development` — iter 6+, per-task
+  dispatch to subagents for parallel implementation where tasks
+  don't share state.
+- `superpowers:simplify` — iter 12ish, task 25.
+
+**Commits this iter.**
+
+| SHA | What |
+|---|---|
+| `794e7a9` | Design spec v1 (pre-review). |
+| `f7b7fe7` | Design spec v2 (blockers resolved; majors assigned; minors folded). |
+
+**Follow-ups (iter 5).**
+
+- Invoke `superpowers:writing-plans` with the revised design spec's
+  §10 as input. Output: `docs/superpowers/specs/plans/2026-04-20-
+  ppo-cot-vizdoom-basic.md`.
+- LOOP_STATE pivots to "iter 6 — task 1 of the plan" after writing-
+  plans lands.
+- Journals updated at iter 5 end with plan-file SHA.

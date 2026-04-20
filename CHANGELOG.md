@@ -6,6 +6,40 @@ One entry per iteration, not per commit within an iteration.
 
 ---
 
+## 2026-04-20 — iter 4 — PPO-COT design spec (task B — design step)
+
+**What.** Design spec for the first canon trainer
+(`algos/ppo_cot.py` on `VizdoomBasic-v0` with
+`Qwen/Qwen3-VL-2B-Instruct`). 2 commits (`794e7a9`, `f7b7fe7`).
+
+- `docs/superpowers/specs/amendments/2026-04-20-ppo-cot-vizdoom-basic-design.md`
+  — 14 sections spanning goal, scope, architecture module table,
+  PPO-COT loss formulation, GAE, prompts, Inv-1/3/4/5/6/9/10/11/13
+  coverage, TDD test strategy, config defaults, §9-mandate logging
+  schema, 27-task deliverable sequence, risks, non-goals, reviewer
+  findings resolutions, sign-off.
+
+**Why.** First canon trainer needs a locked design before any code
+lands. Design is the source of truth the writing-plans skill will
+consume next iteration.
+
+**Evidence.**
+- Self-reviewed per §13.1 (no user gate in autonomous mode).
+- `superpowers:code-reviewer` subagent reviewed `794e7a9` — 3
+  blockers / 8 majors / 12 minors.
+- All blockers resolved in-spec at `f7b7fe7`; majors assigned to
+  named §10 plan tasks; minors folded into simplify pass (§10 task
+  25).
+- §13 "Reviewer findings + resolutions" section enumerates each
+  finding and its fate.
+
+**Invariants run.** None landed yet (next iter writes plan, iter 6+
+implements). Design enumerates iter-4 invariant scope:
+Inv-1/3/4[single-path]/5/6/9/10/11/13; deferrals: 2/4[vLLM
+variant]/7/8/12/14/15 to named follow-up tasks.
+
+---
+
 ## 2026-04-20 — iter 3 — A2-bootstrap-finalize (scaffold runs end-to-end)
 
 **What.** Bootstrap completed. 6 commits (`b8dd216..7fb54bd`).

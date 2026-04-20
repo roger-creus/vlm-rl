@@ -1,11 +1,11 @@
 # LOOP_STATE.md
 
-**Last updated:** 2026-04-20 (iter 3 — bootstrap fully finalized, hello-VLM smoke green).
+**Last updated:** 2026-04-20 (iter 4 — PPO-COT design reviewed + revised).
 **Maintained by:** the autonomous `/loop` agent; humans read only.
 
 ## Current phase
 
-**Phase:** Bootstrap — **DONE**. Scaffold runs end-to-end. Next phase: first canon trainer (`B-ppo-cot-vizdoom-basic-2B`).
+**Phase:** `B-ppo-cot-vizdoom-basic-2B` — design sign-off. **Design spec committed and code-reviewer-approved at `f7b7fe7`.** Next iteration invokes `superpowers:writing-plans` on §10 of the design to emit the bite-sized implementation plan (27 tasks).
 
 **Iter 3 evidence.** `uv sync --extra dev` resolved 222 packages and installed cleanly (`transformers` pinned to `a29df2d`, `torch 2.6.0+cu124`, `vllm 0.8.5.post1`, 8 × RTX A6000 visible). `flash-attn 2.7.4.post1` built against CUDA 12.5 (cvmfs). `ruff check .` / `ruff format --check .` / `pyright src/cleanrl_vlm` / `mkdocs build --strict` all clean. Pre-commit installed and green. `tests/smoke/test_hello_vlm.py::test_hello_vlm_loads_and_generates` — **PASSED in 92.93s** on `Qwen/Qwen3-VL-2B-Instruct` (per 2026-04-20 backbone-names amendment).
 
@@ -39,27 +39,49 @@ Iter-2 execution of the pre-existing bootstrap plan
 | 23 scaffold smoke run   | iter 3 — hello-VLM 92.93s on 2B backbone |
 | 24 handoff check        | **complete** — /loop is already running; §13 verified in CLAUDE.md by `test_claude_md_carries_autonomy_section` |
 
-## Next task (iter 4)
+## Iter 4 — completed sub-step
 
-**ID:** `B-ppo-cot-vizdoom-basic-2B` (renamed from `...-0.8B` per 2026-04-20 backbone-names amendment).
+- Brainstorm (adapted, §13.1 no user gate) + design spec at
+  `docs/superpowers/specs/amendments/2026-04-20-ppo-cot-vizdoom-basic-design.md`
+  committed at `794e7a9`.
+- `superpowers:code-reviewer` subagent reviewed it (3 blockers / 8
+  majors / 12 minors).
+- Revised spec at `f7b7fe7` — all blockers resolved in-spec; majors
+  assigned to §10 plan tasks; minors folded into simplify pass.
 
-**Objective.** First canon trainer end-to-end: `algos/ppo_cot.py` on `VizdoomBasic-v0` with `Qwen/Qwen3-VL-2B-Instruct`. All applicable §8 invariants passing (Inv-1/3/4/5/6/9/10/11/13/14/15 — the ones that apply to a single-rank first trainer; Inv-7/12/2 come online once checkpointing + long runs land). Tier-1 smoke green. A learning curve the agent judges "genuinely learning" per §0 / §9.
+## Next task (iter 5)
 
-**Procedure (master-spec §13.3).** Orient → brainstorm Plan B (adapted self-approve) → writing-plans → subagent-driven-development → verify → code-reviewer subagent → simplify → commit + journals → dashboard refresh (n/a on first run) → schedule next.
+**ID:** `B-ppo-cot-vizdoom-basic-2B` — step: writing-plans.
 
-**Sub-decomposition (expected to span multiple /loop iterations).**
-1. Brainstorm + amendment (if any) + Plan B file at `docs/superpowers/specs/plans/2026-04-??-ppo-cot-vizdoom-basic.md`.
-2. Env layer: port `make_vizdoom_env`, `DiscreteMultiBinaryWrapper`, `ScreenOnlyWrapper`, `action_maps` entries from the prototype `src/utils/` into `src/cleanrl_vlm/envs/` with tests.
-3. Model layer: port `BaseVLM` + `CriticHead` + LoRA topology helpers into `src/cleanrl_vlm/models/`, dual-adapter ("actor"/"critic") wired.
-4. Prompts: port `prompts/corridor/` / `defend_the_line/` into `src/cleanrl_vlm/prompts/templates/vizdoom/` + prompt builder.
-5. Rollout: in-process HF generation path first (spec §3 "Non-generation interfaces skip vLLM" rule applies here — but COT needs generation, so in-process first; vLLM upgrade is `E-vllm-rollout-path`).
-6. `algos/ppo_cot.py`: single-file trainer.
-7. Inv-1/3/5/9/10/11/13 tests under `tests/invariants/` wired to the new trainer.
-8. Inv-15 ground-truth vision probe: `scripts/probe_vision.py` + `prompts/vizdoom/vision_probe.txt` + `docs/vision_probes/vizdoombasic_qwen3-vl-2b/report.md`.
-9. Run short training (agent judges length); record CSV + artifacts; iterate per §0 until "genuinely learning" by agent judgment.
-10. Code-reviewer subagent on the diff; simplify; commit; journals; pivot to `C-envs-tier1-expand` or `D-invariants-runtime`.
+**Objective.** Invoke `superpowers:writing-plans` on §10 of the design
+spec to emit `docs/superpowers/specs/plans/2026-04-20-ppo-cot-vizdoom-basic.md`
+— 27 bite-sized tasks decomposed from the design.
 
-**Constraint.** Long. Expected to consume many /loop iterations. Break into sub-tasks with intermediate commits; each /loop iter picks up at the next incomplete sub-task in the plan file.
+**Scope of that single iteration.** Just the plan file, committed. No
+code yet.
+
+## Iters 6+
+
+Execute the plan task-by-task under
+`superpowers:subagent-driven-development`. Each /loop iter picks the
+next incomplete task from the plan, runs it (possibly via subagent),
+verifies, commits. Milestones where `/loop` iter boundaries naturally
+land:
+
+1. Configs + env layer (tasks 1-4)
+2. Model layer (tasks 5-8) — first invariant tests green
+3. Prompts + rollout (tasks 9-12)
+4. Training scaffolding (tasks 13-17) — remaining invariant tests green
+5. `algos/ppo_cot.py` assembly (task 19)
+6. Integration test green (task 20)
+7. Vision probe + backbone probe (tasks 21-22)
+8. First training run (task 23) — milestone-gated Wakeup cadence
+9. Docs updates + simplify + code-review + journals (tasks 24-27)
+
+Task 23 (the actual training run) is the long pole — agent kicks off via
+`run_in_background`, arms a `Monitor` on the metrics-CSV tail with an
+alternation grep for `Traceback|Error|FAILED|OOM|elapsed_steps=|ep_return_mean=|inv_.*_status=FAIL`,
+and schedules fallback wakeups every ~30 min.
 
 ## Prioritized task queue (carried from pre-existing plan)
 
