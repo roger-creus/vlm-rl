@@ -43,6 +43,9 @@ def generate_cot_actions(
     actions = torch.zeros(B, dtype=torch.long, device=full_ids.device)
     gen_truncated = torch.zeros(B, dtype=torch.bool, device=full_ids.device)
     eos_id = ac_model.vlm.processor.tokenizer.eos_token_id
+    pad_id = ac_model.vlm.processor.tokenizer.pad_token_id
+    if pad_id is None:
+        pad_id = 0
     for i, txt in enumerate(generated_texts):
         parsed = parse_action_cot(txt, action_names)
         if parsed is None:
@@ -53,12 +56,18 @@ def generate_cot_actions(
         if eos_id is None or (gen_tail == eos_id).sum().item() == 0:
             gen_truncated[i] = True
 
-    # logprob_sum over generated span: log_probs is aligned to target_ids = full_ids[:, 1:].
-    # Sum positions >= prompt_len - 1 (predicting tokens from prompt_len onwards).
-    logprob_sum = torch.zeros(B, dtype=torch.float32, device=full_ids.device)
-    for i in range(B):
-        start = int(prompt_lens[i]) - 1
-        logprob_sum[i] = log_probs[i, start:].sum().float()
+    # logprob_sum over generated span: log_probs is aligned to target_ids =
+    # full_ids[:, 1:]. Sum positions ``j >= prompt_len - 1`` with non-pad
+    # target tokens ``full_ids[j+1] != pad_id``. The *exact same mask* is
+    # applied in the PPO update's re-score path (``algos/ppo_cot.py``) so the
+    # stored ``logprob_sum`` matches ``lp_new`` bit-for-bit under the same
+    # adapter — ratio = 1 at the first minibatch of the first update epoch.
+    S = full_ids.shape[1]
+    positions = torch.arange(S - 1, device=log_probs.device)
+    start_mask = positions.unsqueeze(0) >= (prompt_lens - 1).unsqueeze(1)
+    nonpad_mask = full_ids[:, 1:] != pad_id
+    span_mask = (start_mask & nonpad_mask).to(log_probs.dtype)
+    logprob_sum = (log_probs * span_mask).sum(dim=-1).float()
 
     return CotRolloutStep(
         actions=actions,
