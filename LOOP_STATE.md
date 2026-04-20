@@ -1,11 +1,11 @@
 # LOOP_STATE.md
 
-**Last updated:** 2026-04-20 (iter 6 — env layer complete, tasks 1-4/27).
+**Last updated:** 2026-04-20 (iter 7 — model layer pt 1 done, tasks 1-7/27).
 **Maintained by:** the autonomous `/loop` agent; humans read only.
 
 ## Current phase
 
-**Phase:** `B-ppo-cot-vizdoom-basic-2B` — **executing**. Plan tasks 1-4 complete (configs + env layer). 8 unit tests green. Next iter picks up Task 5 (LoRA topology helper) through Task 7 or 8 (model layer pt 1/2).
+**Phase:** `B-ppo-cot-vizdoom-basic-2B` — **executing**. Plan tasks 1-7 complete (configs + env layer + LoRA topology + MLP heads + BaseVLM). 17 unit tests green (8 env + 6 lora + 3 heads). BaseVLM import sanity passes. Next iter dedicated to Task 8 (actor_critic + Inv-1/3 tests + reviewer M4 extensions) — the model-layer cornerstone.
 
 ## Iter 5 sub-step completed
 
@@ -72,9 +72,9 @@ available, verifies locally, commits.
 - [x] Task 2 — env wrappers (TDD) — iter 6
 - [x] Task 3 — VizDoom action tables + factories — iter 6
 - [x] Task 4 — env registry dispatcher — iter 6
-- [ ] Task 5 — LoRA topology helper (TDD)
-- [ ] Task 6 — MLP heads (CriticHead / ActorHead)
-- [ ] Task 7 — BaseVLM wrapper
+- [x] Task 5 — LoRA topology helper (TDD) — iter 7
+- [x] Task 6 — MLP heads (CriticHead / ActorHead) — iter 7
+- [x] Task 7 — BaseVLM wrapper — iter 7
 - [ ] Task 8 — DecoupledActorCriticVLM_COT + active_adapter ctxmgr + Inv-1/3 tests
 - [ ] Task 9 — VizdoomBasic prompt templates
 - [ ] Task 10 — parser + PromptBuilder (M2, M3)

@@ -614,3 +614,71 @@ iter starts executing it.
   job). TDD for 5 and 6; 7 tests via downstream tasks.
 - Potentially dispatch parallel subagents for 5 + 6 (no shared
   state).
+
+---
+
+### 2026-04-20 — iter 7 — plan-tasks-5-7 — @7b250c0..b34e8ea
+
+**Context.** Model layer pt 1. Three small pure-python+torch tasks:
+LoRA-topology helper, MLP heads (critic + actor), BaseVLM wrapper.
+
+**Accomplished.** 3 plan tasks (5-7) + 3 commits:
+- Task 5 — `default_target_modules(groups)` resolves LoRA group names
+  to flat module-suffix list. 6 tests green.
+- Task 6 — `CriticHead`, `ActorHead`, `layer_init` (orthogonal init,
+  zero bias). 3 tests green.
+- Task 7 — `BaseVLM` wrapping `AutoModelForImageTextToText` +
+  `AutoProcessor`. Import-sanity only (constructor loads a real
+  backbone; tested end-to-end in Task 8 + Task 20 integration).
+
+**Decisions.**
+
+1. **Did NOT dispatch parallel subagents.** Iter 6's follow-up
+   contemplated 5+6 in parallel. Actual cost:
+   subagent-dispatch overhead (context prep, result parse) dominates
+   the 1-minute inline implementation per task. Inline is faster here.
+   Rule: reserve subagents for tasks that genuinely benefit from
+   parallelization (e.g., multiple independent modules of ~500+ LOC).
+
+2. **Ruff-format + pre-commit hooks re-run every commit.** Hook output
+   is visible in Bash results; occasionally ruff auto-reformats files
+   between `git add` and `git commit`, causing the commit to land with
+   the file back in "modified" state (`AM` status). Pattern: on
+   `AM <file>` after commit, just `git add` + `git commit` again.
+   Observed this iter on `heads.py` and `base_vlm.py`.
+
+3. **Plan text swap rule (iter 6 §1) keeps working.** All three task
+   tests + modules use `cleanrl_vlm.X` imports per the iter-6 fix.
+   No additional deviations.
+
+**Verification evidence.**
+
+- `uv run --no-env-file pytest tests/unit/test_lora_topology.py -v`
+  → 6 passed.
+- `uv run --no-env-file pytest tests/unit/test_heads.py -v`
+  → 3 passed.
+- `uv run --no-env-file python -c "from cleanrl_vlm.models.base_vlm import BaseVLM; print('ok')"`
+  → ok.
+- Total green: 17 unit tests across the 7 plan tasks completed so far
+  (8 env + 6 lora + 3 heads).
+
+**Skills invoked.**
+- `superpowers:test-driven-development` — tasks 5 + 6 red→green→commit.
+- `superpowers:verification-before-completion` — per-task green
+  evidence in commit message.
+
+**Follow-ups (iter 8).**
+
+- **Task 8 dedicated iter.** Plan spans 400 lines. Contents:
+  `models/actor_critic.py::DecoupledActorCriticVLM_COT`,
+  `active_adapter` ctxmgr (per reviewer m7, lives with the model),
+  `tests/invariants/test_inv_01_lora_trainability.py` (with reviewer
+  M4 extensions: base-weight identity after set_adapter swaps +
+  disjoint optimizer param groups between actor and critic),
+  `tests/invariants/test_inv_03_active_adapter.py`.
+- Task 8 has the "mini-model fixture" decision point
+  (`TinyVLMForImageTextToText` stub; plan caps at 150 LOC — if
+  overflow, demote Inv-1/3/10/11/13 tests to `@tier1 @gpu` on real
+  backbone). Decision made iter 8 based on actual stub size.
+- No GPU required for Task 8 tests if the stub route holds; GPU
+  required if demoted.

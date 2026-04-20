@@ -6,6 +6,36 @@ One entry per iteration, not per commit within an iteration.
 
 ---
 
+## 2026-04-20 — iter 7 — model layer pt 1 (plan tasks 5-7/27)
+
+**What.** 3 commits for the model layer scaffolding.
+
+- Task 5 (`7b250c0`) — `src/cleanrl_vlm/models/lora_topology.py` +
+  `tests/unit/test_lora_topology.py`: `default_target_modules(groups)`
+  over 7 groups (text_attn, text_mlp, vision_attn, vision_mlp, merger,
+  lm_head, text_moe); raises on unknown; de-duplicates preserving
+  order. 6 tests.
+- Task 6 (`d7e2649`) — `src/cleanrl_vlm/models/heads.py` +
+  `tests/unit/test_heads.py`: `CriticHead(input_dim)` + `ActorHead(
+  input_dim, num_actions)` + `layer_init` (orthogonal init, zero
+  bias). 3 tests.
+- Task 7 (`b34e8ea`) — `src/cleanrl_vlm/models/base_vlm.py`: `BaseVLM`
+  wrapping `AutoModelForImageTextToText` + `AutoProcessor`; exposes
+  `preprocess_obs_and_text`, `last_hidden_state`, `get_trainable_params`.
+  Import-sanity only (constructor loads real backbone; exercised in
+  downstream Task 8 + integration).
+
+**Why.** Model layer is dependency-ordered: topology + heads before
+`BaseVLM`, all three before `DecoupledActorCriticVLM_COT` in Task 8.
+
+**Evidence.** 17 unit tests green total through iter 7
+(8 env + 6 lora + 3 heads). BaseVLM imports cleanly.
+
+**Invariants run.** Inv-1/3 tests land in Task 8 (iter 8); nothing
+applicable yet at iter 7.
+
+---
+
 ## 2026-04-20 — iter 6 — env layer (plan tasks 1-4/27)
 
 **What.** 4 commits on the PPO-COT port — all of the env layer lands.
