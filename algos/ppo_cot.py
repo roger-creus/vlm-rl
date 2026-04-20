@@ -219,6 +219,10 @@ def main() -> None:  # noqa: C901  (trainer orchestration; complexity expected)
     optimizer = torch.optim.AdamW(ac_model.get_trainable_params(), lr=args.learning_rate)
     fp16 = Fp16State(enabled=(args.precision == "fp16"))
 
+    # Conservative placeholder — returns min(num_envs, cap), not a real
+    # OOM-triggering auto-probe. The master-spec §3 "probe doubling until
+    # OOM" feature is backlog; for now we assume num_envs already fits.
+    # The artifact is still written for record-keeping.
     per_gpu_microbatch = probe_microbatch(try_batch_fn=lambda s: s <= args.num_envs, cap=args.num_envs)
     record_microbatch_probe(run_dir, per_gpu_microbatch, target_batch_floor=128)
 
