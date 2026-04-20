@@ -71,6 +71,12 @@ class Args:
     num_minibatches: int = 4
     update_epochs: int = 4
     total_timesteps: int = 200_000
+    # Per spec §14: reward scaling 0.01 is the default. Multiplied into
+    # rewards before buffer storage so GAE / value loss use the scaled
+    # signal. RecordEpisodeStatistics still emits UNSCALED returns
+    # (wrapper sits inside AsyncVectorEnv → ep_return_mean is in raw env
+    # units regardless of this setting).
+    reward_scale: float = 0.01
 
     # Optim
     learning_rate: float = 1e-5
@@ -122,6 +128,44 @@ def _lora_weight_norm(ac_model, adapter: str) -> float:
         if "lora_" in n and f".{adapter}." in n:
             total += float(p.detach().float().pow(2).sum().item())
     return float(total**0.5)
+
+
+def _extract_ep_returns(info) -> list[float]:
+    """Pull episode returns out of a gymnasium AsyncVectorEnv info dict.
+
+    Handles three emission patterns seen across gymnasium versions:
+
+    1. Top-level ``info["episode"] = {"r": array[B], ...}`` with
+       ``info["_episode"] = array[B] bool`` mask (modern VectorEnv).
+    2. ``info["final_info"] = list[B]`` of per-env dicts where
+       terminated envs carry ``"episode": {...}``.
+    3. ``info["final_info"] = {"episode": {"r": array[B], ...}}``
+       (gymnasium 1.x intermediate).
+    """
+    out: list[float] = []
+    if not isinstance(info, dict):
+        return out
+    ep = info.get("episode")
+    mask = info.get("_episode")
+    if isinstance(ep, dict) and "r" in ep:
+        r = np.asarray(ep["r"]).reshape(-1)
+        if mask is not None:
+            m = np.asarray(mask, dtype=bool).reshape(-1)
+            for v, b in zip(r, m, strict=False):
+                if b:
+                    out.append(float(v))
+        else:
+            out.extend(float(v) for v in r)
+    fi = info.get("final_info")
+    if isinstance(fi, list):
+        for item in fi:
+            if isinstance(item, dict) and "episode" in item:
+                out.append(float(item["episode"]["r"]))
+    elif isinstance(fi, dict) and "episode" in fi:
+        sub = fi["episode"]
+        if isinstance(sub, dict) and "r" in sub:
+            out.extend(float(v) for v in np.asarray(sub["r"]).reshape(-1))
+    return out
 
 
 def main() -> None:  # noqa: C901  (trainer orchestration; complexity expected)
@@ -198,6 +242,7 @@ def main() -> None:  # noqa: C901  (trainer orchestration; complexity expected)
         it_start = time.time()
         gen_wall = 0.0
         cot: CotRolloutStep | None = None
+        ep_returns: list[float] = []
 
         # ---- rollout ----
         for step in range(args.num_steps):
@@ -227,7 +272,10 @@ def main() -> None:  # noqa: C901  (trainer orchestration; complexity expected)
             obs_np, reward_np, term_np, trunc_np, info = envs.step(cot.actions.cpu().numpy())
             obs = torch.as_tensor(obs_np, device="cuda", dtype=torch.uint8)
             done = torch.as_tensor(np.logical_or(term_np, trunc_np), device="cuda", dtype=torch.float32)
-            buffer.rewards[step] = torch.as_tensor(reward_np, device="cuda", dtype=torch.float32)
+            # Apply spec §14 reward_scale (0.01 default) to tame value-loss
+            # magnitudes and keep FP16 GradScaler stable.
+            buffer.rewards[step] = torch.as_tensor(reward_np * args.reward_scale, device="cuda", dtype=torch.float32)
+            ep_returns.extend(_extract_ep_returns(info))
 
             global_step += args.num_envs
 
@@ -328,11 +376,7 @@ def main() -> None:  # noqa: C901  (trainer orchestration; complexity expected)
                 clip_fracs.append(float(((ratio - 1.0).abs() > args.clip_coef).float().mean().item()))
 
         # ---- logging ----
-        ep_returns: list[float] = []
-        if isinstance(info, dict) and "final_info" in info:
-            for x in info["final_info"]:
-                if x and "episode" in x:
-                    ep_returns.append(float(x["episode"]["r"]))
+        # ep_returns was accumulated during rollout per _extract_ep_returns.
         row = {
             "global_step": global_step,
             "iteration": iteration,

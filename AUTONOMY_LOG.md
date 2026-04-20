@@ -1655,3 +1655,69 @@ rows):
 - Re-run with `--total-timesteps 400` (25 iters) after both fixes.
   Look for actual learning: ep_return trending up, loss_value
   trending down, loss_scale stable at 2048+.
+
+---
+
+### 2026-04-20 — iter 19 — reward-scale + ep-return fix + zombie cleanup
+
+**Context.** Implementing iter-18's follow-up queue. User interrupted
+mid-iter to ask for a git push and noted GPU usage was 0.
+
+**Code fixes.**
+
+1. `algos/ppo_cot.py`:
+   - New `Args.reward_scale: float = 0.01` (spec §14 default).
+   - Rollout applies `reward_np * args.reward_scale` before buffer
+     storage — scaled rewards feed GAE and value loss, keeping FP16
+     GradScaler stable. `RecordEpisodeStatistics` sits inside
+     `AsyncVectorEnv` → emits UNSCALED returns, so ep_return_mean is
+     in raw env units regardless.
+   - `_extract_ep_returns(info)` handles three gymnasium-version
+     patterns: top-level `info["episode"]` + `info["_episode"]` mask
+     (modern VectorEnv), `info["final_info"]` list-of-dicts (older
+     API), `info["final_info"]` dict-of-arrays (intermediate).
+     Accumulates ep_returns during rollout (each step may emit).
+   - Removed the old post-update `if "final_info" in info` block —
+     ep_returns now come from the rollout-step accumulation.
+
+2. **Zombie vizdoom cleanup.** User noted GPU util 0% — no python
+   process actually ran despite two background "training" tasks
+   listed as "running". Root cause: earlier iters (3/13/17/18)
+   left ~20 vizdoom subprocess workers alive after their parent
+   pythons exited (iters 3/13 from hours ago; 17/18 more recent).
+   These vizdoom zombies held worker-pool state + may have held
+   lock files under `~/.cache/vizdoom/`; new trainer launches
+   blocked trying to spawn fresh workers. `kill -9` on all 20 PIDs
+   cleared the deck.
+
+3. **Launch style change.** Previous launches used
+   `... | tail -20` which buffered all python stdout until
+   subprocess exit. Combined with the stuck-on-zombies behavior,
+   this made hangs look identical to progress. Iter 19's relaunch
+   uses `python -u` (unbuffered) + direct stdout to the task
+   output file (no tail pipe) — real-time visibility.
+
+**Git push.** User-requested at mid-iter. `master` pushed to
+`origin/master` (61 commits fast-forward `964377d..ee1fce7`); `old`
+branch pushed as a new remote ref preserving pre-scaffold history
+per §1. Non-force, no divergence.
+
+**Verification pending.** New subprocess `bi27yy3a9` running; Monitor
+`bb71nwlsx` armed on its output with grep for `step=|iteration=|
+Traceback|Error|FAILED|OOM|Killed|AssertionError|CUDA out of memory|
+ValueError|RuntimeError`. Expect ep_return_n > 0 AND loss_scale
+stable (not halving) by the 10-iter mark.
+
+**Decisions logged.**
+
+1. **Defensive ep_return extractor.** Three-pattern match instead
+   of assuming one API. Cheap (~15 LOC); avoids needing to pin a
+   specific gymnasium version.
+
+2. **reward_scale argument, not hardcoded.** Allows per-env /
+   per-experiment override via CLI. Default 0.01 per spec §14.
+
+3. **Future-proofing: add a vizdoom-zombie cleanup to the launch
+   helper eventually.** Not done this iter; just killed manually.
+   Note for `scripts/_cluster_env.sh` or the trainer's startup:
+   `pkill -f "vizdoom.*viz_controlled"` before `AsyncVectorEnv()`.
