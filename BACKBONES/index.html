@@ -683,10 +683,32 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#architecture-to-be-confirmed-per-s-5-web-fetch-on-first-load" class="md-nav__link">
+  <a href="#current-roster" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Architecture (to be confirmed per S-5 web-fetch on first load)
+        Current roster
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#architecture-qwen35" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Architecture (Qwen3.5)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#onboarding-ritual" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Onboarding ritual
       
     </span>
   </a>
@@ -950,16 +972,25 @@
 </thead>
 <tbody>
 <tr>
+<td><code>Qwen/Qwen3.5-2B</code></td>
+<td>2 B</td>
+<td>262K</td>
+<td><a href="../backbone_probes/qwen3.5-2b/">report</a> (Inv-8 PASS: 280 image tokens @ 320×240 / 76800 px)</td>
+</tr>
+<tr>
 <td><code>Qwen/Qwen3-VL-2B-Instruct</code></td>
-<td>2B</td>
+<td>2 B</td>
 <td>262K</td>
 <td><a href="../backbone_probes/qwen3-vl-2b-instruct/">report</a> (Inv-8 PASS: 280 image tokens @ 320×240 / 76800 px)</td>
 </tr>
 </tbody>
 </table>
-<p>Actual backbones available on Hugging Face (as of 2026-04-20 — see
-<code>docs/superpowers/specs/amendments/2026-04-20-backbone-names-correction.md</code>
-for the deviation from master-spec §3's Qwen3.5-VL naming):</p>
+<h2 id="current-roster">Current roster<a class="headerlink" href="#current-roster" title="Permanent link">&para;</a></h2>
+<p>Both the Qwen3.5 family (master-spec §3's original target) and the
+Qwen3-VL family exist on Hugging Face. We prefer Qwen3.5 for new work —
+it is the hybrid Gated-DeltaNet + Gated-Attention + MoE architecture
+the master spec anticipated, and it ships as an instruct model with
+a native chat template.</p>
 <table>
 <thead>
 <tr>
@@ -972,44 +1003,67 @@ for the deviation from master-spec §3's Qwen3.5-VL naming):</p>
 </thead>
 <tbody>
 <tr>
+<td><code>Qwen/Qwen3.5-0.8B</code></td>
+<td>0.8 B</td>
+<td>off</td>
+<td>Tier-1 debug / fast-smoke</td>
+<td>smallest hybrid, matches spec §3's 0.8B slot</td>
+</tr>
+<tr>
+<td><code>Qwen/Qwen3.5-2B</code></td>
+<td>2 B</td>
+<td>off</td>
+<td><strong>Tier-1 primary</strong></td>
+<td>default in <code>algos/ppo_cot.py</code></td>
+</tr>
+<tr>
+<td><code>Qwen/Qwen3.5-4B</code></td>
+<td>4 B</td>
+<td>off</td>
+<td>Tier-2 paper runs</td>
+<td>spec's target 4B size</td>
+</tr>
+<tr>
 <td><code>Qwen/Qwen3-VL-2B-Instruct</code></td>
 <td>2 B</td>
 <td>off</td>
-<td>Tier-1 smoke + debug</td>
-<td>smallest Qwen3-VL; replaces spec's non-existent 0.8B</td>
+<td>fallback</td>
+<td>retained for comparison runs</td>
 </tr>
 <tr>
 <td><code>Qwen/Qwen3-VL-4B-Instruct</code></td>
 <td>4 B</td>
 <td>off</td>
-<td>Tier-2 paper runs (hero)</td>
-<td>spec's target 4B size</td>
-</tr>
-<tr>
-<td><code>Qwen/Qwen3-VL-4B-Thinking</code></td>
-<td>4 B</td>
-<td><strong>on</strong></td>
-<td>Tier-2 thinking ablation</td>
-<td>paper-ablations entry</td>
-</tr>
-<tr>
-<td><code>Qwen/Qwen3-VL-8B-Instruct</code></td>
-<td>8 B</td>
-<td>off</td>
-<td>Tier-2 scale-up ablation</td>
-<td>bigger-is-better check</td>
+<td>fallback</td>
+<td>retained for comparison runs</td>
 </tr>
 </tbody>
 </table>
-<p>All load via <code>AutoModelForCausalLM</code> + <code>AutoProcessor</code>. Apache-2.0.</p>
-<h2 id="architecture-to-be-confirmed-per-s-5-web-fetch-on-first-load">Architecture (to be confirmed per S-5 web-fetch on first load)<a class="headerlink" href="#architecture-to-be-confirmed-per-s-5-web-fetch-on-first-load" title="Permanent link">&para;</a></h2>
-<p>Master-spec §3 described Qwen3.5-VL as hybrid
-Gated-DeltaNet + Gated-Attention + sparse MoE. Qwen3-VL does <strong>not</strong>
-publicly advertise the same hybrid; the /loop agent updates this table
-the first time each backbone is probed under <code>docs/backbone_probes/</code>.</p>
-<p>Onboarding a new backbone = master-spec §11 S-6 ritual: registry entry +
-processor probe + §4 image-input probes + Inv-1..14 pass +
-<code>docs/backbone_probes/&lt;name&gt;.md</code>.</p>
+<p>All load via <code>AutoModelForImageTextToText</code> + <code>AutoProcessor</code>. Apache-2.0.
+Require <code>transformers</code> from git main (≥ 5.6.0.dev0 registers <code>qwen3_5</code>).</p>
+<h2 id="architecture-qwen35">Architecture (Qwen3.5)<a class="headerlink" href="#architecture-qwen35" title="Permanent link">&para;</a></h2>
+<p>Confirmed by module introspection on <code>Qwen/Qwen3.5-2B</code>:</p>
+<ul>
+<li><strong>Text tower</strong>: alternating Gated-Attention (<code>self_attn.q/k/v/o_proj</code>) and
+  Gated DeltaNet linear-attention (<code>linear_attn.in_proj_{a,b,qkv,z}</code>,
+  <code>linear_attn.out_proj</code>) blocks. SwiGLU MLPs (<code>mlp.gate_proj</code>,
+  <code>mlp.up_proj</code>, <code>mlp.down_proj</code>).</li>
+<li><strong>Vision tower</strong>: ViT-like with <code>attn.qkv</code> (fused) + <code>attn.proj</code>,
+  MLPs <code>mlp.linear_fc1</code> / <code>linear_fc2</code>, patch embed + 2D position embed.</li>
+<li><strong>Merger</strong>: vision→text projection via <code>merger.linear_fc1</code> /
+  <code>merger.linear_fc2</code>.</li>
+<li><strong>Shared</strong>: <code>lm_head</code> (tied to input embedding by default).</li>
+</ul>
+<p>The <code>lora_groups_default</code> in <code>configs/backbones.yaml</code> wraps <strong>all six
+groups</strong> (text_attn / text_mlp / vision_attn / vision_mlp / merger /
+lm_head) to put LoRA on every trainable surface.</p>
+<h2 id="onboarding-ritual">Onboarding ritual<a class="headerlink" href="#onboarding-ritual" title="Permanent link">&para;</a></h2>
+<p>Per master-spec §11 S-6: registry entry + processor probe + §4 image-input
+probes + Inv-1..Inv-14 pass + <code>docs/backbone_probes/&lt;name&gt;.md</code>.</p>
+<p>The mechanical tests for the active backbone live at
+<code>tests/integration/test_qwen35_backbone_wiring.py</code> — image-token
+presence, LoRA module-hit per group, Inv-1/3 on the real model, and
+actor/critic adapter disjointness.</p>
 
 
 
