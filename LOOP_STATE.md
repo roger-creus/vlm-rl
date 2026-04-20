@@ -1,11 +1,11 @@
 # LOOP_STATE.md
 
-**Last updated:** 2026-04-20 (iter 11 — microbatch + logging + checkpoint done, tasks 1-16/27).
+**Last updated:** 2026-04-20 (iter 12 — InvariantMonitor + 5 invariants done, tasks 1-17/27).
 **Maintained by:** the autonomous `/loop` agent; humans read only.
 
 ## Current phase
 
-**Phase:** `B-ppo-cot-vizdoom-basic-2B` — **executing**. Plan tasks 1-16/27 complete (59% through). 44 tests green. Next iter picks up Task 17 (InvariantMonitor scaffold + Inv-04/05/09/11/13 tests — the biggest invariant batch).
+**Phase:** `B-ppo-cot-vizdoom-basic-2B` — **executing**. Plan tasks 1-17/27 complete (63% through). **50 tests green** (including 14 invariant: Inv-1/3/4[tolerance]/5/6/9/10/11/13). All iter-4-scope §8 invariants covered as pytest units. Next iter picks up Tasks 18 (cluster env script, trivial) + 19 (trainer assembly — the big one, 360 lines).
 
 ## Iter 5 sub-step completed
 
@@ -84,7 +84,7 @@ available, verifies locally, commits.
 - [x] Task 14 — microbatch_probe (M7) — iter 11
 - [x] Task 15 — logging (Rich / CSV / W&B) — iter 11
 - [x] Task 16 — save_vlm_actor_critic_checkpoint (m6) — iter 11
-- [ ] Task 17 — InvariantMonitor scaffold + Inv-04/05/09/11/13 tests
+- [x] Task 17 — InvariantMonitor scaffold + Inv-04/05/09/11/13 tests — iter 12
 - [ ] Task 18 — scripts/_cluster_env.sh
 - [ ] Task 19 — algos/ppo_cot.py assembly
 - [ ] Task 20 — tier1 integration test

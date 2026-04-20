@@ -6,6 +6,44 @@ One entry per iteration, not per commit within an iteration.
 
 ---
 
+## 2026-04-20 — iter 12 — InvariantMonitor + 5 invariants (plan task 17/27)
+
+**What.** 1 commit landing the invariant batch.
+
+- `src/cleanrl_vlm/training/invariants.py` — `InvariantMonitor`
+  dataclass (passive at iter 4; runtime hook in D-invariants-runtime),
+  `check_inv_01_lora_trainability`, `check_inv_05_grad_norm`,
+  `INV_04_TOLERANCE=1e-4` public constant (reviewer B2).
+- `tests/invariants/test_inv_04_logprob_parity.py` — tolerance pin
+  + @gpu placeholder (real re-score body lands in `algos/ppo_cot.py`
+  Task 19).
+- `tests/invariants/test_inv_05_grad_norm.py` — clip vs manual norm.
+- `tests/invariants/test_inv_09_reward_pipeline.py` — scripted
+  rewards flow into GAE unchanged.
+- `tests/invariants/test_inv_11_determinism.py` — CPU bitwise
+  rollout equality under `_make_fully_deterministic(seed)` fixture
+  with full reviewer-M5 settings (CUBLAS_WORKSPACE_CONFIG,
+  PYTHONHASHSEED, HF_SEED, seeded RNGs, cudnn, `use_deterministic_
+  algorithms(True, warn_only=True)` — deviation logged).
+- `tests/invariants/test_inv_13_pad_image_token_mask.py` — masked
+  positions have zero gradient contribution.
+
+**Why.** All iter-4-scope §8 invariants now exist as pytest tests
+(Inv-1/3 already shipped iter 8; Inv-6 iter 10; Inv-10 iter 9; this
+iter adds Inv-4/5/9/11/13). Trainer (Task 19) will wire the
+Monitor + per-Inv checks; tests-first stance holds.
+
+**Evidence.**
+- `uv run --no-env-file pytest tests/invariants/ -v -m "not gpu"`
+  → **14 passed in 141.70s** (1 `@gpu` deselected).
+
+**Invariants run.**
+- Inv-4 (tolerance constant), Inv-5 (grad norm), Inv-9 (reward
+  pipeline), Inv-11 (bitwise determinism), Inv-13 (pad masking) —
+  all new green this iter.
+
+---
+
 ## 2026-04-20 — iter 11 — microbatch + logging + checkpoint (plan tasks 14-16/27)
 
 **What.** 3 commits landing training-layer plumbing.
