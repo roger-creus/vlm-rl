@@ -1,0 +1,16 @@
+tier: 1
+backbone_default: Qwen/Qwen3-VL-2B-Instruct
+frame_skip: 4
+frame_stack:
+  n: 1                         # TODO(M6): re-evaluate when corridor + defend_line ports land; tracked in LOOP_STATE under C-envs-tier1-expand
+  layout: horizontal
+resolution:
+  width: 320
+  height: 240
+screen_format: RGB24
+reward_clip: false
+max_episode_steps: null        # ViZDoom Basic uses its own 300-tic cap (~75 env steps at frame_skip=4)
+target_score: 60.0
+# Override processor budget to match native 320x240 = 76800 pixels; avoids silent 3.4x upscale.
+processor_min_pixels: 76800
+processor_max_pixels: 76800
