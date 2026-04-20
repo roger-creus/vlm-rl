@@ -6,6 +6,38 @@ One entry per iteration, not per commit within an iteration.
 
 ---
 
+## 2026-04-20 — iter 6 — env layer (plan tasks 1-4/27)
+
+**What.** 4 commits on the PPO-COT port — all of the env layer lands.
+
+- `ff0a19b` (approx) — configs: `configs/backbones.yaml` (2B + 4B),
+  `configs/targets.yaml` (VizdoomBasic reference), `configs/envs/
+  VizdoomBasic-v0.yaml` (frame_stack.n=1 TODO M6, max_episode_steps=
+  null M8, processor pixel override B3 → 76800 native).
+- Task 2 — `src/cleanrl_vlm/envs/wrappers.py` + `tests/unit/
+  test_env_factory.py`: FrameSkipEnv, ScreenOnlyWrapper,
+  DiscreteMultiBinaryWrapper (supersedes prototype's DeadlyCorridor
+  + DefendTheLine per m2). 5 tests.
+- Task 3 — `src/cleanrl_vlm/envs/vizdoom/{__init__, action_tables,
+  factories}.py`: 3 ViZDoom scenarios keyed (Basic, Corridor,
+  DefendLine); make_vizdoom_env composes the 3 wrappers + record-stats.
+  Adds 1 action_tables test.
+- Task 4 — `src/cleanrl_vlm/envs/registry.py`: single make_env dispatch
+  (Vizdoom prefix → factory); per-idx seed applied; unknown prefix
+  raises KeyError. Adds 2 registry tests.
+
+**Why.** Plan tasks 1-4 execute sequentially — configs before env code
+because pixel budget + frame_skip read from YAML. Env layer is a
+dependency of every later task.
+
+**Evidence.** `uv run --no-env-file pytest tests/unit/test_env_factory.py`
+→ 8 passed in 1.63 s.
+
+**Invariants run.** None yet — invariant tests land in later plan
+tasks (8 for Inv-1/3; 11 for Inv-10; 13 for Inv-6; 17 for Inv-4/5/9/11/13).
+
+---
+
 ## 2026-04-20 — iter 5 — PPO-COT implementation plan (task B — plan step)
 
 **What.** 27-task implementation plan for task `B-ppo-cot-vizdoom-basic-2B`.

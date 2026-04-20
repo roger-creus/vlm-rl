@@ -542,3 +542,75 @@ subsequent iters consume.
   override; M8 null `max_episode_steps`). TDD does not apply — configs
   are static YAML. Commit + move on to Task 2 same iter if budget
   permits.
+
+---
+
+### 2026-04-20 — iter 6 — plan-tasks-1-4 — @dfc3c4d..2fc8d1d
+
+**Context.** First implementation iter. Plan committed at iter 5; this
+iter starts executing it.
+
+**Accomplished.** 4 plan tasks (1-4) + 4 commits:
+- Task 1 — configs (backbones 2B/4B, targets, VizdoomBasic env YAML)
+- Task 2 — env wrappers (FrameSkipEnv, ScreenOnlyWrapper, DiscreteMultiBinaryWrapper)
+- Task 3 — VizDoom action_tables + make_vizdoom_env factory
+- Task 4 — make_env registry dispatcher
+
+**Decisions.**
+
+1. **Plan literal `from src.cleanrl_vlm...` → `from cleanrl_vlm...`.**
+   The plan text (written by the writing-plans subagent from the design
+   spec) consistently used `src.cleanrl_vlm` in test + factory imports.
+   The package is actually published as `cleanrl_vlm` per
+   `pyproject.toml [tool.hatch.build.targets.wheel] packages = ["src/
+   cleanrl_vlm"]`. Deviation logged on first occurrence (Task 2
+   commit); applied silently for Tasks 3-4 + all remaining tasks.
+   Rule to apply forward: read `src.cleanrl_vlm.X.Y` as
+   `cleanrl_vlm.X.Y` wherever the plan says it. Log deviation only if
+   a non-trivial fix is needed beyond this rename.
+
+2. **No subagent dispatch this iter.** Tasks 1-4 are mechanical file
+   writes with the plan's verbatim content (modulo the import
+   correction). Subagent overhead outweighs benefit; main-loop
+   inline execution is faster.
+
+3. **Tests run with `uv run --no-env-file pytest` consistently** —
+   iter 3 established this incantation; iter 6 confirms it still
+   works across all the new test files.
+
+4. **Task completion pace exceeded LOOP_STATE iter-boundary sketch.**
+   LOOP_STATE estimated iter 6 = Task 1 only, iter 7 = Tasks 2-4.
+   Actual: iter 6 = Tasks 1-4. Sketch loosening is fine — each /loop
+   iter reads LOOP_STATE, picks next incomplete task, stops when
+   ~budget runs out.
+
+**Verification evidence.**
+
+- `uv run --no-env-file pytest tests/unit/test_env_factory.py -v`
+  → 8 passed (1 FrameSkip + 1 ScreenOnly + 3 parametrized
+  DiscreteMultiBinary + 1 action_tables + 1 registry dispatch + 1
+  registry rejects unknown).
+- `uv run --no-env-file python -c "import yaml; [yaml.safe_load(open(p)) for p in [...]]; print('ok')"` → ok.
+
+**Skills invoked.**
+- `superpowers:test-driven-development` — tasks 2, 3, 4 each followed
+  red→impl→green→commit. Task 1 (configs) is static YAML; no
+  test-first.
+- `superpowers:verification-before-completion` — each task's green-test
+  evidence captured in the commit message.
+
+**Skills deferred.**
+- `superpowers:subagent-driven-development` — will light up when tasks
+  become independent enough to parallelize (e.g., Task 7 BaseVLM and
+  Task 5 LoRA topology can land in parallel subagents).
+- `superpowers:code-reviewer` — Task 26 per plan.
+- `superpowers:simplify` — Task 25 per plan.
+
+**Follow-ups (iter 7).**
+
+- Tasks 5-7 (LoRA topology helper, MLP heads, BaseVLM wrapper). All
+  three are pure-python + torch, no GPU required (heads are MLPs;
+  BaseVLM constructor doesn't load weights, that's the trainer's
+  job). TDD for 5 and 6; 7 tests via downstream tasks.
+- Potentially dispatch parallel subagents for 5 + 6 (no shared
+  state).

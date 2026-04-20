@@ -1,11 +1,11 @@
 # LOOP_STATE.md
 
-**Last updated:** 2026-04-20 (iter 5 — PPO-COT implementation plan committed).
+**Last updated:** 2026-04-20 (iter 6 — env layer complete, tasks 1-4/27).
 **Maintained by:** the autonomous `/loop` agent; humans read only.
 
 ## Current phase
 
-**Phase:** `B-ppo-cot-vizdoom-basic-2B` — **ready to execute**. Design spec at `f7b7fe7`, implementation plan at `dfc3c4d` (27 tasks, 3741 lines). Next iter starts Task 1 under `superpowers:subagent-driven-development`.
+**Phase:** `B-ppo-cot-vizdoom-basic-2B` — **executing**. Plan tasks 1-4 complete (configs + env layer). 8 unit tests green. Next iter picks up Task 5 (LoRA topology helper) through Task 7 or 8 (model layer pt 1/2).
 
 ## Iter 5 sub-step completed
 
@@ -68,10 +68,10 @@ available, verifies locally, commits.
 
 ## Plan-task checklist (iters 6-?)
 
-- [ ] Task 1 — configs (backbones + targets + VizdoomBasic env YAML)
-- [ ] Task 2 — env wrappers (TDD)
-- [ ] Task 3 — VizDoom action tables + factories
-- [ ] Task 4 — env registry dispatcher
+- [x] Task 1 — configs (backbones + targets + VizdoomBasic env YAML) — iter 6
+- [x] Task 2 — env wrappers (TDD) — iter 6
+- [x] Task 3 — VizDoom action tables + factories — iter 6
+- [x] Task 4 — env registry dispatcher — iter 6
 - [ ] Task 5 — LoRA topology helper (TDD)
 - [ ] Task 6 — MLP heads (CriticHead / ActorHead)
 - [ ] Task 7 — BaseVLM wrapper
