@@ -144,14 +144,13 @@ def _lora_weight_norm(params: list[torch.nn.Parameter]) -> float:
 def _extract_ep_returns(info) -> list[float]:
     """Pull episode returns out of a gymnasium AsyncVectorEnv info dict.
 
-    Handles three emission patterns seen across gymnasium versions:
-
-    1. Top-level ``info["episode"] = {"r": array[B], ...}`` with
-       ``info["_episode"] = array[B] bool`` mask (modern VectorEnv).
-    2. ``info["final_info"] = list[B]`` of per-env dicts where
-       terminated envs carry ``"episode": {...}``.
-    3. ``info["final_info"] = {"episode": {"r": array[B], ...}}``
-       (gymnasium 1.x intermediate).
+    Handles three emission patterns across gymnasium versions. The
+    branches are **mutually exclusive** — gymnasium 1.x populates both
+    ``info["episode"]`` and ``info["final_info"]`` on the same terminal
+    step, so we pick exactly one source per call (precedence: modern
+    top-level → older `final_info` list → intermediate `final_info`
+    dict-of-arrays). This prevents each terminal return from being
+    counted twice in `ep_return_n`.
     """
     out: list[float] = []
     if not isinstance(info, dict):
@@ -167,12 +166,14 @@ def _extract_ep_returns(info) -> list[float]:
                     out.append(float(v))
         else:
             out.extend(float(v) for v in r)
+        return out
     fi = info.get("final_info")
     if isinstance(fi, list):
         for item in fi:
             if isinstance(item, dict) and "episode" in item:
                 out.append(float(item["episode"]["r"]))
-    elif isinstance(fi, dict) and "episode" in fi:
+        return out
+    if isinstance(fi, dict) and "episode" in fi:
         sub = fi["episode"]
         if isinstance(sub, dict) and "r" in sub:
             out.extend(float(v) for v in np.asarray(sub["r"]).reshape(-1))
