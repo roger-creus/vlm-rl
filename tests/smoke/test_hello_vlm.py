@@ -1,4 +1,4 @@
-"""Hello-VLM smoke: load Qwen/Qwen3.5-VL-0.8B, feed a synthetic image + prompt, generate a response.
+"""Hello-VLM smoke: load Qwen/Qwen3-VL-2B-Instruct, feed a synthetic image + prompt, generate a response.
 
 Verifies:
   * Dependency graph resolves and imports.
@@ -20,7 +20,7 @@ import pytest
 import torch
 from PIL import Image
 
-MODEL_ID = os.environ.get("CLEANRL_VLM_SMOKE_MODEL", "Qwen/Qwen3.5-VL-0.8B")
+MODEL_ID = os.environ.get("CLEANRL_VLM_SMOKE_MODEL", "Qwen/Qwen3-VL-2B-Instruct")
 
 
 @pytest.fixture(scope="module")
@@ -39,7 +39,7 @@ def synthetic_image() -> Image.Image:
 @pytest.mark.gpu
 @pytest.mark.timeout(600)
 def test_hello_vlm_loads_and_generates(synthetic_image: Image.Image, tmp_path: Path) -> None:
-    """Load Qwen3.5-VL-0.8B, feed a synthetic quadrant image + prompt, generate."""
+    """Load Qwen3-VL-2B-Instruct, feed a synthetic quadrant image + prompt, generate."""
     pytest.importorskip("transformers")
     from transformers import AutoModelForCausalLM, AutoProcessor
 

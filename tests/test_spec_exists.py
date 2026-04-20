@@ -15,9 +15,9 @@ def test_spec_exists() -> None:
 
 
 def test_spec_non_empty() -> None:
-    assert SPEC_PATH.stat().st_size > 1000, (
-        f"master spec suspiciously small ({SPEC_PATH.stat().st_size} bytes); expected > 1000"
-    )
+    assert (
+        SPEC_PATH.stat().st_size > 1000
+    ), f"master spec suspiciously small ({SPEC_PATH.stat().st_size} bytes); expected > 1000"
 
 
 def test_spec_has_autonomy_section() -> None:
