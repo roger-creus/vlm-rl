@@ -1,20 +1,60 @@
-```bash
-module load conda
-mkdir -p $SCRATCH/conda_envs
-export CONDA_ENVS_PATH=$SCRATCH/conda_envs
-conda create -n cleanrl-vlm python=3.10 -y
-conda activate $CONDA_ENVS_PATH/cleanrl-vlm
-pip install -r requirements.txt
-pip install vizdoom
-pip install git+https://github.com/huggingface/transformers
-pip install torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cu126 
-pip install flash-attn==2.7.4.post1 --no-build-isolation
-conda env config vars set HF_HOME=$SCRATCH/hub
-conda deactivate
-conda activate $CONDA_ENVS_PATH/cleanrl-vlm
-```
+# cleanrl-vlm
+
+**CleanRL-style library + research paper for online RL finetuning of Vision-Language Models in interactive visual environments (ViZDoom, Atari, Minigrid).**
+
+The promise: pretrained VLMs + efficient LoRA finetuning + a correct on-policy RL pipeline (PPO / GRPO / RLOO) can adapt a static foundation model into an agentic one that outperforms CNN agents trained from scratch — while training a small fraction of parameters. Along the way, we contribute novel methods for long-horizon credit assignment with VLM critics.
+
+## Quickstart
 
 ```bash
-# test this in 4-gpu node
-accelerate launch --config_file=deepspeed_zero2.yaml src/train_decoupled_actor_critic_cot.py  --vlm_name="Qwen/Qwen3-VL-4B-Instruct"  --num_envs=2 --num_steps=8 --num_minibatches=8 --gradient_accumulation_steps=4 --track  --critic_warmup_iterations=0
+# 1. Install UV: https://docs.astral.sh/uv/
+
+# 2. Set up the environment
+uv venv --python 3.10
+uv sync --extra dev
+
+# 3. Install flash-attn (separate because of build-isolation requirement)
+uv pip install flash-attn==2.7.4.post1 --no-build-isolation
+
+# 4. Run the smoke test
+uv run pytest -m tier1 -v
 ```
+
+## Canonical trainers (spec §5 — initially empty; populated by /loop)
+
+`algos/{ppo, grpo, rloo}_{cot, action, head}.py` — 9 single-file trainers. COT is the hero interface; action-scoring and MLP-head are ablations.
+
+## Baselines (spec §7)
+
+- `baselines/cnn_ppo.py` — from-scratch CNN PPO (non-VLM)
+- `baselines/zero_shot_vlm.py` — pure prompting, no RL
+- `baselines/frozen_vlm_head.py` — frozen VLM + trainable MLP head (no LoRA)
+
+## Documentation
+
+See `docs/index.md` (mkdocs-rendered). Key pages:
+
+- `docs/ARCHITECTURE.md` — library layout + data flow
+- `docs/ALGORITHMS.md` — per-algo math + code pointers
+- `docs/ENVS.md` — env catalogue + target scores
+- `docs/BACKBONES.md` — supported VLMs
+- `docs/RECIPES.md` — copy-pasteable reproduction commands
+- `docs/RESULTS.md` — live benchmark dashboard
+- `docs/RESEARCH.md` — research journal
+- `docs/INVARIANTS.md` — correctness invariants Inv-1..Inv-15
+- `docs/CONTRIBUTING.md` — onboarding rituals for new envs/algos/backbones
+- `docs/TROUBLESHOOTING.md` — OOM, NaN, logprob drift, vLLM issues
+
+**Master spec (the single source of truth for design):** `docs/superpowers/specs/2026-04-19-cleanrl-vlm-masterplan.md`.
+
+## License
+
+MIT. See `LICENSE`.
+
+## Citation
+
+To be populated on first tagged release (`v0.1.0`, triggered when all Tier-1 + hero Tier-2 combos land green simultaneously per spec §12).
+
+## Previous prototype
+
+The prior iteration of this project is preserved on branch `old` for reference. It is frozen and no longer developed.
