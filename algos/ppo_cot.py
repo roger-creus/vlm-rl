@@ -225,8 +225,12 @@ def main() -> None:  # noqa: C901  (trainer orchestration; complexity expected)
     if Path(ds_yaml).exists():
         load_accelerator_config(ds_yaml, num_processes=args.num_processes)
 
-    batch_size = args.num_envs * args.num_steps * args.num_processes
-    num_iterations = args.total_timesteps // max(1, batch_size)
+    # Per-process batch shape matches buffer.obs = [num_steps, num_envs, ...].
+    # Include num_processes only when aggregating total env-steps for logging
+    # and the timesteps budget, not when indexing per-rank buffers.
+    batch_size = args.num_envs * args.num_steps
+    global_batch_size = batch_size * args.num_processes
+    num_iterations = args.total_timesteps // max(1, global_batch_size)
 
     csv = CsvWriter(run_dir / "metrics.csv")
     dash = RichDashboard(run_name)
