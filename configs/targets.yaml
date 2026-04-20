@@ -1,4 +1,4 @@
-VizdoomBasic-v0:
+VizdoomBasic-v1:
   Qwen/Qwen3-VL-2B-Instruct:
     reference_score: 60.0
     zero_shot_baseline: null

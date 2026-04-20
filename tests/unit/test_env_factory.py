@@ -96,8 +96,8 @@ def test_discrete_multibinary_wrapper_generalizes(buttons, chosen_idx):
 def test_action_tables_contains_vizdoom_basic():
     from cleanrl_vlm.envs.vizdoom.action_tables import action_tables
 
-    assert action_tables["VizdoomBasic-v0"] == ["MOVE_LEFT", "MOVE_RIGHT", "ATTACK"]
-    assert action_tables["VizdoomCorridor-v0"] == [
+    assert action_tables["VizdoomBasic-v1"] == ["MOVE_LEFT", "MOVE_RIGHT", "ATTACK"]
+    assert action_tables["VizdoomDeadlyCorridor-v1"] == [
         "MOVE_LEFT",
         "MOVE_RIGHT",
         "ATTACK",
@@ -106,14 +106,14 @@ def test_action_tables_contains_vizdoom_basic():
         "TURN_LEFT",
         "TURN_RIGHT",
     ]
-    assert action_tables["VizdoomDefendLine-v0"] == ["TURN_LEFT", "TURN_RIGHT", "ATTACK"]
+    assert action_tables["VizdoomDefendLine-v1"] == ["TURN_LEFT", "TURN_RIGHT", "ATTACK"]
 
 
 def test_registry_dispatches_vizdoom():
     from cleanrl_vlm.envs.registry import make_env
 
     thunk = make_env(
-        env_id="VizdoomBasic-v0",
+        env_id="VizdoomBasic-v1",
         config={"frame_skip": 4},
         seed=0,
         idx=0,

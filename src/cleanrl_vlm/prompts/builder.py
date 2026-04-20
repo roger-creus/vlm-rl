@@ -23,11 +23,11 @@ class PromptBuilder:
 
     @staticmethod
     def _env_id_to_slug(env_id: str) -> str:
-        if env_id == "VizdoomBasic-v0":
+        if env_id == "VizdoomBasic-v1":
             return "vizdoom/basic"
-        if env_id == "VizdoomCorridor-v0":
+        if env_id == "VizdoomDeadlyCorridor-v1":
             return "vizdoom/corridor"
-        if env_id == "VizdoomDefendLine-v0":
+        if env_id == "VizdoomDefendLine-v1":
             return "vizdoom/defend_line"
         raise KeyError(f"No prompt template slug for {env_id!r}")
 
