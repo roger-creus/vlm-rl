@@ -1,4 +1,4 @@
-"""Hello-VLM smoke: load Qwen/Qwen3-VL-2B-Instruct, feed a synthetic image + prompt, generate a response.
+"""Hello-VLM smoke: load a VLM backbone, feed a synthetic image + prompt, generate a response.
 
 Verifies:
   * Dependency graph resolves and imports.
@@ -20,7 +20,7 @@ import pytest
 import torch
 from PIL import Image
 
-MODEL_ID = os.environ.get("CLEANRL_VLM_SMOKE_MODEL", "Qwen/Qwen3-VL-2B-Instruct")
+MODEL_ID = os.environ.get("CLEANRL_VLM_SMOKE_MODEL", "Qwen/Qwen3.5-2B")
 
 
 @pytest.fixture(scope="module")
@@ -39,7 +39,7 @@ def synthetic_image() -> Image.Image:
 @pytest.mark.gpu
 @pytest.mark.timeout(600)
 def test_hello_vlm_loads_and_generates(synthetic_image: Image.Image, tmp_path: Path) -> None:
-    """Load Qwen3-VL-2B-Instruct, feed a synthetic quadrant image + prompt, generate."""
+    """Load the configured VLM backbone, feed a synthetic quadrant image + prompt, generate."""
     pytest.importorskip("transformers")
     from transformers import AutoModelForImageTextToText, AutoProcessor
 
@@ -47,8 +47,9 @@ def test_hello_vlm_loads_and_generates(synthetic_image: Image.Image, tmp_path: P
         pytest.skip("smoke test requires CUDA")
 
     processor = AutoProcessor.from_pretrained(MODEL_ID, trust_remote_code=True)
-    # Qwen3-VL registers under AutoModelForImageTextToText, not AutoModelForCausalLM
-    # (its config is Qwen3VLConfig — multimodal, not text-only).
+    # Qwen3.5 (VL) registers under AutoModelForImageTextToText, not
+    # AutoModelForCausalLM — its config declares a vision_config alongside
+    # the text_config, so it's a multimodal model.
     model = AutoModelForImageTextToText.from_pretrained(
         MODEL_ID,
         dtype=torch.float16,

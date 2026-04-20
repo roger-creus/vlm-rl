@@ -59,7 +59,7 @@ class Args:
     num_envs: int = 4
 
     # Backbone
-    backbone: str = "Qwen/Qwen3-VL-2B-Instruct"
+    backbone: str = "Qwen/Qwen3.5-2B"
     backbone_config: str = "configs/backbones.yaml"
     max_new_tokens: int = 256
 
@@ -89,7 +89,14 @@ class Args:
     lora_rank: int = 32
     lora_alpha: int = 64
     lora_dropout: float = 0.0
-    lora_groups: tuple[str, ...] = ("text_attn", "text_mlp", "lm_head")
+    lora_groups: tuple[str, ...] = (
+        "text_attn",
+        "text_mlp",
+        "vision_attn",
+        "vision_mlp",
+        "merger",
+        "lm_head",
+    )
 
     # Distributed
     sharding: str = "deepspeed_zero2"

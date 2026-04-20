@@ -198,8 +198,12 @@ class DecoupledActorCriticVLM_COT(nn.Module):
 
 
 def _adapter_param_ids(peft_model, adapter: AdapterName) -> set[int]:
+    # NOTE: we do NOT filter by ``p.requires_grad`` here — PEFT's
+    # ``set_adapter(name)`` flips requires_grad on the non-active adapter,
+    # which would make disjointness assertions depend on current state.
+    # The identity set is about parameter ids, not mutable flags.
     tag = f".{adapter}."
-    return {id(p) for n, p in peft_model.named_parameters() if "lora_" in n and tag in n and p.requires_grad}
+    return {id(p) for n, p in peft_model.named_parameters() if "lora_" in n and tag in n}
 
 
 def lora_params_for(peft_model, adapter: AdapterName | None = None) -> list[torch.nn.Parameter]:

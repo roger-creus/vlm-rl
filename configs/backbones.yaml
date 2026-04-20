@@ -1,4 +1,7 @@
-Qwen/Qwen3-VL-2B-Instruct:
+Qwen/Qwen3.5-0.8B:
+  # Debug / fast-smoke tier. Hybrid Gated-DeltaNet + sparse MoE; hidden 1024,
+  # 24 layers, vision hidden 768. Matches master-spec §3's architecture
+  # pattern for the "Tier-1 0.8B" slot.
   tier: 1
   auto_class: AutoModelForImageTextToText
   processor_pixel_budget:
@@ -8,11 +11,28 @@ Qwen/Qwen3-VL-2B-Instruct:
   attn_implementation: flash_attention_2
   dtype: float16
   thinking_mode: off
-  lora_groups_default: [text_attn, text_mlp, lm_head]
+  lora_groups_default: [text_attn, text_mlp, vision_attn, vision_mlp, merger, lm_head]
   lora_rank: 32
   lora_alpha: 64
 
-Qwen/Qwen3-VL-4B-Instruct:
+Qwen/Qwen3.5-2B:
+  # Primary Tier-1 model (user directive). Already an instruct model —
+  # native chat template handles system / user / assistant turns without
+  # extra scaffolding.
+  tier: 1
+  auto_class: AutoModelForImageTextToText
+  processor_pixel_budget:
+    min_pixels: 262144
+    max_pixels: 1310720
+  attn_implementation: flash_attention_2
+  dtype: float16
+  thinking_mode: off
+  lora_groups_default: [text_attn, text_mlp, vision_attn, vision_mlp, merger, lm_head]
+  lora_rank: 32
+  lora_alpha: 64
+
+Qwen/Qwen3.5-4B:
+  # Tier-2 paper-run slot.
   tier: 2
   auto_class: AutoModelForImageTextToText
   processor_pixel_budget:
@@ -21,6 +41,6 @@ Qwen/Qwen3-VL-4B-Instruct:
   attn_implementation: flash_attention_2
   dtype: float16
   thinking_mode: off
-  lora_groups_default: [text_attn, text_mlp, lm_head]
+  lora_groups_default: [text_attn, text_mlp, vision_attn, vision_mlp, merger, lm_head]
   lora_rank: 32
   lora_alpha: 64

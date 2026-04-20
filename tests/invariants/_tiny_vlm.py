@@ -89,13 +89,11 @@ def build_tiny_ac_model():
         p.requires_grad = True
 
     def actor_ids() -> set[int]:
-        return {
-            id(p) for n, p in ac.vlm.model.named_parameters() if "lora_" in n and ".actor." in n and p.requires_grad
-        }
+        return {id(p) for n, p in ac.vlm.model.named_parameters() if "lora_" in n and ".actor." in n}
 
     def critic_ids() -> set[int]:
-        s = {id(p) for n, p in ac.vlm.model.named_parameters() if "lora_" in n and ".critic." in n and p.requires_grad}
-        s |= {id(p) for p in ac.critic_head.parameters() if p.requires_grad}
+        s = {id(p) for n, p in ac.vlm.model.named_parameters() if "lora_" in n and ".critic." in n}
+        s |= {id(p) for p in ac.critic_head.parameters()}
         return s
 
     ac.actor_param_ids = actor_ids

@@ -6,10 +6,18 @@ from collections.abc import Iterable
 
 _GROUPS: dict[str, list[str]] = {
     "text_attn": [
+        # Gated-Attention layers.
         "self_attn.q_proj",
         "self_attn.k_proj",
         "self_attn.v_proj",
         "self_attn.o_proj",
+        # Gated DeltaNet (linear-attention) layers — Qwen3.5 text tower
+        # alternates these with self_attn blocks.
+        "linear_attn.in_proj_qkv",
+        "linear_attn.in_proj_a",
+        "linear_attn.in_proj_b",
+        "linear_attn.in_proj_z",
+        "linear_attn.out_proj",
     ],
     "text_mlp": [
         "mlp.gate_proj",
@@ -35,6 +43,15 @@ _GROUPS: dict[str, list[str]] = {
         "block_sparse_moe.gate",
     ],
 }
+
+ALL_TOWERS_DEFAULT: tuple[str, ...] = (
+    "text_attn",
+    "text_mlp",
+    "vision_attn",
+    "vision_mlp",
+    "merger",
+    "lm_head",
+)
 
 
 def default_target_modules(groups: Iterable[str]) -> list[str]:
