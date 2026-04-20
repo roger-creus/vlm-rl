@@ -6,6 +6,38 @@ One entry per iteration, not per commit within an iteration.
 
 ---
 
+## 2026-04-20 — iter 9 — prompts + parser + rollout (plan tasks 9-11/27)
+
+**What.** 3 commits across prompts and rollout layers.
+
+- Task 9 (`a84436a`) — `src/cleanrl_vlm/prompts/templates/vizdoom/basic/
+  {actor,critic,vision_probe}.txt`: VizdoomBasic-specific text templates.
+- Task 10 (`2375a82`) — `src/cleanrl_vlm/prompts/parser.py` with regex
+  last-match + whitelist (reviewer M2 + M3, including repeated-ACTION
+  pathology) + `src/cleanrl_vlm/prompts/builder.py` with env-id → slug
+  lookup. 9 tests.
+- Task 11 — `src/cleanrl_vlm/rollout/buffer.py`: `compute_gae`
+  function + `RolloutBuffer` dataclass with pre-allocated tensors for
+  obs/actions/logprob_sum/rewards/values/dones/advantages/returns.
+  4 tests including Inv-10 (GAE resets at done boundary).
+
+**Why.** Prompts precede the trainer's use of `PromptBuilder`. Rollout
+buffer is the trainer's main data structure. Inv-10 is the first
+invariant that can run purely on tensor math without a real VLM.
+
+**Evidence.**
+- `uv run --no-env-file pytest tests/unit/test_action_parser.py
+  tests/unit/test_prompt_builder.py -v` → 9 passed in 0.75s.
+- `uv run --no-env-file pytest tests/unit/test_gae.py
+  tests/unit/test_rollout_buffer.py
+  tests/invariants/test_inv_10_episode_boundary.py -v` → 4 passed in
+  38.06s.
+
+**Invariants run.**
+- Inv-10 — episode-boundary masking: 1 test green.
+
+---
+
 ## 2026-04-20 — iter 8 — model layer cornerstone (plan task 8/27)
 
 **What.** Plan Task 8. 1 commit for the 400-line plan section.

@@ -760,3 +760,77 @@ journals commit):
 - Task 10 — Parser + PromptBuilder with the M2/M3 regex + whitelist
   + repeated-ACTION-pathology test. Substantial but smaller than Task 8.
 - Iter 9 should comfortably do both.
+
+---
+
+### 2026-04-20 — iter 9 — plan-tasks-9-11 — @a84436a..<tbd>
+
+**Context.** Prompts + parser + rollout buffer. Pure-Python + torch
+CPU work; all TDD-compatible.
+
+**Accomplished.** 3 plan tasks + 3 commits:
+- Task 9 (`a84436a`) — VizdoomBasic actor / critic / vision_probe
+  text templates at `src/cleanrl_vlm/prompts/templates/vizdoom/basic/`.
+- Task 10 (`2375a82`) — `parser.py` with regex last-match + whitelist
+  (reviewer M2 + M3); `builder.py` with env-id → slug map. 9 tests.
+- Task 11 (new SHA) — `rollout/buffer.py` with `compute_gae` + dataclass
+  `RolloutBuffer`; `tests/unit/test_gae.py` + `test_rollout_buffer.py`
+  + `tests/invariants/test_inv_10_episode_boundary.py`. 4 tests.
+
+**Decisions.**
+
+1. **Iter 9 exceeded the planned scope again.** Planned: tasks 9+10.
+   Actual: tasks 9+10+11. Rollout/buffer.py is dense but the test +
+   impl blocks from the plan are short enough to fit. Continues the
+   pattern established iters 6-7 of expanding iter scope when budget
+   permits.
+
+2. **Plan literal `src.cleanrl_vlm` → `cleanrl_vlm` rule keeps holding
+   silently.** 6 test files now use the corrected import; no
+   surprises.
+
+3. **`RolloutBuffer` as `@dataclass` with `field(init=False)` + `__post_init__`.**
+   The plan's snippet had bare tensor assignments in `__post_init__`
+   without declaring the fields, which works but produces a ruff
+   warning under strict annotations. Added `field(init=False)`
+   declarations for each tensor attribute.
+
+4. **GAE bootstrap handled via `next_value` + `next_done` args.**
+   Matches CleanRL convention. Inv-10 test explicitly covers
+   episode-1-ends-at-step-1 pathology and confirms no cross-episode
+   contamination.
+
+**Verification evidence.**
+
+- Task 10: `uv run --no-env-file pytest tests/unit/test_action_parser.py
+  tests/unit/test_prompt_builder.py -v` → 9 passed in 0.75s.
+- Task 11: `uv run --no-env-file pytest tests/unit/test_gae.py
+  tests/unit/test_rollout_buffer.py
+  tests/invariants/test_inv_10_episode_boundary.py -v` → 4 passed in
+  38.06s (imports dominate).
+
+**Running totals.** 36 tests committed through iter 9:
+- 8 env factory + 6 lora topology + 3 heads + 7 action parser +
+  2 prompt builder + 2 rollout buffer + 1 GAE = **29 unit**
+- 3 Inv-01 + 3 Inv-03 + 1 Inv-10 = **7 invariant**
+- 1 hello-VLM smoke (GPU, iter 3) = **1 smoke**
+- 2 test_imports + 4 test_spec_exists (iter 2) = **6 meta**
+Total confirmed green: 43.
+
+**Skills invoked.**
+- `superpowers:test-driven-development` — tasks 10 + 11 followed
+  red→green strictly. Task 9 is static content; no test.
+- `superpowers:verification-before-completion` — each task committed
+  only after green test output.
+
+**Follow-ups (iter 10).**
+
+- Task 12 — `generate_cot_actions` + `CotRolloutStep` dataclass.
+  Requires loading the real VLM model for an end-to-end test, OR
+  the iter-4 design's approach of "unit-test the dataclass, exercise
+  the generate path through the integration test later". Likely the
+  latter for iter 10; dataclass + function stub + docstring
+  describing the signature, integration test at Task 20.
+- Task 13 — accelerate config loader + `Fp16State` + Inv-6 test.
+  GPU-dependent for Inv-6 (real GradScaler behavior on real
+  microbatches). Iter 10 may need a GPU run.

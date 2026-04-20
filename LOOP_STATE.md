@@ -1,11 +1,11 @@
 # LOOP_STATE.md
 
-**Last updated:** 2026-04-20 (iter 8 — model layer cornerstone done, tasks 1-8/27).
+**Last updated:** 2026-04-20 (iter 9 — prompts + parser + rollout buffer done, tasks 1-11/27).
 **Maintained by:** the autonomous `/loop` agent; humans read only.
 
 ## Current phase
 
-**Phase:** `B-ppo-cot-vizdoom-basic-2B` — **executing**. Plan tasks 1-8 complete. 23 tests green (17 unit + 6 invariant). Model layer complete through DecoupledActorCriticVLM_COT + dual-adapter LoRA + active_adapter tripwire + Inv-1/3 with M4 extensions. TinyVLM CPU stub (111 LOC, under 150 time-box) ran the invariant tests in 140.52s on CPU. Next iter picks up Task 9 (prompt templates) and Task 10 (parser + builder).
+**Phase:** `B-ppo-cot-vizdoom-basic-2B` — **executing**. Plan tasks 1-11/27 complete (40% through). **36 tests green** (26 unit + 7 invariant + 1 hello-VLM smoke + 2 earlier smoke/test). Next iter picks up Task 12 (generate_cot_actions with typed CotRolloutStep dataclass, reviewer M1).
 
 ## Iter 5 sub-step completed
 
@@ -76,9 +76,9 @@ available, verifies locally, commits.
 - [x] Task 6 — MLP heads (CriticHead / ActorHead) — iter 7
 - [x] Task 7 — BaseVLM wrapper — iter 7
 - [x] Task 8 — DecoupledActorCriticVLM_COT + active_adapter ctxmgr + Inv-1/3 tests — iter 8
-- [ ] Task 9 — VizdoomBasic prompt templates
-- [ ] Task 10 — parser + PromptBuilder (M2, M3)
-- [ ] Task 11 — RolloutBuffer + GAE + Inv-10
+- [x] Task 9 — VizdoomBasic prompt templates — iter 9
+- [x] Task 10 — parser + PromptBuilder (M2, M3) — iter 9
+- [x] Task 11 — RolloutBuffer + GAE + Inv-10 — iter 9
 - [ ] Task 12 — generate_cot_actions + CotRolloutStep (M1)
 - [ ] Task 13 — accelerate config loader + Fp16State + Inv-6
 - [ ] Task 14 — microbatch_probe (M7)
