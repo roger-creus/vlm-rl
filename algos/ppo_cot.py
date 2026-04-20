@@ -248,7 +248,7 @@ def main() -> None:  # noqa: C901  (trainer orchestration; complexity expected)
     monitor.register("inv_01", check_inv_01_lora_trainability)
     monitor.register("inv_05", check_inv_05_grad_norm)
 
-    pad_id = ac_model.vlm.processor.tokenizer.pad_token_id or 0
+    pad_id = ac_model.vlm.processor.tokenizer.pad_token_id
 
     global_step = 0
     start_time = time.time()

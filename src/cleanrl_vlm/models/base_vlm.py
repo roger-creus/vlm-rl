@@ -38,6 +38,18 @@ class BaseVLM(nn.Module):
             min_pixels=min_pixels,
             max_pixels=max_pixels,
         )
+        # Downstream code uses tokenizer.pad_token_id to build attention
+        # masks and the generated-span mask for Inv-4. If the tokenizer
+        # didn't declare one, fall back to eos_token — zero would be a
+        # valid content token in some SentencePiece vocabs and would
+        # silently mask real generated tokens out of the logprob sum.
+        if self.processor.tokenizer.pad_token_id is None:
+            if self.processor.tokenizer.eos_token_id is None:
+                raise RuntimeError(
+                    f"{vlm_name} tokenizer has neither pad_token_id nor eos_token_id; "
+                    "cannot build attention_mask / span_mask safely."
+                )
+            self.processor.tokenizer.pad_token = self.processor.tokenizer.eos_token
         self.model = AutoModelForImageTextToText.from_pretrained(
             vlm_name,
             dtype=dtype,

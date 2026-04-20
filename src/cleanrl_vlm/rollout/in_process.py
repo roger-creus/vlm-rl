@@ -58,7 +58,7 @@ def generate_cot_actions(
 
     B, S = full_ids.shape
     device = full_ids.device
-    pad_id = ac_model.vlm.processor.tokenizer.pad_token_id or 0
+    pad_id = ac_model.vlm.processor.tokenizer.pad_token_id
     eos_id = ac_model.vlm.processor.tokenizer.eos_token_id
 
     actions_list: list[int] = []
