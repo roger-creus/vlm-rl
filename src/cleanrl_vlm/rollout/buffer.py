@@ -49,6 +49,13 @@ class RolloutBuffer:
     dones: torch.Tensor = field(init=False)
     advantages: torch.Tensor = field(init=False)
     returns: torch.Tensor = field(init=False)
+    # Variable-length per step: trainer appends one ``[num_envs, S_t]`` LongTensor
+    # per rollout step (``S_t`` = prompt_len_t + gen_len_t, padded to max in batch)
+    # so the PPO update re-score can pass them back as ``action_ids`` to the
+    # actor adapter without re-running ``.generate()``. ``prompt_lens_per_step[t]``
+    # is a ``[num_envs]`` LongTensor of per-row prompt lengths.
+    full_ids_per_step: list[torch.Tensor | None] = field(init=False)
+    prompt_lens_per_step: list[torch.Tensor | None] = field(init=False)
 
     def __post_init__(self) -> None:
         shape = (self.num_steps, self.num_envs)
@@ -60,6 +67,8 @@ class RolloutBuffer:
         self.dones = torch.zeros(shape, dtype=torch.float32, device=self.device)
         self.advantages = torch.zeros(shape, dtype=torch.float32, device=self.device)
         self.returns = torch.zeros(shape, dtype=torch.float32, device=self.device)
+        self.full_ids_per_step = [None] * self.num_steps
+        self.prompt_lens_per_step = [None] * self.num_steps
 
     def compute_gae(
         self,

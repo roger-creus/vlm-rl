@@ -219,6 +219,10 @@ def main() -> None:  # noqa: C901  (trainer orchestration; complexity expected)
             buffer.actions[step] = cot.actions
             buffer.logprob_sum[step] = cot.logprob_sum
             buffer.values[step] = value
+            # Cache full_ids + prompt_lens per step so the PPO update can re-score
+            # under the (now updated) actor adapter without re-running generate.
+            buffer.full_ids_per_step[step] = cot.full_ids.detach()
+            buffer.prompt_lens_per_step[step] = cot.prompt_lens.detach()
 
             obs_np, reward_np, term_np, trunc_np, info = envs.step(cot.actions.cpu().numpy())
             obs = torch.as_tensor(obs_np, device="cuda", dtype=torch.uint8)
@@ -251,15 +255,39 @@ def main() -> None:  # noqa: C901  (trainer orchestration; complexity expected)
                 _mb_val = buffer.values.view(args.batch_size)[mb]
                 mb_lp_old = buffer.logprob_sum.view(args.batch_size)[mb]
 
-                # ITER-14 SHORTCUT (proper fix iter 15): full re-score needs cached
-                # full_ids per rollout step; the RolloutBuffer doesn't hold them
-                # yet. Calling get_action() here hits the generate path and returns
-                # a 4-tuple this 2-unpack can't absorb. Use ratio=1.0
-                # (lp_new = mb_lp_old) so the trainer runs end-to-end for Task 20
-                # without actually learning; Task 23 real training + iter-15's
-                # full_ids caching restore PPO correctness.
-                lp_new = mb_lp_old.clone()
-                entropy = torch.zeros_like(mb_lp_old)
+                # Re-score path (iter 15): gather cached full_ids per minibatch
+                # row, pad to the row-max, pass as action_ids to the actor adapter.
+                # `get_action` returns (log_probs, entropy) on the action_ids path.
+                pad_id = ac_model.vlm.processor.tokenizer.pad_token_id or 0
+                rows: list[torch.Tensor] = []
+                plens: list[torch.Tensor] = []
+                for idx_t in mb:
+                    flat = int(idx_t.item())
+                    t_idx = flat // args.num_envs
+                    b_idx = flat % args.num_envs
+                    rows.append(buffer.full_ids_per_step[t_idx][b_idx])  # [S_t]
+                    plens.append(buffer.prompt_lens_per_step[t_idx][b_idx])  # []
+                max_s = max(r.shape[0] for r in rows)
+                mb_full_ids = torch.full((len(rows), max_s), pad_id, dtype=torch.long, device=rows[0].device)
+                for i, r in enumerate(rows):
+                    mb_full_ids[i, : r.shape[0]] = r
+                mb_prompt_lens = torch.stack(plens)
+
+                log_probs, entropy = ac_model.get_action(
+                    obs=mb_obs,
+                    text_prompts=[actor_prompt] * mb_obs.shape[0],
+                    action_ids=mb_full_ids,
+                    prompt_lens=mb_prompt_lens,
+                )
+                # Span-sum the per-token logprobs: positions j ∈ [L_i - 1, S-2]
+                # predicting non-pad tokens at j+1 constitute the generated span.
+                positions = torch.arange(mb_full_ids.shape[1] - 1, device=log_probs.device)
+                start_mask = positions.unsqueeze(0) >= (mb_prompt_lens - 1).unsqueeze(1)
+                nonpad_mask = mb_full_ids[:, 1:] != pad_id
+                span_mask = (start_mask & nonpad_mask).to(log_probs.dtype)
+                lp_new = (log_probs * span_mask).sum(dim=-1)
+                # Mean entropy over the same generated span.
+                entropy = (entropy * span_mask).sum(dim=-1) / span_mask.sum(dim=-1).clamp(min=1)
                 # Inv-04 single-path (reviewer B2): epoch 0, minibatch 0 only.
                 if epoch == 0 and start == 0:
                     drift = (lp_new.detach() - mb_lp_old).abs().max().item()

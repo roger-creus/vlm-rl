@@ -13,6 +13,13 @@ import torch
 
 
 def _atomic_rename(src: Path, dst: Path) -> None:
+    # ``os.replace`` atomically replaces a file OR an *empty* directory on POSIX,
+    # but refuses to replace a non-empty directory (ENOTEMPTY / EEXIST). Checkpoint
+    # save is intended to be idempotent — overwriting the previous save at the
+    # same step is the correct semantics. If ``dst`` already exists as a
+    # directory, wipe it first so the rename can succeed.
+    if dst.exists():
+        shutil.rmtree(dst)
     os.replace(src, dst)
 
 
