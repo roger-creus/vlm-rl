@@ -292,22 +292,7 @@ def main() -> None:  # noqa: C901  (trainer orchestration; complexity expected)
         buffer.compute_gae(args.gamma, args.gae_lambda, next_value, done)
 
         # ---- PPO update ----
-        # Pre-pad all cached full_ids into a single [batch, S_max] tensor once
-        # per iter so each minibatch gather is a single index_select. Buffer
-        # slots are guaranteed non-None after rollout.
-        step_ids_list = [buffer.full_ids_per_step[t] for t in range(args.num_steps)]
-        step_plen_list = [buffer.prompt_lens_per_step[t] for t in range(args.num_steps)]
-        assert all(s is not None for s in step_ids_list), "rollout left empty slots"
-        mb_max_s = max(s.shape[1] for s in step_ids_list)  # type: ignore[union-attr]
-        flat_full_ids = torch.full((batch_size, mb_max_s), pad_id, dtype=torch.long, device="cuda")
-        flat_prompt_lens = torch.empty(batch_size, dtype=torch.long, device="cuda")
-        for t, (step_ids, step_plens) in enumerate(zip(step_ids_list, step_plen_list, strict=True)):
-            assert step_ids is not None and step_plens is not None
-            i0 = t * args.num_envs
-            flat_full_ids[i0 : i0 + args.num_envs, : step_ids.shape[1]] = step_ids
-            flat_prompt_lens[i0 : i0 + args.num_envs] = step_plens
-
-        b_inds = torch.randperm(batch_size, device="cuda")
+        b_inds = torch.randperm(batch_size, device="cuda").cpu().tolist()
         clip_fracs: list[float] = []
         approx_kls: list[float] = []
         inv_04_status = "skipped"
@@ -320,22 +305,42 @@ def main() -> None:  # noqa: C901  (trainer orchestration; complexity expected)
             for start in range(0, batch_size, minibatch_size):
                 mb = b_inds[start : start + minibatch_size]
 
-                mb_obs = buffer.obs.view(batch_size, *obs_shape)[mb].float()
+                # Row-by-row re-score at batch=1 so each actor forward has the
+                # same shape + padding as the rollout's forward. Batched
+                # re-score with variable-length rows pads the short rows with
+                # pad_id, which invokes a padding-aware fp16 kernel path
+                # whose numerics diverge from batch=1 forwards by O(1e-2)
+                # across 24 layers. That divergence would bias the PPO ratio
+                # -- a real correctness bug, not just an Inv-4 reporting
+                # issue. See amendment 2026-04-20-backbone-switch-to-qwen3.5
+                # and the _debug_inv4_batched.py investigation.
+                lp_new_rows: list[torch.Tensor] = []
+                entropy_rows: list[torch.Tensor] = []
+                obs_rows: list[torch.Tensor] = []
+                for flat_idx in mb:
+                    t_idx = flat_idx // args.num_envs
+                    b_idx = flat_idx % args.num_envs
+                    row_obs = buffer.obs[t_idx, b_idx : b_idx + 1].float()
+                    row_full_ids = buffer.full_ids_per_step[t_idx][b_idx : b_idx + 1]
+                    row_prompt_lens = buffer.prompt_lens_per_step[t_idx][b_idx : b_idx + 1]
+                    log_probs, ent_row = ac_model.get_action(
+                        obs=row_obs,
+                        text_prompts=[actor_prompt],
+                        action_ids=row_full_ids,
+                        prompt_lens=row_prompt_lens,
+                    )
+                    span_mask = generated_span_mask(row_full_ids, row_prompt_lens, pad_id, dtype=log_probs.dtype)
+                    span_count = span_mask.sum(dim=-1).clamp(min=1)
+                    lp_new_rows.append((log_probs * span_mask).sum(dim=-1).squeeze(0))
+                    entropy_rows.append(((ent_row * span_mask).sum(dim=-1) / span_count).squeeze(0))
+                    obs_rows.append(row_obs.squeeze(0))
+                lp_new = torch.stack(lp_new_rows)
+                entropy = torch.stack(entropy_rows)
+                mb_obs = torch.stack(obs_rows)
                 mb_adv = buffer.advantages.view(batch_size)[mb]
                 mb_ret = buffer.returns.view(batch_size)[mb]
                 mb_lp_old = buffer.logprob_sum.view(batch_size)[mb]
-                mb_full_ids = flat_full_ids[mb]
-                mb_prompt_lens = flat_prompt_lens[mb]
 
-                log_probs, entropy = ac_model.get_action(
-                    obs=mb_obs,
-                    text_prompts=[actor_prompt] * mb_obs.shape[0],
-                    action_ids=mb_full_ids,
-                    prompt_lens=mb_prompt_lens,
-                )
-                span_mask = generated_span_mask(mb_full_ids, mb_prompt_lens, pad_id, dtype=log_probs.dtype)
-                lp_new = (log_probs * span_mask).sum(dim=-1)
-                entropy = (entropy * span_mask).sum(dim=-1) / span_mask.sum(dim=-1).clamp(min=1)
                 # Inv-04 single-path: first minibatch of first epoch must
                 # match the rollout's cached logprob_sum (ratio ≈ 1).
                 if epoch == 0 and start == 0:

@@ -100,6 +100,30 @@ Investigation options for a future iter:
 - Switch to BF16 — larger exponent, less reduction-order noise —
   per master-spec §1 this is the first-class ablation.
 
-This signal does not affect the user-requested checks (image
-perception, LoRA wiring, mechanical invariants) — those are all green
-on the new backbone.
+## Resolution (iter 21)
+
+Root-caused and fixed. A targeted diagnostic probe (since removed)
+ran 2 rollout steps at `num_envs=1` then re-scored each cached row
+both **alone** at batch=1 and **together** at batch=2 (padded to
+S_max). Observed:
+
+- Solo re-score: drift = `0.0` for **both** rows (bit-exact).
+- Batched re-score: the **shorter** row (padded with `pad_id` to
+  S_max) has drift = `2.93e-02`. The longer row (no trailing pad)
+  has drift = `0.0`.
+
+So the noise is not "batch=2 in general" — it is specifically the
+*padded* row whose forward passes through a padding-aware kernel
+path whose fp16 numerics differ from the rollout's batch=1 no-pad
+forward. The padded-row bias is not a reporting nuisance — it would
+bias the PPO ratio and therefore the policy gradient, a real
+correctness defect.
+
+**Fix** (iter 21, commit following this amendment): PPO update
+re-scores row-by-row at batch=1, each call with the row's own
+`full_ids` and `prompt_lens`. This matches rollout semantics exactly.
+The integration test's new `inv_4_status == "green"` assertion
+reproduces the bug pre-fix (drift ~8e-3) and passes post-fix
+(drift = 0.0). Wall-clock cost is `minibatch_size × forward_time`
+instead of `1 × batched_forward`; acceptable for Tier-1. Tier-2
+optimization can revisit with a length-bucketing scheme later.

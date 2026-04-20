@@ -75,3 +75,15 @@ def test_ppo_cot_short_run(tmp_path: Path):
     header = body[0].split(",")
     for col in ["gen_truncated_rate", "lora_weight_norm_actor", "inv_4_status"]:
         assert col in header
+
+    # Inv-4 single-path drift at epoch=0 / minibatch=0 must be green: the
+    # re-score path runs under the same actor adapter on the same cached
+    # full_ids as the rollout — before any gradient step, ratio must be 1
+    # within fp16 noise. Red here means the re-score forward has fp16
+    # divergence vs the rollout forward (e.g., padding-induced drift in a
+    # batched re-score vs batch=1 rollout).
+    row = dict(zip(header, body[1].split(","), strict=True))
+    assert row["inv_4_status"] == "green", (
+        f"Inv-4 single-path parity red on iter 1. "
+        f"approx_kl={row.get('approx_kl')} (mean); re-score path has diverged from rollout."
+    )

@@ -6,6 +6,60 @@ One entry per iteration, not per commit within an iteration.
 
 ---
 
+## 2026-04-20 — iter 21 — fix batched Inv-4 drift: row-by-row re-score (plan task 28)
+
+**What.** 1 commit resolving the iter-20 `inv_4_status=red` signal. Root
+cause identified as a real correctness bug (not an Inv-4 reporting
+nuisance), fixed, and the integration test tightened to assert
+parity.
+
+- PPO update loop in `algos/ppo_cot.py` re-scores row-by-row at
+  batch=1 (matches rollout semantics exactly). Removed the iter-20
+  `flat_full_ids` pre-pad block. Each minibatch row now runs its own
+  `get_action(action_ids=row_full_ids, prompt_lens=row_plen)` forward,
+  with results stacked back into `[minibatch_size]` tensors for the
+  PPO loss aggregation.
+- `tests/integration/test_trainer_short_run.py` now asserts
+  `inv_4_status == "green"` on iter 1 — reproduces the bug pre-fix,
+  passes post-fix.
+- Amendment `2026-04-20-backbone-switch-to-qwen3.5.md` updated with a
+  **Resolution** section documenting the diagnostic + fix.
+
+**Why.** The iter-20 diagnostic probe (since removed) showed the
+drift is **not** fp16 noise inherent to batched forward — it is
+padding-row-specific. When a shorter row is padded to S_max in a
+batched re-score, its forward passes through a padding-aware kernel
+path whose fp16 numerics diverge by ~3e-2 from the rollout's
+batch=1 no-pad forward. The longer row (no trailing pad) had exact
+parity. Bias this introduces would skew the PPO ratio and therefore
+the policy gradient — not just a reporting issue.
+
+**Evidence.**
+- Diagnostic probe (logged in AUTONOMY_LOG):
+  - solo re-score (batch=1): drift = `0.0` for BOTH rows.
+  - batched re-score (batch=2, padded): short row drift =
+    `2.93e-02`; long row drift = `0.0`.
+- Pre-fix integration test: `approx_kl=-0.007843`, `inv_4_status=red`,
+  `assert row["inv_4_status"] == "green"` → **AssertionError**.
+- Post-fix integration test: `approx_kl=0.0`, `inv_4_status=green`,
+  test passes in 68.03 s.
+- CPU regression: `pytest tests/unit tests/invariants -m "not gpu"` →
+  49/49 pass.
+- GPU wiring regression: `pytest tests/integration/
+  test_qwen35_backbone_wiring.py` → 7/7 pass in 36.81 s.
+
+**Invariants run.**
+- Inv-4 (logprob parity, single-path): **green** post-fix on the
+  integration test.
+- Inv-1/3/8/2: still green on real-backbone wiring tests.
+- Inv-5/6/9/10/11/13: still green on CPU.
+
+**Known issue (orthogonal).**
+`grad_norm_global=nan` in iter-1 metrics — pre-existing; also present
+in iter-20 runs. Independent from this fix (investigation queued).
+
+---
+
 ## 2026-04-20 — iter 20 — simplify pass + backbone switch to Qwen3.5 (plan task 25 + user pivot)
 
 **What.** Two substantial commits closing plan Task 25 and executing a
