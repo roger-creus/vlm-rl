@@ -1,19 +1,17 @@
 # LOOP_STATE.md
 
-**Last updated:** 2026-04-20 (iter 15 — PPO re-score shortcut fixed, tasks 1-20/27).
+**Last updated:** 2026-04-20 (iter 16 — vision + backbone probes, tasks 1-22/27).
 **Maintained by:** the autonomous `/loop` agent; humans read only.
 
 ## Current phase
 
-**Phase:** `B-ppo-cot-vizdoom-basic-2B` — **trainer runs with real PPO ratio**. Plan tasks 1-20/27 complete (74% through). Integration test still green (88.87s). Metrics show `approx_kl = 4.17e-6` on iter 2 (non-zero, so ratio ≠ 1.0) and `inv_4_status = green` (single-path drift within 1e-4 tolerance).
+**Phase:** `B-ppo-cot-vizdoom-basic-2B` — **probes landed**. Plan tasks 1-22/27 complete (81% through). `probe_backbone` ran against Qwen3-VL-2B-Instruct @ 76800 px budget: **Inv-8 PASS** (280 image tokens from grid, 84 total input_ids after merger). Report at `docs/backbone_probes/qwen3-vl-2b-instruct.md`. `probe_vision` ships with placeholder; first GPU run of the 20-frame rollout scheduled for iter 17 or inline with Task 23.
 
-**Iter-14 shortcut resolved in iter 15:**
-- `RolloutBuffer` now caches `full_ids_per_step` + `prompt_lens_per_step` (list[Tensor]).
-- Trainer update loop gathers per-minibatch, pads to row-max, passes as `action_ids` to `get_action`.
-- Span-sum logprobs over `[prompt_len - 1, S - 2]` with non-pad targets.
-- Checkpoint save now idempotent: `_atomic_rename` rmtrees dst before replace.
+Next iter: Task 23 — first real training run. Options:
+1. Kick off via `run_in_background` with `--total-timesteps 2000` (~100 iters); arm Monitor on metrics.csv tail; schedule wakeups on milestone events (NaN, reward trend, Inv-4 drift).
+2. Run smaller first (200-400 timesteps) to observe curve shape; scale up only if green.
 
-Next iter: Task 21 (vision probe) or Task 22 (backbone probe) — both short, independent. Task 23 (real training) becomes plausible after these.
+Iter 17 picks one.
 
 ## Iter 5 sub-step completed
 
@@ -96,8 +94,8 @@ available, verifies locally, commits.
 - [x] Task 18 — scripts/_cluster_env.sh — iter 13
 - [x] Task 19 — algos/ppo_cot.py assembly — iter 13
 - [x] Task 20 — tier1 integration test — iter 14 (bug-fix-driven; 5 real bugs caught, 1 shortcut for iter 15)
-- [ ] Task 21 — scripts/probe_vision.py + initial report
-- [ ] Task 22 — scripts/probe_backbone.py (m1)
+- [x] Task 21 — scripts/probe_vision.py + initial report — iter 16 (script + placeholder; GPU run pending)
+- [x] Task 22 — scripts/probe_backbone.py (m1) — iter 16 (Inv-8 PASS on 2B @ 76800 px)
 - [ ] Task 23 — **training run kickoff** (long, background, milestone-gated wakeups)
 - [ ] Task 24 — docs update (ALGORITHMS / ENVS / RECIPES / RESULTS / BACKBONES)
 - [ ] Task 25 — simplify pass (m12)

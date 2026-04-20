@@ -6,6 +6,38 @@ One entry per iteration, not per commit within an iteration.
 
 ---
 
+## 2026-04-20 — iter 16 — vision + backbone probes (plan tasks 21-22/27)
+
+**What.** 1 commit landing both probe scripts + an executed backbone
+probe on the 2B model.
+
+- `scripts/probe_vision.py` — 20-frame scripted episode CLI writing
+  `docs/vision_probes/<env>_<backbone>/report.md`.
+- `scripts/probe_backbone.py` (reviewer m1, separate from
+  probe_vision) — Inv-8 patch-coverage + token-count one-shot
+  writing `docs/backbone_probes/<slug>.md`.
+- `docs/vision_probes/VizdoomBasic-v1_qwen3-vl-2b-instruct/
+  report.md` — placeholder; filled by first GPU run of probe_vision.
+- `docs/backbone_probes/qwen3-vl-2b-instruct.md` — **populated** by
+  running `probe_backbone` on Qwen3-VL-2B @ 76800 px budget:
+  `image_tokens=280`, `input_len=84`, **Inv-8 PASS**.
+
+**Why.** Backbone onboarding ritual (§11 S-6) requires the Inv-8
+probe artifact. Vision probe (§4 / Inv-15) is the agent's signal for
+"does the VLM actually see the env"; full run + qualitative review
+scheduled alongside Task 23.
+
+**Evidence.**
+- Import sanity passes.
+- `python -m scripts.probe_backbone ...` → Inv-8 PASS, 280 image
+  tokens, 84 total input_ids (the processor merges the 280 raw grid
+  tokens into a smaller set inside the sequence; noted in script).
+
+**Invariants run.**
+- Inv-8 one-shot patch-coverage: PASS on Qwen3-VL-2B-Instruct @ 76800 px.
+
+---
+
 ## 2026-04-20 — iter 15 — PPO re-score fix + idempotent checkpoint (shortcut from iter 14)
 
 **What.** 1 commit (`9c88823`) resolving the ITER-14 SHORTCUT

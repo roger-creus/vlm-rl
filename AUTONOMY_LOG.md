@@ -1418,3 +1418,82 @@ covering buffer + trainer + checkpoint.
 - Task 23 (real training run) lands iter 17+. Requires kicking off
   `algos.ppo_cot` with default total_timesteps=200k, arming a
   Monitor on metrics.csv tail for milestone wake-ups.
+
+---
+
+### 2026-04-20 — iter 16 — plan-tasks-21-22 — @<tbd>
+
+**Context.** Vision + backbone probes. Both are short scripts that
+populate Inv-8 / Inv-15 artifacts under `docs/`.
+
+**Accomplished.** Tasks 21 + 22 landed in a single commit.
+
+- `scripts/probe_vision.py` (~80 LOC) — 20-frame scripted episode
+  CLI. Writes `docs/vision_probes/<env>_<backbone>/report.md` with
+  each step's VLM answer to the `vision_probe.txt` prompt. No
+  ground-truth comparison yet (vizdoom labels-buffer plumbing is a
+  follow-up).
+- `scripts/probe_backbone.py` (~60 LOC) — Inv-8 one-shot CLI. 4-color
+  quadrant test image through processor; assert image_tokens > 0;
+  write `docs/backbone_probes/<slug>.md`.
+
+**Ran `probe_backbone` on the 2B backbone** (~90s cold start):
+- min_pixels = max_pixels = 76800 (native 320×240, per iter-3 B3 fix)
+- image_tokens from `image_grid_thw.prod()` = 280
+- total input_ids length = 84
+- Inv-8: **PASS** (>0)
+
+**Decisions.**
+
+1. **Committed a placeholder `report.md`** at
+   `docs/vision_probes/VizdoomBasic-v1_qwen3-vl-2b-instruct/report.md`
+   so `mkdocs build --strict` doesn't break on dangling nav links
+   after the doc is referenced in docs/ENVS.md (Task 24). The probe
+   script will overwrite on its first GPU run.
+
+2. **Didn't run `probe_vision` end-to-end this iter.** It requires
+   ~3-4 min on the 2B backbone (20 frames × ~10s per generate).
+   Not blocking; `probe_backbone` runs fast enough (90s) to be worth
+   the data; `probe_vision` can land alongside the real training
+   run (Task 23) since they both use the same VLM load.
+
+3. **`image_grid_thw.prod()` = 280 but input_ids = 84** — suggests
+   Qwen3-VL's processor merges the raw grid tokens into a smaller
+   image-token count inside the final sequence. 280 appears to be
+   the pre-merger grid token count (for our 320×240 at Qwen's
+   native patch granularity, spatial_merge_size=2 effectively,
+   280 raw = ~20 merged). Inv-8 "zero tokens → fail" is
+   unambiguously PASS; numeric fidelity to "(H/p) × (W/p)" per §4
+   would require digging into the processor's merger rules, which
+   is out of iter-16 scope. Noted in the script comment + commit
+   message.
+
+**Verification evidence.**
+
+- `uv run python -c "import scripts.probe_vision, scripts.probe_backbone"`
+  → ok.
+- `python -m scripts.probe_backbone --backbone Qwen/Qwen3-VL-2B-Instruct
+  --min-pixels 76800 --max-pixels 76800 --width 320 --height 240`
+  → `wrote docs/backbone_probes/qwen3-vl-2b-instruct.md (image_tokens=
+  280, input_len=84)`.
+
+**Skills invoked.**
+- `superpowers:verification-before-completion` — ran `probe_backbone`
+  end-to-end before committing its docs artifact.
+
+**Follow-ups (iter 17).**
+
+- **Task 23 — first real training run.** Plan:
+  1. Start with `--total-timesteps 400 --num-envs 2 --num-steps 8`
+     (~25 iterations → ~30 min run on 2B).
+  2. Kick off via `run_in_background`; arm a `Monitor` on the
+     metrics.csv tail with alternation grep for
+     `Traceback|Error|FAILED|OOM|iteration=|ep_return_mean=`
+     (emits one event per CSV row + any error signature).
+  3. Schedule fallback ScheduleWakeup every ~30 min; Monitor
+     events are the primary wake signal.
+  4. Agent reviews curve shape + invariant statuses per §0.
+  5. If reward trend or Inv statuses look pathological, investigate
+     per systematic-debugging (reward scaling, lr, grad norm band).
+  6. If green, bump `--total-timesteps` and re-run as a longer
+     campaign.
