@@ -1,0 +1,143 @@
+[project]
+name = "cleanrl-vlm"
+version = "0.0.1"
+description = "CleanRL-style library + research paper for online RL finetuning of Vision-Language Models in interactive visual environments."
+authors = [{ name = "Roger Creus Castanyer", email = "roger@vmax.ai" }]
+readme = "README.md"
+requires-python = ">=3.10,<3.13"
+license = { text = "MIT" }
+keywords = [
+    "reinforcement learning",
+    "vision-language models",
+    "PPO",
+    "GRPO",
+    "RLOO",
+    "LoRA",
+    "VLM",
+    "atari",
+    "vizdoom",
+    "minigrid",
+    "research",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+dependencies = [
+    # Core ML
+    "torch==2.6.0",
+    "torchvision==0.21.0",
+    "torchaudio==2.6.0",
+    "transformers @ git+https://github.com/huggingface/transformers",
+    "peft>=0.13.0",
+    "accelerate>=1.0.0",
+    "deepspeed>=0.15.0",
+    "vllm>=0.7.0",
+    # Envs
+    "gymnasium>=1.0.0",
+    "vizdoom>=1.2.3",
+    "minigrid>=3.0.0",
+    "ale-py>=0.9.0",
+    "AutoROM[accept-rom-license]>=0.6.1",
+    # Imaging
+    "opencv-python>=4.10.0",
+    "pillow>=10.4.0",
+    # Scientific
+    "numpy>=1.26.0,<2",
+    "scipy>=1.13.0",
+    "pandas>=2.2.0",
+    "pyarrow>=17.0.0",
+    # Config + CLI
+    "pyyaml>=6.0",
+    "tyro>=0.8.0",
+    # Logging
+    "rich>=13.0.0",
+    "wandb>=0.18.0",
+    "tensorboard>=2.17.0",
+    # Utilities
+    "tqdm>=4.66.0",
+    "huggingface-hub>=0.25.0",
+]
+
+[project.optional-dependencies]
+perf = [
+    # flash-attn requires torch installed first + --no-build-isolation;
+    # document separate install step in README.
+    # listed here so tooling surfaces it, but UV users install manually:
+    #   uv pip install flash-attn==2.7.4.post1 --no-build-isolation
+]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-timeout>=2.3.0",
+    "pytest-xdist>=3.6.0",
+    "ruff>=0.6.0",
+    "pyright>=1.1.380",
+    "pre-commit>=4.0.0",
+    "mkdocs>=1.6.0",
+    "mkdocs-material>=9.5.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/roger-creus/cleanrl-vlm"
+Documentation = "https://roger-creus.github.io/cleanrl-vlm"
+Repository = "https://github.com/roger-creus/cleanrl-vlm"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/cleanrl_vlm"]
+
+[tool.uv]
+# UV handles most installation automatically; flash-attn is still a separate step.
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "B",    # flake8-bugbear
+    "UP",   # pyupgrade
+    "SIM",  # flake8-simplify
+]
+ignore = [
+    "E501",   # line-too-long (handled by formatter)
+    "B008",   # function-call-in-default-argument (common for typer/tyro)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["E402"]  # late imports in tests are fine
+"algos/**" = ["E402"]  # single-file trainers sometimes need late imports
+
+[tool.pyright]
+include = ["src/cleanrl_vlm"]
+exclude = ["**/__pycache__", "**/.venv", "**/build"]
+pythonVersion = "3.10"
+typeCheckingMode = "basic"
+reportMissingImports = "warning"
+reportMissingTypeStubs = false
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = "-ra --strict-markers --strict-config"
+testpaths = ["tests"]
+markers = [
+    "tier1: fast smoke tests that run on CI (0.8B backbone, short runs)",
+    "tier2: overnight / paper runs (4B backbone, longer runs)",
+    "invariant: correctness invariants from master-spec §8",
+    "gpu: requires at least one GPU",
+    "vllm: requires vLLM to be installed and loadable",
+]
+timeout = 600
