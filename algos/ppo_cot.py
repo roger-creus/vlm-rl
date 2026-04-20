@@ -333,10 +333,14 @@ def main() -> None:  # noqa: C901  (trainer orchestration; complexity expected)
             for mb_start in range(0, args.num_steps, steps_per_mb):
                 mb_steps = step_inds[mb_start : mb_start + steps_per_mb]
 
-                # Re-score each step at batch=num_envs (matches rollout).
+                # Re-score each step at batch=num_envs (matches rollout's
+                # forward shape for both actor and critic — keeps flash-attn
+                # kernel dispatch identical so Inv-4 parity holds on the
+                # actor side AND value targets don't silently drift from the
+                # cached rollout values on the critic side).
                 lp_new_parts: list[torch.Tensor] = []
                 entropy_parts: list[torch.Tensor] = []
-                obs_parts: list[torch.Tensor] = []
+                newvalue_parts: list[torch.Tensor] = []
                 for t in mb_steps:
                     step_full_ids = buffer.full_ids_per_step[t]
                     step_prompt_lens = buffer.prompt_lens_per_step[t]
@@ -352,10 +356,10 @@ def main() -> None:  # noqa: C901  (trainer orchestration; complexity expected)
                     span_count = span_mask.sum(dim=-1).clamp(min=1)
                     lp_new_parts.append((log_probs * span_mask).sum(dim=-1))
                     entropy_parts.append((ent_t * span_mask).sum(dim=-1) / span_count)
-                    obs_parts.append(step_obs)
+                    newvalue_parts.append(ac_model.get_value(step_obs, [critic_prompt] * args.num_envs).view(-1))
                 lp_new = torch.cat(lp_new_parts)
                 entropy = torch.cat(entropy_parts)
-                mb_obs = torch.cat(obs_parts)
+                newvalue = torch.cat(newvalue_parts)
 
                 # Flat [batch_size] layout mirrors buffer.obs.view(batch_size, ...)
                 # ordering (step-major, env-minor) so we can gather matching
@@ -381,7 +385,6 @@ def main() -> None:  # noqa: C901  (trainer orchestration; complexity expected)
                 pg_2 = -mb_adv_n * ratio.clamp(1 - args.clip_coef, 1 + args.clip_coef)
                 pg_loss = torch.max(pg_1, pg_2).mean()
 
-                newvalue = ac_model.get_value(mb_obs, [critic_prompt] * mb_obs.shape[0]).view(-1)
                 v_loss = 0.5 * ((newvalue - mb_ret.to(newvalue.dtype)) ** 2).mean()
 
                 ent = entropy.mean()
