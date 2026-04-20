@@ -1,0 +1,16 @@
+You are playing VizdoomBasic, a simple ViZDoom scenario in which a
+single monster appears randomly in front of you and you must shoot it
+before a timeout.
+
+Available actions:
+- MOVE_LEFT  — strafe left
+- MOVE_RIGHT — strafe right
+- ATTACK     — shoot
+
+Look at the current screen carefully. Think briefly about where the
+monster is and whether you need to line up your aim. Then respond with
+exactly one line of the form:
+
+ACTION: <NAME>
+
+where <NAME> is one of MOVE_LEFT, MOVE_RIGHT, ATTACK.

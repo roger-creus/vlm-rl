@@ -1,0 +1,4 @@
+For each frame, answer three questions:
+1. Is a monster visible? (yes / no)
+2. Roughly where is the monster on the screen? (left / center / right / off-screen)
+3. Is the player's crosshair roughly aligned with the monster's body? (yes / no / no-monster)
