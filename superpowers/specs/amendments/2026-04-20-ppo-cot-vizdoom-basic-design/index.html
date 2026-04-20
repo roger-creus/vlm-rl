@@ -1,0 +1,1784 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Online RL finetuning of Vision-Language Models in interactive visual environments.">
+      
+      
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>PPO-COT on VizdoomBasic-v0 with Qwen3-VL-2B-Instruct — Design Spec - cleanrl-vlm</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="black" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#ppo-cot-vizdoombasic-qwen3-vl-2b-instruct-design" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../../.." title="cleanrl-vlm" class="md-header__button md-logo" aria-label="cleanrl-vlm" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            cleanrl-vlm
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              PPO-COT on VizdoomBasic-v0 with Qwen3-VL-2B-Instruct — Design Spec
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="black" data-md-color-accent="indigo"  aria-hidden="true"  type="radio" name="__palette" id="__palette_0">
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/roger-creus/cleanrl-vlm" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../../../ARCHITECTURE/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Architecture
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../../../ALGORITHMS/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Algorithms
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../../../ENVS/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Environments
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../../../BACKBONES/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Backbones
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../../../RECIPES/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Recipes
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../../../RESULTS/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Results
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../../../RESEARCH/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Research
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../../../INVARIANTS/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Invariants
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../../../CHECKPOINTING/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Checkpointing
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../../../LOGGING/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Logging
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../../../CONTRIBUTING/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Contributing
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../../../TROUBLESHOOTING/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Troubleshooting
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+  
+
+<nav class="md-nav md-nav--primary md-nav--lifted md-nav--integrated" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../../.." title="cleanrl-vlm" class="md-nav__button md-logo" aria-label="cleanrl-vlm" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    cleanrl-vlm
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/roger-creus/cleanrl-vlm" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../ARCHITECTURE/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../ALGORITHMS/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Algorithms
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../ENVS/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Environments
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../BACKBONES/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backbones
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../RECIPES/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Recipes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../RESULTS/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Results
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../RESEARCH/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Research
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../INVARIANTS/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Invariants
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../CHECKPOINTING/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Checkpointing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../LOGGING/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Logging
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../CONTRIBUTING/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../TROUBLESHOOTING/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="ppo-cot-vizdoombasic-qwen3-vl-2b-instruct-design">PPO-COT · VizdoomBasic · Qwen3-VL-2B-Instruct — Design<a class="headerlink" href="#ppo-cot-vizdoombasic-qwen3-vl-2b-instruct-design" title="Permanent link">&para;</a></h1>
+<p>This design spec is the source of truth for task <strong><code>B-ppo-cot-vizdoom-basic-2B</code></strong> — the first canon trainer. A detailed per-task implementation plan follows in <code>docs/superpowers/specs/plans/2026-04-20-ppo-cot-vizdoom-basic.md</code> (produced by the writing-plans skill in a subsequent /loop iteration).</p>
+<hr />
+<h2 id="1-goal">§1. Goal<a class="headerlink" href="#1-goal" title="Permanent link">&para;</a></h2>
+<p>Produce <code>algos/ppo_cot.py</code>: a single-file PPO trainer that finetunes
+<code>Qwen/Qwen3-VL-2B-Instruct</code> on <code>VizdoomBasic-v0</code> via the <strong>chain-of-thought
+(COT)</strong> action interface. The VLM generates free-form text; the trainer
+parses <code>ACTION: &lt;NAME&gt;</code> from the tail; the token-level sum-logprob over
+the generated span feeds the PPO loss. A separate critic LoRA adapter on
+the same base weights + an MLP <code>CriticHead</code> provides <code>V(s)</code> for GAE.</p>
+<p><strong>Green = agent judges (§0 / §9):</strong></p>
+<ul>
+<li>Mean episodic return over the last 10 % of the training window is
+  materially above the zero-shot-VLM baseline's return. No target score is
+  asserted as a hard threshold — agent reads the curve.</li>
+<li>§8 invariants Inv-1, Inv-3, Inv-5, Inv-6, Inv-9, Inv-10, Inv-11, Inv-13
+  pass throughout the run (Inv-2/4/7/8/12/14/15 are landed as separate
+  tasks; see §6 below).</li>
+<li>No NaN / Inf events. Grad-norm band stays consistent. Loss-scale
+  history does not collapse.</li>
+<li>Reproducibility: <code>--seed 0</code> re-run matches the first run's curve to
+  within agent-judged tolerance (effectively binary, since Inv-11
+  asserts bitwise equality on the rollout tensor).</li>
+</ul>
+<h2 id="2-scope">§2. Scope<a class="headerlink" href="#2-scope" title="Permanent link">&para;</a></h2>
+<p><strong>In scope</strong> (iter 4+, multiple /loop cycles):</p>
+<ol>
+<li>Env layer port → <code>src/cleanrl_vlm/envs/</code>.</li>
+<li>Model layer port → <code>src/cleanrl_vlm/models/</code>.</li>
+<li>Prompt layer port → <code>src/cleanrl_vlm/prompts/</code> + <code>prompts/vizdoom/basic/</code>.</li>
+<li>Rollout buffer + GAE → <code>src/cleanrl_vlm/rollout/</code>.</li>
+<li>Training helpers (distributed, precision, logging, invariants)
+   → <code>src/cleanrl_vlm/training/</code>.</li>
+<li><code>algos/ppo_cot.py</code> single-file trainer.</li>
+<li>Per-env config: <code>configs/envs/VizdoomBasic-v0.yaml</code>, plus
+   <code>configs/backbones.yaml</code> + <code>configs/targets.yaml</code>.</li>
+<li>Tests: unit + invariant (the eight listed above) + tier1 integration.</li>
+<li>Ground-truth vision probe → <code>scripts/probe_vision.py</code> +
+   <code>prompts/vizdoom/basic/vision_probe.txt</code> + auto-generated
+   <code>docs/vision_probes/VizdoomBasic-v0_qwen3-vl-2b-instruct/report.md</code>.</li>
+<li>Backbone probe artifact → <code>docs/backbone_probes/qwen3-vl-2b-instruct.md</code>.</li>
+<li>Docs: <code>docs/ALGORITHMS.md</code> PPO-COT paragraph + <code>docs/ENVS.md</code> row +
+    <code>docs/RECIPES.md</code> entry + <code>docs/BACKBONES.md</code> probe link.</li>
+</ol>
+<p><strong>Out of scope</strong> (tracked as follow-up tasks in <code>LOOP_STATE.md</code>):</p>
+<ul>
+<li><strong>vLLM rollout path</strong> → <code>E-vllm-rollout-path</code>. iter 4 uses in-process HF
+  generation, which is slow but simple and side-steps the adapter-sync
+  complexity of vLLM. §3 §14 of the master spec are satisfied in a later
+  cycle once the in-process trainer's correctness is established.</li>
+<li><strong>InvariantMonitor runtime hook</strong> → <code>D-invariants-runtime</code>. iter 4 runs
+  invariants only as pytest tests, not continuously inside the training
+  loop.</li>
+<li><strong>Full checkpoint/resume</strong> → <code>J-checkpoint-resume-e2e</code>. iter 4 checkpoints
+  LoRA adapters + critic head + optimizer state + RNG snapshot in a
+  simple format that <code>scripts/resume.py</code> can load; Inv-7 / Inv-12 are
+  left as sanity-log fields until <code>J</code>.</li>
+<li><strong>Distributed multi-rank</strong> → iter 4 runs single-rank (<code>num_processes=1</code>)
+  for simplicity. Inv-14 lands in <code>D</code> when we scale to 2+ ranks.</li>
+<li><strong>Inv-8 image-input correctness probe</strong> → runs as a one-shot at backbone
+  onboarding (this iter) but the runtime-invariant monitor lives in <code>D</code>.</li>
+<li><strong>Reference canon trainers</strong> <code>ppo_action.py</code>, <code>ppo_head.py</code>, and the six
+  GRPO / RLOO variants → <code>F-canon-expand</code>. iter 4 ships only <code>ppo_cot.py</code>
+  to validate the design end-to-end; the action-scoring and MLP-head
+  variants will re-use <code>src/cleanrl_vlm/</code> modules and land incrementally.</li>
+<li><strong>Frame-stack layout</strong> → iter 4 uses a <em>single frame</em> per obs (not the
+  4-frame horizontal tile from master-spec §4) to minimize variables on
+  the first trainer. Frame-stacking becomes a first-class ablation in
+  iter-5+ once the single-frame baseline is green.</li>
+<li><strong>LoRA topology auto-probe</strong> → iter 4 hard-codes the spec's default
+  group set (text_attn + text_mlp + lm_head). The group-enable ablation
+  (<code>runs/&lt;name&gt;/lora_topology_probe.json</code>) happens in <code>F-canon-expand</code> or
+  a dedicated ablation cycle.</li>
+<li><strong>FSDP2 sharding</strong> → iter 4 is single-rank FP16 on one A6000; DS-ZeRO-2
+  and FSDP2 are moot. <code>--sharding</code> flag accepted but ignored at
+  <code>num_processes=1</code>.</li>
+<li><strong>Prompt templates for other ViZDoom scenarios</strong> → <code>C-envs-tier1-expand</code> +
+  <code>I-envs-tier2-full</code>.</li>
+</ul>
+<h2 id="3-architecture-hybrid-library-single-file-trainer">§3. Architecture (hybrid library + single-file trainer)<a class="headerlink" href="#3-architecture-hybrid-library-single-file-trainer" title="Permanent link">&para;</a></h2>
+<p>The master spec's §2 / §5 prescribe CleanRL-like single-file trainers
+backed by a shared library. This section locks the <strong>concrete module
+split</strong> before code lands, so subsequent ports and the six future canon
+trainers can slot in without re-architecting.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>algos/ppo_cot.py                        single-file trainer (~600–800 lines)
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>├── Args (tyro dataclass)               hyperparams + CLI flags
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>├── main()                              iteration loop
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>├── rollout phase                       in-process HF generation
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>├── advantage compute                   GAE
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>├── PPO update                          clipped surrogate + value + entropy
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>├── logging                             rich + wandb + CSV
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>├── checkpoint save                     LoRA + critic head + optim + RNG
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>└── uses → src/cleanrl_vlm/...
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>src/cleanrl_vlm/
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>├── envs/
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>│   ├── registry.py                     make_env(env_id, seed, idx, run_name)
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>│   ├── vizdoom/
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>│   │   ├── __init__.py
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>│   │   ├── factories.py                make_vizdoom_env(env_id, config)
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>│   │   └── action_tables.py            per-scenario button name table
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>│   └── wrappers.py                     FrameSkipEnv, ScreenOnlyWrapper, DiscreteMultiBinaryWrapper
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>├── models/
+<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>│   ├── base_vlm.py                     BaseVLM wrapping AutoModelForImageTextToText
+<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>│   ├── lora_topology.py                default_target_modules(), LoRA group enable/disable
+<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a>│   ├── heads.py                        CriticHead, ActorHead (+ layer_init)
+<a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a>│   └── actor_critic.py                 DecoupledActorCriticVLM_COT (dual-adapter orchestration)
+<a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a>├── prompts/
+<a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a>│   ├── builder.py                      PromptBuilder: assemble messages, apply chat template
+<a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a>│   └── templates/
+<a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a>│       └── vizdoom/
+<a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a>│           ├── basic/
+<a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a>│           │   ├── actor.txt           COT actor system prompt
+<a id="__codelineno-0-30" name="__codelineno-0-30" href="#__codelineno-0-30"></a>│           │   ├── critic.txt          critic system prompt
+<a id="__codelineno-0-31" name="__codelineno-0-31" href="#__codelineno-0-31"></a>│           │   └── vision_probe.txt    Inv-15 probe questions
+<a id="__codelineno-0-32" name="__codelineno-0-32" href="#__codelineno-0-32"></a>│           └── (corridor, defend_line, ... for C + I)
+<a id="__codelineno-0-33" name="__codelineno-0-33" href="#__codelineno-0-33"></a>├── rollout/
+<a id="__codelineno-0-34" name="__codelineno-0-34" href="#__codelineno-0-34"></a>│   ├── buffer.py                       RolloutBuffer (tensors) + GAE
+<a id="__codelineno-0-35" name="__codelineno-0-35" href="#__codelineno-0-35"></a>│   └── in_process.py                   generate_cot_actions(model, processor, obs_batch, prompts)
+<a id="__codelineno-0-36" name="__codelineno-0-36" href="#__codelineno-0-36"></a>└── training/
+<a id="__codelineno-0-37" name="__codelineno-0-37" href="#__codelineno-0-37"></a>    ├── distributed.py                  accelerate/DS config loader + active-adapter context mgr
+<a id="__codelineno-0-38" name="__codelineno-0-38" href="#__codelineno-0-38"></a>    ├── precision.py                    FP16 GradScaler wrapper + Inv-6 loss-scale watcher
+<a id="__codelineno-0-39" name="__codelineno-0-39" href="#__codelineno-0-39"></a>    ├── checkpoint.py                   save(dir) / load(dir) for actor+critic LoRA + heads + optim + RNG
+<a id="__codelineno-0-40" name="__codelineno-0-40" href="#__codelineno-0-40"></a>    ├── logging.py                      RichDashboard + CSV writer + W&amp;B shim + manifest.json
+<a id="__codelineno-0-41" name="__codelineno-0-41" href="#__codelineno-0-41"></a>    ├── invariants.py                   InvariantMonitor scaffold (passive until D) + per-invariant checks
+<a id="__codelineno-0-42" name="__codelineno-0-42" href="#__codelineno-0-42"></a>    └── args_base.py                    shared CLI fields re-used across canon trainers
+<a id="__codelineno-0-43" name="__codelineno-0-43" href="#__codelineno-0-43"></a>
+<a id="__codelineno-0-44" name="__codelineno-0-44" href="#__codelineno-0-44"></a>tests/
+<a id="__codelineno-0-45" name="__codelineno-0-45" href="#__codelineno-0-45"></a>├── unit/
+<a id="__codelineno-0-46" name="__codelineno-0-46" href="#__codelineno-0-46"></a>│   ├── test_action_parser.py           parse ACTION: &lt;NAME&gt; from COT tail
+<a id="__codelineno-0-47" name="__codelineno-0-47" href="#__codelineno-0-47"></a>│   ├── test_env_factory.py             make_env returns Gymnasium env of correct shape
+<a id="__codelineno-0-48" name="__codelineno-0-48" href="#__codelineno-0-48"></a>│   ├── test_prompt_builder.py          chat template output shape + image-token presence
+<a id="__codelineno-0-49" name="__codelineno-0-49" href="#__codelineno-0-49"></a>│   ├── test_gae.py                     GAE on synthetic rollout vs hand-computed
+<a id="__codelineno-0-50" name="__codelineno-0-50" href="#__codelineno-0-50"></a>│   ├── test_rollout_buffer.py          buffer rolling indices + tensor dtypes
+<a id="__codelineno-0-51" name="__codelineno-0-51" href="#__codelineno-0-51"></a>│   └── test_lora_topology.py           target module resolution against a mini-MLP fixture
+<a id="__codelineno-0-52" name="__codelineno-0-52" href="#__codelineno-0-52"></a>├── invariants/
+<a id="__codelineno-0-53" name="__codelineno-0-53" href="#__codelineno-0-53"></a>│   ├── test_inv_01_lora_trainability.py
+<a id="__codelineno-0-54" name="__codelineno-0-54" href="#__codelineno-0-54"></a>│   ├── test_inv_03_active_adapter.py
+<a id="__codelineno-0-55" name="__codelineno-0-55" href="#__codelineno-0-55"></a>│   ├── test_inv_05_grad_norm.py
+<a id="__codelineno-0-56" name="__codelineno-0-56" href="#__codelineno-0-56"></a>│   ├── test_inv_06_fp16_scale.py
+<a id="__codelineno-0-57" name="__codelineno-0-57" href="#__codelineno-0-57"></a>│   ├── test_inv_09_reward_pipeline.py
+<a id="__codelineno-0-58" name="__codelineno-0-58" href="#__codelineno-0-58"></a>│   ├── test_inv_10_episode_boundary.py
+<a id="__codelineno-0-59" name="__codelineno-0-59" href="#__codelineno-0-59"></a>│   ├── test_inv_11_determinism.py
+<a id="__codelineno-0-60" name="__codelineno-0-60" href="#__codelineno-0-60"></a>│   └── test_inv_13_pad_image_token_mask.py
+<a id="__codelineno-0-61" name="__codelineno-0-61" href="#__codelineno-0-61"></a>├── integration/
+<a id="__codelineno-0-62" name="__codelineno-0-62" href="#__codelineno-0-62"></a>│   └── test_trainer_short_run.py       tier1 @gpu — 10 iters on VizdoomBasic
+<a id="__codelineno-0-63" name="__codelineno-0-63" href="#__codelineno-0-63"></a>└── smoke/
+<a id="__codelineno-0-64" name="__codelineno-0-64" href="#__codelineno-0-64"></a>    └── test_hello_vlm.py               already in iter 2/3; unchanged
+<a id="__codelineno-0-65" name="__codelineno-0-65" href="#__codelineno-0-65"></a>
+<a id="__codelineno-0-66" name="__codelineno-0-66" href="#__codelineno-0-66"></a>scripts/
+<a id="__codelineno-0-67" name="__codelineno-0-67" href="#__codelineno-0-67"></a>├── probe_vision.py                     Inv-15 ground-truth vision probe
+<a id="__codelineno-0-68" name="__codelineno-0-68" href="#__codelineno-0-68"></a>└── _cluster_env.sh                     CUDA_HOME + HF_HOME boilerplate
+<a id="__codelineno-0-69" name="__codelineno-0-69" href="#__codelineno-0-69"></a>
+<a id="__codelineno-0-70" name="__codelineno-0-70" href="#__codelineno-0-70"></a>configs/
+<a id="__codelineno-0-71" name="__codelineno-0-71" href="#__codelineno-0-71"></a>├── backbones.yaml                      per-backbone defaults (pixel budget, attn_impl, thinking)
+<a id="__codelineno-0-72" name="__codelineno-0-72" href="#__codelineno-0-72"></a>├── targets.yaml                        reference target scores per env
+<a id="__codelineno-0-73" name="__codelineno-0-73" href="#__codelineno-0-73"></a>└── envs/
+<a id="__codelineno-0-74" name="__codelineno-0-74" href="#__codelineno-0-74"></a>    └── VizdoomBasic-v0.yaml            frame_skip, resolution, reward scaling, max_episode_steps
+</code></pre></div>
+<h3 id="module-boundaries-what-each-unit-does-inputs-outputs-deps">Module boundaries — what each unit does, inputs, outputs, deps<a class="headerlink" href="#module-boundaries-what-each-unit-does-inputs-outputs-deps" title="Permanent link">&para;</a></h3>
+<p>Every unit below has <strong>one clear purpose</strong>, a <strong>typed interface</strong>, and
+<strong>deps only on its own layer + layers below</strong>. This is the boundary
+discipline called out by the brainstorming skill.</p>
+<table>
+<thead>
+<tr>
+<th>Unit</th>
+<th>Does</th>
+<th>Inputs</th>
+<th>Outputs</th>
+<th>Depends on</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>envs/registry.py::make_env(env_id, config, seed, idx, run_name) → Callable[[], gym.Env]</code></td>
+<td>Single factory dispatching to <code>vizdoom/</code> / <code>atari/</code> / <code>minigrid/</code> subpackages by env-id prefix; returns a thunk for AsyncVectorEnv.</td>
+<td>env id, per-env YAML config, seed, idx, run_name</td>
+<td>thunk</td>
+<td><code>vizdoom.factories</code>, <code>wrappers</code>, gymnasium, vizdoom</td>
+</tr>
+<tr>
+<td><code>envs/vizdoom/factories.py::make_vizdoom_env(env_id, config) → Callable</code></td>
+<td>Apply vizdoom-gymnasium wrapper, frame-skip, action wrapper, screen-only wrapper, <code>RecordEpisodeStatistics</code>.</td>
+<td>env id + YAML cfg</td>
+<td>thunk</td>
+<td><code>action_tables</code>, <code>wrappers</code>, vizdoom.gymnasium_wrapper</td>
+</tr>
+<tr>
+<td><code>envs/vizdoom/action_tables.py::action_tables: dict[str, list[str]]</code></td>
+<td>Per-scenario button-name lookup. Starts with <code>VizdoomBasic-v0 → ["MOVE_LEFT","MOVE_RIGHT","ATTACK"]</code>; corridor + defend_line carried over from prototype.</td>
+<td>—</td>
+<td><code>{env_id: [button_name, ...]}</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>envs/wrappers.py::FrameSkipEnv</code>, <code>::ScreenOnlyWrapper</code>, <code>::DiscreteMultiBinaryWrapper</code></td>
+<td>Gymnasium wrappers. <code>DiscreteMultiBinaryWrapper(button_names: list[str])</code> generalizes <code>DeadlyCorridorActionWrapper</code> / <code>DefendTheLineActionWrapper</code>.</td>
+<td>gym.Env</td>
+<td>gym.Env</td>
+<td>gymnasium</td>
+</tr>
+<tr>
+<td><code>models/base_vlm.py::BaseVLM(vlm_name, min_pixels, max_pixels, attn_impl) → nn.Module</code></td>
+<td>Wraps <code>AutoModelForImageTextToText.from_pretrained</code> + <code>AutoProcessor</code>. Holds <code>preprocess_obs_and_text</code>, <code>last_hidden_state(hidden, attention_mask)</code>.</td>
+<td>backbone id, pixel budget, attn impl</td>
+<td>module with <code>self.model</code>, <code>self.processor</code></td>
+<td>transformers, torch</td>
+</tr>
+<tr>
+<td><code>models/lora_topology.py::default_target_modules(groups: set[str]) → list[str]</code></td>
+<td>Map group names (text_attn / text_mlp / vision_attn / vision_mlp / merger / lm_head / text_moe) to PEFT target-module patterns.</td>
+<td>group set</td>
+<td>list of module suffixes</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>models/heads.py::CriticHead(input_dim)</code>, <code>::ActorHead(input_dim, num_actions)</code>, <code>::layer_init</code></td>
+<td>Orthogonal-init MLPs: 3-layer 512-hidden LeakyReLU.</td>
+<td>hidden dim</td>
+<td>nn.Module forward(hidden) → value</td>
+<td>torch</td>
+</tr>
+<tr>
+<td><code>models/actor_critic.py::DecoupledActorCriticVLM_COT(vlm_name, lora_r, lora_alpha, lora_dropout, groups) → nn.Module</code></td>
+<td>Dual-adapter orchestration. Exposes <code>get_action(obs, prompts)</code> (generate → (full_ids, prompt_lens, texts, per-token-logprobs)) and <code>get_value(obs, prompts)</code> (critic-adapter forward → critic-head V). Enforces active-adapter invariant (Inv-3).</td>
+<td>backbone, LoRA params</td>
+<td>actor+critic LoRA on same base weights + CriticHead</td>
+<td>BaseVLM, heads, lora_topology, peft</td>
+</tr>
+<tr>
+<td><code>prompts/builder.py::PromptBuilder(env_id, action_names)</code></td>
+<td><code>.actor_prompt_for(obs_text_state) → str</code>; <code>.critic_prompt_for(obs_text_state) → str</code>. Reads templates from <code>templates/vizdoom/&lt;slug&gt;/*.txt</code>. Does not do parsing (moved to <code>parser.py</code> per reviewer M2).</td>
+<td>env id, action names</td>
+<td>textual messages ready to chat-template</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>prompts/parser.py::parse_action_cot(text, action_names) → int | None</code></td>
+<td>Regex <code>r"ACTION:\s*([A-Z_]+)"</code>; take <strong>last</strong> match; whitelist against <code>action_names</code>; return <code>None</code> on fail (caller samples uniformly). Covers repeated-ACTION pathology. Reviewer M3.</td>
+<td>COT tail text, action-name list</td>
+<td>action index or None</td>
+<td>re</td>
+</tr>
+<tr>
+<td><code>rollout/buffer.py::RolloutBuffer(num_envs, num_steps, obs_space, action_space)</code></td>
+<td>Pre-allocated tensors: obs, action, logprob_sum, reward, value, done, advantage, return. <code>.compute_gae(gamma, lam, next_value, next_done)</code>.</td>
+<td>shapes</td>
+<td>tensor dict by step</td>
+<td>torch</td>
+</tr>
+<tr>
+<td><code>rollout/in_process.py::generate_cot_actions(ac_model, obs_batch, prompt_texts, max_new_tokens) → CotRolloutStep</code></td>
+<td>One forward + <code>.generate()</code> under the actor adapter. Returns a typed <code>@dataclass CotRolloutStep</code> (reviewer M1) with fields <code>actions: torch.LongTensor [B]</code>, <code>full_ids: torch.LongTensor [B, S]</code>, <code>logprob_sum: torch.FloatTensor [B]</code>, <code>prompt_lens: torch.LongTensor [B]</code>, <code>raw_texts: list[str]</code>, <code>gen_truncated: torch.BoolTensor [B]</code>. All tensors on the model's device with documented dtypes.</td>
+<td>actor-critic wrapper, obs tensor, list[str] prompts</td>
+<td><code>CotRolloutStep</code> dataclass</td>
+<td>BaseVLM, torch</td>
+</tr>
+<tr>
+<td><code>training/distributed.py::load_accelerator_config(config_path) → AcceleratorConfig</code></td>
+<td>Load accelerate + DS/FSDP YAML; emit startup log line <code>"sharding=&lt;name&gt; (ignored at num_processes=1)"</code> when applicable (reviewer m11).</td>
+<td>config path</td>
+<td>accelerator config</td>
+<td>accelerate</td>
+</tr>
+<tr>
+<td><code>models/actor_critic.py::active_adapter(ac_model, name)</code></td>
+<td>Context manager: asserts <code>ac_model.vlm.model.active_adapter == name</code> on enter, restores on exit. Enforces Inv-3. Lives with the model (reviewer m7) rather than in <code>training/distributed.py</code>.</td>
+<td>model, adapter name</td>
+<td>ctxmgr</td>
+<td>peft</td>
+</tr>
+<tr>
+<td><code>training/microbatch_probe.py::probe_microbatch(ac_model, env_thunk, target_batch_floor) → int</code></td>
+<td>Startup: try microbatch size <code>s=1</code>; double until OOM; back off; record under <code>runs/&lt;name&gt;/microbatch_probe.json</code>. Derive <code>grad_accum</code> to hit batch floor. Reviewer M7.</td>
+<td>ac_model, env, floor</td>
+<td><code>per_gpu_microbatch: int</code></td>
+<td>torch, env</td>
+</tr>
+<tr>
+<td><code>training/precision.py::Fp16State(grad_scaler)</code></td>
+<td>Wrap <code>torch.amp.GradScaler</code>. <code>.step(optimizer)</code> + <code>.log()</code> → loss-scale history. Inv-6 monitor reads history.</td>
+<td>grad scaler</td>
+<td>scale-factor deque</td>
+<td>torch</td>
+</tr>
+<tr>
+<td><code>training/checkpoint.py::save_vlm_actor_critic_checkpoint(path, algo_slug, ac_model, optimizer, rng, rollout_buffer_partial, wandb_run_id, step)</code> / <code>load_vlm_actor_critic_checkpoint(path, ...)</code></td>
+<td>Atomic write <code>path.tmp/</code> → <code>fsync</code> → rename. Saves <code>{actor,critic}/</code> (PEFT) + <code>critic_head.pt</code> + <code>optimizer.pt</code> + <code>rng.pt</code> + <code>step.json</code> (includes <code>algo_slug</code>) + <code>manifest.json</code> + <code>INTEGRITY_HASHES.txt</code>. Format reusable across all canon VLM-actor-critic trainers (reviewer m6). iter-4 scope is a subset of master-spec §10 — full spec format lands in <code>J</code>.</td>
+<td>path, algo_slug, all pieces</td>
+<td>on-disk dir</td>
+<td>peft, torch</td>
+</tr>
+<tr>
+<td><code>training/logging.py::RichDashboard(run_name, columns, console)</code>, <code>::CsvWriter(path)</code>, <code>::wandb_init(name, config)</code></td>
+<td>Three-sink logging. Rich auto-off in headless; wandb behind <code>--track</code>; CSV always.</td>
+<td>run name, column schema</td>
+<td>live dashboard + metrics.csv + optional wandb run</td>
+<td>rich, pandas, wandb</td>
+</tr>
+<tr>
+<td><code>training/invariants.py::InvariantMonitor(checks, sample_every)</code> + per-Inv check funcs</td>
+<td>Scaffold: <code>.maybe_run(step, ctx)</code> dispatches to registered checks. iter 4 calls subset synchronously at startup + end of training; runtime continuous wiring is <code>D</code>.</td>
+<td>list of check fns, cadence</td>
+<td>per-step invariant-status tuples</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>algos/ppo_cot.py::main()</code></td>
+<td>The trainer. Uses <em>only</em> the exported APIs above. ~700 lines.</td>
+<td><code>Args</code> dataclass</td>
+<td>training run → <code>runs/&lt;name&gt;/</code></td>
+<td>all of <code>src/cleanrl_vlm/*</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="active-adapter-discipline-inv-3">Active-adapter discipline (Inv-3)<a class="headerlink" href="#active-adapter-discipline-inv-3" title="Permanent link">&para;</a></h3>
+<p>Every actor forward happens inside <code>with active_adapter(ac_model, "actor"):</code>.
+Every critic forward inside <code>with active_adapter(ac_model, "critic"):</code>.
+Both context managers assert <code>ac_model.vlm.model.active_adapter == name</code>
+on entry and <strong>do not</strong> set it — setting happens in
+<code>DecoupledActorCriticVLM_COT.get_{action,value}()</code> itself. The ctxmgr is
+a tripwire, not a setter, so a missing <code>set_adapter</code> call inside the
+model class surfaces as an assertion failure rather than a silent
+cross-adapter forward. Matches the spec's §8 Inv-3 binary-correctness
+requirement.</p>
+<h2 id="4-ppo-cot-algorithm-specifics">§4. PPO-COT algorithm specifics<a class="headerlink" href="#4-ppo-cot-algorithm-specifics" title="Permanent link">&para;</a></h2>
+<h3 id="log-probability-of-the-action">Log-probability of the action<a class="headerlink" href="#log-probability-of-the-action" title="Permanent link">&para;</a></h3>
+<p>An "action" in COT interface = the full generated span (think + ACTION
+line). The scalar logprob per trajectory is <code>sum_t log p(tok_t | prefix)</code>
+over the generated tokens only (not the prompt). The sum is stored in
+the rollout buffer as <code>logprob_sum</code> — <strong>not</strong> the per-token log-probs,
+to keep the buffer shape rank-2.</p>
+<p>On the PPO update, we re-score the stored <code>full_ids</code> under the current
+actor adapter and recompute <code>logprob_sum_new</code>; the ratio is
+<code>exp(logprob_sum_new - logprob_sum_old)</code>. The PPO clip is sequence-level,
+not token-level — matches spec §5 "Sequence-level ratio from summed
+token log-probs across the generated span" and is the simplest correct
+baseline. Token-level / advantage-weighted-per-token variants are
+experimental-track material (<code>K-research-longhorizon</code>).</p>
+<h3 id="advantage-return">Advantage + return<a class="headerlink" href="#advantage-return" title="Permanent link">&para;</a></h3>
+<p>Standard GAE:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>delta_t = r_t + γ·V(s_{t+1})·(1 - done_t) - V(s_t)
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>A_t    = delta_t + γ·λ·(1 - done_t)·A_{t+1}
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>R_t    = A_t + V(s_t)
+</code></pre></div>
+<p>Bootstrapped tail value from <code>V(s_{T})</code> on the final rollout obs. No
+reward normalization at iter 4; reward scaling YAML-configurable (ViZDoom
+VizdoomBasic returns already on a reasonable scale).</p>
+<h3 id="loss">Loss<a class="headerlink" href="#loss" title="Permanent link">&para;</a></h3>
+<p>Written explicitly to remove any sign ambiguity (reviewer blocker B1):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>L_clip(θ)    = -min(ratio · A,  clip(ratio, 1-ε, 1+ε) · A)        # per-sample, then mean
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>L_value(θ)   =  0.5 · (V_θ(s) - R)^2                              # per-sample, then mean
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>H(θ)         =  mean_{sample} mean_{token ∈ gen-span} entropy(π_θ(·|prefix))
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a># We minimize this scalar:
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>Loss(θ)      = mean(L_clip) + c_v · mean(L_value) - c_e · H(θ)
+</code></pre></div>
+<p>So minimizing <code>Loss</code> drives the clipped-surrogate objective <em>up</em>, value
+error <em>down</em>, and entropy <em>up</em>. Matches the prototype
+(<code>src/train_decoupled_actor_critic_cot.py:608-611</code>: <code>pg_loss -
+args.ent_coef * entropy_loss + args.vf_coef * value_loss</code>, with
+<code>entropy_loss = +E[H]</code>).</p>
+<ul>
+<li><code>ε = 0.2</code>, <code>c_v = 0.5</code>, <code>c_e = 0.01</code> (Atari-tuned defaults per spec §5).</li>
+<li>Gradient clipping <code>max_norm = 0.5</code>.</li>
+<li><code>update_epochs = 4</code>, <code>num_minibatches = 4</code>. <code>batch_size = num_envs ·
+  num_steps</code>; <code>minibatch_size = batch_size / num_minibatches</code>.</li>
+<li><strong>Global-batch floor (§3).</strong> With <code>num_envs = 4</code>, <code>num_steps = 32</code>,
+  <code>num_minibatches = 4</code>, <code>grad_accum = 1</code>, <code>num_processes = 1</code> →
+  <code>effective_batch = 128</code> → meets the Tier-1 floor at iter 4 single-rank.
+  When we scale to multi-rank in <code>D</code>, <code>grad_accum</code> is auto-sized; the
+  <code>InvariantMonitor</code> refuses to start training if <code>effective_batch &lt; 128</code>.</li>
+</ul>
+<h3 id="rollout-shape-iter-4-defaults">Rollout shape (iter-4 defaults)<a class="headerlink" href="#rollout-shape-iter-4-defaults" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>num_envs = 4</code> parallel VizdoomBasic instances.</li>
+<li><code>num_steps = 32</code> per iteration. Iteration = 4·32 = 128 env steps.</li>
+<li><code>max_new_tokens = 256</code> (below spec's 512 default to save time; ablation
+  later).</li>
+<li>Per iteration wall-clock expectation: generation is
+  <code>num_envs × num_steps × one_generate_call ≈ 128 × ~1s ≈ 2 min</code> on
+  2B backbone (rough; vLLM path will 5-10× this). PPO update ~30s. So
+  <code>~2.5-3 min</code> per iteration on the 8-GPU node (single rank). A 100-iter
+  smoke run ≈ 4-5 hours. Not feasible in a single /loop iteration —
+  agent will invoke long-running training via <code>run_in_background</code> and
+  schedule wakeups on milestone events (loss flatlines, curve crosses
+  threshold, checkpoint lands, etc.).</li>
+<li><code>total_timesteps = 200_000</code> for the first training run. Agent judges
+  per §0 whether to extend or cut short.</li>
+</ul>
+<h3 id="precision">Precision<a class="headerlink" href="#precision" title="Permanent link">&para;</a></h3>
+<p>FP16 end-to-end (spec §3 default). <code>GradScaler</code> wraps the optimizer. Inv-6
+watches scale-factor history; if scale halves repeatedly without
+recovery, systematic-debugging skill is invoked.</p>
+<h3 id="lora-topology">LoRA topology<a class="headerlink" href="#lora-topology" title="Permanent link">&para;</a></h3>
+<p>Default groups enabled at iter 4: <strong>text_attn + text_mlp + lm_head</strong>. No
+vision-tower LoRA on the first trainer (ablation later). <code>lora_r = 32</code>,
+<code>lora_alpha = 64</code>, <code>lora_dropout = 0.0</code> (spec §14 defaults).</p>
+<h2 id="5-prompts">§5. Prompts<a class="headerlink" href="#5-prompts" title="Permanent link">&para;</a></h2>
+<p>Templates live at <code>prompts/vizdoom/basic/</code>; the builder reads them.</p>
+<p><code>prompts/vizdoom/basic/actor.txt</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>You are playing VizdoomBasic, a simple ViZDoom scenario in which a
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>single monster appears randomly in front of you and you must shoot it
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>before a timeout.
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>Available actions:
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>- MOVE_LEFT  — strafe left
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>- MOVE_RIGHT — strafe right
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>- ATTACK     — shoot
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>
+<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>Look at the current screen carefully. Think briefly about where the
+<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a>monster is and whether you need to line up your aim. Then respond with
+<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a>exactly one line of the form:
+<a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a>
+<a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a>ACTION: &lt;NAME&gt;
+<a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a>
+<a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a>where &lt;NAME&gt; is one of MOVE_LEFT, MOVE_RIGHT, ATTACK.
+</code></pre></div>
+<p><code>prompts/vizdoom/basic/critic.txt</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>You are an RL value estimator for VizdoomBasic. Given the current
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>screen, estimate how good this state is for a future reward of +101 for
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>killing the monster minus a small living cost. Respond with no text —
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>your hidden representation is read by a downstream regressor.
+</code></pre></div>
+<p><code>prompts/vizdoom/basic/vision_probe.txt</code> (Inv-15):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>For each frame, answer three questions:
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>1. Is a monster visible? (yes / no)
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>2. Roughly where is the monster on the screen? (left / center / right / off-screen)
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>3. Is the player&#39;s crosshair roughly aligned with the monster&#39;s body? (yes / no / no-monster)
+</code></pre></div>
+<p>Parser (<code>PromptBuilder.parse_action</code>): split on <code>"ACTION:"</code>, strip +
+upper-case the tail, lookup in the action table. On parse-fail, sample
+uniformly from <code>action_space</code> (matches prototype <code>parse_action_cot</code>).
+Parse-fail rate is logged as a scalar and surfaces in the rich console.</p>
+<h2 id="6-invariants-landed-at-iter-4">§6. Invariants landed at iter 4<a class="headerlink" href="#6-invariants-landed-at-iter-4" title="Permanent link">&para;</a></h2>
+<p>Binary-correctness invariants from spec §8 that apply to this trainer:</p>
+<table>
+<thead>
+<tr>
+<th>Inv</th>
+<th>What iter-4 does</th>
+<th>Test file</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Assert at build + after every <code>set_adapter</code> swap that <code>requires_grad</code> is <code>True</code> iff <code>"lora_"</code> in name or param ∈ {critic_head}.</td>
+<td><code>tests/invariants/test_inv_01_lora_trainability.py</code></td>
+</tr>
+<tr>
+<td>3</td>
+<td><code>active_adapter(...)</code> ctxmgr wraps every actor/critic forward. Unit tests for the ctxmgr's assertions. Trainer code path spot-check via a single iteration.</td>
+<td><code>tests/invariants/test_inv_03_active_adapter.py</code></td>
+</tr>
+<tr>
+<td>5</td>
+<td>Cross-check global grad-norm via <code>clip_grad_norm_</code> vs manual <code>sum(p.grad.pow(2).sum()).sqrt()</code> on one microbatch every 10 iterations.</td>
+<td><code>tests/invariants/test_inv_05_grad_norm.py</code></td>
+</tr>
+<tr>
+<td>6</td>
+<td>Track <code>scaler.get_scale()</code> across a 20-iter fixture; assert no NaN/Inf in grads; on NaN: dump microbatch under <code>runs/&lt;name&gt;/nan_dumps/</code>.</td>
+<td><code>tests/invariants/test_inv_06_fp16_scale.py</code></td>
+</tr>
+<tr>
+<td>9</td>
+<td>Scripted env emits rewards <code>[0, 1, 0, 2]</code>; assert advantage computation sees exactly those numbers post-scaling.</td>
+<td><code>tests/invariants/test_inv_09_reward_pipeline.py</code></td>
+</tr>
+<tr>
+<td>10</td>
+<td>2-episode synthetic rollout with a <code>done=True</code> at step 3; assert GAE resets — no value leakage from episode 2 into episode 1.</td>
+<td><code>tests/invariants/test_inv_10_episode_boundary.py</code></td>
+</tr>
+<tr>
+<td>11</td>
+<td>Two rollouts seeded identically → tensor-equal.</td>
+<td><code>tests/invariants/test_inv_11_determinism.py</code></td>
+</tr>
+<tr>
+<td>13</td>
+<td>Microbatch with extra <code>&lt;pad&gt;</code> + image-placeholder tokens; assert their gradient contribution is exactly zero after backward.</td>
+<td><code>tests/invariants/test_inv_13_pad_image_token_mask.py</code></td>
+</tr>
+<tr>
+<td>4 (single-path variant)</td>
+<td>Re-score cached <code>full_ids</code> under the same actor adapter at <strong>update epoch 0, minibatch 0</strong> every iteration; assert <code>|logprob_sum_new − logprob_sum_old| &lt; 1e-4</code>. Since <code>lora_dropout = 0.0</code> and there is no vLLM path at iter 4, this should be bit-exact in FP16 modulo FP16 reduction-order noise — tolerance of <code>1e-4</code> is a safety margin. Failure → dump microbatch to <code>runs/&lt;name&gt;/inv4_dumps/</code>. Covers the silent-bug class that motivates Inv-4 even without a second serving path; the vLLM cross-check lands in <code>E-vllm-rollout-path</code>. <strong>(Added per reviewer blocker B2.)</strong></td>
+<td><code>tests/invariants/test_inv_04_logprob_parity.py</code></td>
+</tr>
+</tbody>
+</table>
+<p>Invariants <strong>deferred</strong> to later tasks (link in LOOP_STATE):</p>
+<ul>
+<li>Inv-2 (LoRA-weights-actually-change) → landed as a light check in this
+  iter's integration test (assert weight-hash diff after 10 updates),
+  promoted to a standalone invariant in <code>D-invariants-runtime</code>.</li>
+<li>Inv-4 (full train ↔ vLLM-inference logprob parity) → <code>E-vllm-rollout-path</code>.
+  Iter 4 lands the <em>single-path</em> variant (same-adapter re-score) per
+  the table entry above — the two-path variant comes with vLLM.</li>
+<li>Inv-7 (checkpoint round-trip) → <code>J-checkpoint-resume-e2e</code>.</li>
+<li>Inv-8 (image-input correctness: patch coverage, resolution floor,
+  cross-rank token count) → one-shot onboarding run this iter writes
+  <code>docs/backbone_probes/qwen3-vl-2b-instruct.md</code>; runtime invariant in <code>D</code>.</li>
+<li>Inv-12 (resume parity) → <code>J</code>.</li>
+<li>Inv-14 (distributed broadcast) → <code>D</code> (multi-rank).</li>
+<li>Inv-15 (ground-truth vision probe) → <code>scripts/probe_vision.py</code> lands
+  in this iter; the <code>docs/vision_probes/VizdoomBasic-v0_qwen3-vl-2b-instruct/report.md</code>
+  is generated at backbone onboarding; the <strong>agent reviews the artifact</strong>
+  per §0 and iterates on prompts / pixel budget / resolution until the
+  report reads as "model genuinely sees the scene".</li>
+</ul>
+<h2 id="7-test-strategy-tdd-where-practical">§7. Test strategy (TDD where practical)<a class="headerlink" href="#7-test-strategy-tdd-where-practical" title="Permanent link">&para;</a></h2>
+<p>Per §13.2 <code>superpowers:test-driven-development</code> is mandatory for new
+code. Interpretation: each unit in §3's module table ships with its
+test file created <strong>before</strong> the implementation, with a reddish
+assertion, then green after impl. For units where a meaningful
+failing-test-first is awkward (e.g., <code>BaseVLM</code> — loading a real VLM
+inside a unit test is prohibitive), the associated test is the
+integration one; impl lands with the integration test falling back from
+a TDD-exact stance.</p>
+<p>Test split (matches <code>tests/</code> layout already scaffolded):</p>
+<ul>
+<li><code>tests/unit/</code> — CPU-safe, fast (&lt;1s each, &lt;10s total). Parser, factory,
+  GAE, buffer, topology. Runs on every commit via CI.</li>
+<li><code>tests/invariants/</code> — the eight Inv-* tests above. Some need a
+  mini-model fixture (2-3 layer transformer stub so we don't load the
+  real 2B backbone in unit tests); others can use the real 2B backbone
+  under <code>@pytest.mark.gpu</code> + <code>@pytest.mark.tier1</code>.</li>
+<li><code>tests/integration/test_trainer_short_run.py</code> — <code>@tier1 @gpu</code>, runs
+  <code>main()</code> for 10 iterations on VizdoomBasic, asserts: loss finite,
+  episodic return logged, LoRA weight-hash changed, checkpoint writes,
+  Inv-1/3/5/6/9/10/11/13 all green.</li>
+</ul>
+<p>Mini-model fixture (for invariants): a custom
+<code>TinyVLMForImageTextToText</code> stub with a <code>text_config.hidden_size</code> small
+enough to run on CPU + <code>AutoModelForImageTextToText</code> register. Avoids
+downloading the real backbone for tests 1/3/5/10/11/13 (9 + 6 stay on
+real backbone since they exercise reward / FP16 which need the real
+GradScaler + real env).</p>
+<h2 id="8-config-defaults">§8. Config defaults<a class="headerlink" href="#8-config-defaults" title="Permanent link">&para;</a></h2>
+<p><code>configs/envs/VizdoomBasic-v0.yaml</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nt">tier</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="nt">backbone_default</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Qwen/Qwen3-VL-2B-Instruct</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="nt">frame_skip</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">4</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="nt">frame_stack</span><span class="p">:</span>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="w">  </span><span class="nt">n</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span><span class="w">                         </span><span class="c1"># single frame at iter 4 (Basic&#39;s monster is static; see §2 out-of-scope)</span>
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="w">  </span><span class="nt">layout</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">horizontal</span><span class="w">           </span><span class="c1"># reserved for n &gt; 1</span>
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="nt">resolution</span><span class="p">:</span>
+<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="w">  </span><span class="nt">width</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">320</span>
+<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a><span class="w">  </span><span class="nt">height</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">240</span><span class="w">                  </span><span class="c1"># ViZDoom Basic native</span>
+<a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a><span class="nt">screen_format</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">RGB24</span><span class="w">           </span><span class="c1"># vizdoom default</span>
+<a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a><span class="nt">reward_clip</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span><span class="w">             </span><span class="c1"># VizdoomBasic has well-scaled rewards</span>
+<a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a><span class="nt">max_episode_steps</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">null</span><span class="w">        </span><span class="c1"># ViZDoom Basic has its own tic cap (300 tics ≈ 75 env steps at frame_skip=4)</span>
+<a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a><span class="nt">target_score</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">60.0</span><span class="w">             </span><span class="c1"># living cost ~0.5/step, kill reward ~100; agent judges</span>
+<a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a><span class="c1"># Pixel budget override — matches the native screen resolution exactly to avoid</span>
+<a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a><span class="c1"># the processor&#39;s default 262144-pixel floor upscaling a 320×240 = 76800-pixel</span>
+<a id="__codelineno-6-16" name="__codelineno-6-16" href="#__codelineno-6-16"></a><span class="c1"># frame 3.4× (reviewer blocker B3). See configs/backbones.yaml override mechanism.</span>
+<a id="__codelineno-6-17" name="__codelineno-6-17" href="#__codelineno-6-17"></a><span class="nt">processor_min_pixels</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">76800</span><span class="w">    </span><span class="c1"># 320 * 240</span>
+<a id="__codelineno-6-18" name="__codelineno-6-18" href="#__codelineno-6-18"></a><span class="nt">processor_max_pixels</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">76800</span><span class="w">    </span><span class="c1"># no upscale; single-frame, single-resolution</span>
+</code></pre></div>
+<p><code>configs/backbones.yaml</code> (iter-4 entries only; future backbones appended):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="nt">Qwen/Qwen3-VL-2B-Instruct</span><span class="p">:</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">  </span><span class="nt">tier</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">  </span><span class="nt">auto_class</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">AutoModelForImageTextToText</span>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="w">  </span><span class="nt">processor_pixel_budget</span><span class="p">:</span>
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="w">    </span><span class="c1"># Backbone-default budget; per-env YAML can override via processor_min_pixels /</span>
+<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="w">    </span><span class="c1"># processor_max_pixels fields (see VizdoomBasic-v0.yaml which overrides to 76800 /</span>
+<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="w">    </span><span class="c1"># 76800 to match native 320×240).</span>
+<a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="w">    </span><span class="nt">min_pixels</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">262144</span><span class="w">         </span><span class="c1"># 512*512 equivalent; used when no env override present</span>
+<a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a><span class="w">    </span><span class="nt">max_pixels</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1310720</span><span class="w">        </span><span class="c1"># 1280*1024 equivalent</span>
+<a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a><span class="w">  </span><span class="nt">attn_implementation</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">flash_attention_2</span>
+<a id="__codelineno-7-11" name="__codelineno-7-11" href="#__codelineno-7-11"></a><span class="w">  </span><span class="nt">dtype</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">float16</span>
+<a id="__codelineno-7-12" name="__codelineno-7-12" href="#__codelineno-7-12"></a><span class="w">  </span><span class="nt">thinking_mode</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">off</span><span class="w">           </span><span class="c1"># -Instruct variant</span>
+<a id="__codelineno-7-13" name="__codelineno-7-13" href="#__codelineno-7-13"></a><span class="w">  </span><span class="nt">lora_groups_default</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">text_attn</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">text_mlp</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">lm_head</span><span class="p p-Indicator">]</span>
+<a id="__codelineno-7-14" name="__codelineno-7-14" href="#__codelineno-7-14"></a><span class="w">  </span><span class="nt">lora_rank</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">32</span>
+<a id="__codelineno-7-15" name="__codelineno-7-15" href="#__codelineno-7-15"></a><span class="w">  </span><span class="nt">lora_alpha</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">64</span>
+<a id="__codelineno-7-16" name="__codelineno-7-16" href="#__codelineno-7-16"></a>
+<a id="__codelineno-7-17" name="__codelineno-7-17" href="#__codelineno-7-17"></a><span class="nt">Qwen/Qwen3-VL-4B-Instruct</span><span class="p">:</span>
+<a id="__codelineno-7-18" name="__codelineno-7-18" href="#__codelineno-7-18"></a><span class="w">  </span><span class="nt">tier</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2</span>
+<a id="__codelineno-7-19" name="__codelineno-7-19" href="#__codelineno-7-19"></a><span class="w">  </span><span class="nt">auto_class</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">AutoModelForImageTextToText</span>
+<a id="__codelineno-7-20" name="__codelineno-7-20" href="#__codelineno-7-20"></a><span class="w">  </span><span class="nt">processor_pixel_budget</span><span class="p">:</span>
+<a id="__codelineno-7-21" name="__codelineno-7-21" href="#__codelineno-7-21"></a><span class="w">    </span><span class="nt">min_pixels</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">262144</span>
+<a id="__codelineno-7-22" name="__codelineno-7-22" href="#__codelineno-7-22"></a><span class="w">    </span><span class="nt">max_pixels</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1310720</span>
+<a id="__codelineno-7-23" name="__codelineno-7-23" href="#__codelineno-7-23"></a><span class="w">  </span><span class="nt">attn_implementation</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">flash_attention_2</span>
+<a id="__codelineno-7-24" name="__codelineno-7-24" href="#__codelineno-7-24"></a><span class="w">  </span><span class="nt">dtype</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">float16</span>
+<a id="__codelineno-7-25" name="__codelineno-7-25" href="#__codelineno-7-25"></a><span class="w">  </span><span class="nt">thinking_mode</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">off</span>
+<a id="__codelineno-7-26" name="__codelineno-7-26" href="#__codelineno-7-26"></a><span class="w">  </span><span class="nt">lora_groups_default</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">text_attn</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">text_mlp</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">lm_head</span><span class="p p-Indicator">]</span>
+<a id="__codelineno-7-27" name="__codelineno-7-27" href="#__codelineno-7-27"></a><span class="w">  </span><span class="nt">lora_rank</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">32</span>
+<a id="__codelineno-7-28" name="__codelineno-7-28" href="#__codelineno-7-28"></a><span class="w">  </span><span class="nt">lora_alpha</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">64</span>
+</code></pre></div>
+<p><code>configs/targets.yaml</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="nt">VizdoomBasic-v0</span><span class="p">:</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">  </span><span class="nt">Qwen/Qwen3-VL-2B-Instruct</span><span class="p">:</span>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="w">    </span><span class="nt">reference_score</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">60.0</span><span class="w">       </span><span class="c1"># agent-tuned; see AUTONOMY_LOG when updated</span>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="w">    </span><span class="nt">zero_shot_baseline</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">null</span><span class="w">    </span><span class="c1"># populated after H-baselines runs</span>
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="w">    </span><span class="nt">scratch_cnn_baseline</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">null</span><span class="w">  </span><span class="c1"># populated after H-baselines runs</span>
+</code></pre></div>
+<p><code>algos/ppo_cot.py</code> Args (tyro dataclass) — spec §14 defaults:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="nd">@dataclass</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="k">class</span><span class="w"> </span><span class="nc">Args</span><span class="p">:</span>
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>    <span class="c1"># Run meta</span>
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>    <span class="n">exp_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;ppo_cot&quot;</span>
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>    <span class="n">seed</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span>
+<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a>    <span class="n">run_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">{exp_name}</span><span class="s2">__</span><span class="si">{env_id}</span><span class="s2">__</span><span class="si">{backbone_slug}</span><span class="s2">__</span><span class="si">{seed}</span><span class="s2">__</span><span class="si">{date}</span><span class="s2">&quot;</span>
+<a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a>    <span class="n">track</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+<a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a>    <span class="n">wandb_project_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;cleanRL-VLM&quot;</span>
+<a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a>    <span class="n">wandb_entity</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+<a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a>    <span class="n">checkpoint_interval</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">10</span>
+<a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a>    <span class="n">checkpoint_dir</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;runs/</span><span class="si">{run_name}</span><span class="s2">/checkpoints&quot;</span>
+<a id="__codelineno-9-12" name="__codelineno-9-12" href="#__codelineno-9-12"></a>
+<a id="__codelineno-9-13" name="__codelineno-9-13" href="#__codelineno-9-13"></a>    <span class="c1"># Env</span>
+<a id="__codelineno-9-14" name="__codelineno-9-14" href="#__codelineno-9-14"></a>    <span class="n">env_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;VizdoomBasic-v0&quot;</span>
+<a id="__codelineno-9-15" name="__codelineno-9-15" href="#__codelineno-9-15"></a>    <span class="n">env_config</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;configs/envs/</span><span class="si">{env_id}</span><span class="s2">.yaml&quot;</span>
+<a id="__codelineno-9-16" name="__codelineno-9-16" href="#__codelineno-9-16"></a>    <span class="n">num_envs</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">4</span>
+<a id="__codelineno-9-17" name="__codelineno-9-17" href="#__codelineno-9-17"></a>
+<a id="__codelineno-9-18" name="__codelineno-9-18" href="#__codelineno-9-18"></a>    <span class="c1"># Backbone</span>
+<a id="__codelineno-9-19" name="__codelineno-9-19" href="#__codelineno-9-19"></a>    <span class="n">backbone</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;Qwen/Qwen3-VL-2B-Instruct&quot;</span>
+<a id="__codelineno-9-20" name="__codelineno-9-20" href="#__codelineno-9-20"></a>    <span class="n">backbone_config</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;configs/backbones.yaml&quot;</span>
+<a id="__codelineno-9-21" name="__codelineno-9-21" href="#__codelineno-9-21"></a>    <span class="n">max_new_tokens</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">256</span>
+<a id="__codelineno-9-22" name="__codelineno-9-22" href="#__codelineno-9-22"></a>
+<a id="__codelineno-9-23" name="__codelineno-9-23" href="#__codelineno-9-23"></a>    <span class="c1"># Algo</span>
+<a id="__codelineno-9-24" name="__codelineno-9-24" href="#__codelineno-9-24"></a>    <span class="n">num_steps</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">32</span>
+<a id="__codelineno-9-25" name="__codelineno-9-25" href="#__codelineno-9-25"></a>    <span class="n">gamma</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.99</span>
+<a id="__codelineno-9-26" name="__codelineno-9-26" href="#__codelineno-9-26"></a>    <span class="n">gae_lambda</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.95</span>
+<a id="__codelineno-9-27" name="__codelineno-9-27" href="#__codelineno-9-27"></a>    <span class="n">clip_coef</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.2</span>
+<a id="__codelineno-9-28" name="__codelineno-9-28" href="#__codelineno-9-28"></a>    <span class="n">ent_coef</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.01</span>
+<a id="__codelineno-9-29" name="__codelineno-9-29" href="#__codelineno-9-29"></a>    <span class="n">vf_coef</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.5</span>
+<a id="__codelineno-9-30" name="__codelineno-9-30" href="#__codelineno-9-30"></a>    <span class="n">max_grad_norm</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.5</span>
+<a id="__codelineno-9-31" name="__codelineno-9-31" href="#__codelineno-9-31"></a>    <span class="n">num_minibatches</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">4</span>
+<a id="__codelineno-9-32" name="__codelineno-9-32" href="#__codelineno-9-32"></a>    <span class="n">update_epochs</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">4</span>
+<a id="__codelineno-9-33" name="__codelineno-9-33" href="#__codelineno-9-33"></a>    <span class="n">total_timesteps</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">200_000</span>
+<a id="__codelineno-9-34" name="__codelineno-9-34" href="#__codelineno-9-34"></a>
+<a id="__codelineno-9-35" name="__codelineno-9-35" href="#__codelineno-9-35"></a>    <span class="c1"># Optim</span>
+<a id="__codelineno-9-36" name="__codelineno-9-36" href="#__codelineno-9-36"></a>    <span class="n">learning_rate</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1e-5</span>
+<a id="__codelineno-9-37" name="__codelineno-9-37" href="#__codelineno-9-37"></a>    <span class="n">anneal_lr</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span>
+<a id="__codelineno-9-38" name="__codelineno-9-38" href="#__codelineno-9-38"></a>
+<a id="__codelineno-9-39" name="__codelineno-9-39" href="#__codelineno-9-39"></a>    <span class="c1"># LoRA</span>
+<a id="__codelineno-9-40" name="__codelineno-9-40" href="#__codelineno-9-40"></a>    <span class="n">lora_rank</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">32</span>
+<a id="__codelineno-9-41" name="__codelineno-9-41" href="#__codelineno-9-41"></a>    <span class="n">lora_alpha</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">64</span>
+<a id="__codelineno-9-42" name="__codelineno-9-42" href="#__codelineno-9-42"></a>    <span class="n">lora_dropout</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span>
+<a id="__codelineno-9-43" name="__codelineno-9-43" href="#__codelineno-9-43"></a>    <span class="n">lora_groups</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="s2">&quot;text_attn&quot;</span><span class="p">,</span> <span class="s2">&quot;text_mlp&quot;</span><span class="p">,</span> <span class="s2">&quot;lm_head&quot;</span><span class="p">)</span>
+<a id="__codelineno-9-44" name="__codelineno-9-44" href="#__codelineno-9-44"></a>
+<a id="__codelineno-9-45" name="__codelineno-9-45" href="#__codelineno-9-45"></a>    <span class="c1"># Distributed (iter 4 single-rank; respected when scaled in D)</span>
+<a id="__codelineno-9-46" name="__codelineno-9-46" href="#__codelineno-9-46"></a>    <span class="n">sharding</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;deepspeed_zero2&quot;</span>   <span class="c1"># or &quot;fsdp2&quot;</span>
+<a id="__codelineno-9-47" name="__codelineno-9-47" href="#__codelineno-9-47"></a>    <span class="n">precision</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;fp16&quot;</span>             <span class="c1"># or &quot;bf16&quot;</span>
+<a id="__codelineno-9-48" name="__codelineno-9-48" href="#__codelineno-9-48"></a>    <span class="n">num_processes</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span>              <span class="c1"># filled from accelerate</span>
+<a id="__codelineno-9-49" name="__codelineno-9-49" href="#__codelineno-9-49"></a>    <span class="n">grad_accum</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span>                 <span class="c1"># auto-derived at startup to hit batch floor</span>
+<a id="__codelineno-9-50" name="__codelineno-9-50" href="#__codelineno-9-50"></a>
+<a id="__codelineno-9-51" name="__codelineno-9-51" href="#__codelineno-9-51"></a>    <span class="c1"># Filled at runtime</span>
+<a id="__codelineno-9-52" name="__codelineno-9-52" href="#__codelineno-9-52"></a>    <span class="n">batch_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span>
+<a id="__codelineno-9-53" name="__codelineno-9-53" href="#__codelineno-9-53"></a>    <span class="n">minibatch_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span>
+<a id="__codelineno-9-54" name="__codelineno-9-54" href="#__codelineno-9-54"></a>    <span class="n">num_iterations</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span>
+</code></pre></div>
+<p>Filled-at-runtime fields: <code>batch_size = num_envs * num_steps *
+num_processes</code>, <code>minibatch_size = batch_size // num_minibatches</code>,
+<code>num_iterations = total_timesteps // batch_size</code>.</p>
+<h2 id="9-logging">§9. Logging<a class="headerlink" href="#9-logging" title="Permanent link">&para;</a></h2>
+<p>Per spec §9 "metric coverage mandate" — every scalar that might matter
+later is logged <strong>this iter</strong>, even if unused now. Schema (<code>CsvWriter</code>
+columns):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>global_step, iteration, total_env_steps, wall_s,
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>loss_total, loss_clip, loss_clip_unclipped, loss_value, loss_entropy,
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>approx_kl, clip_fraction, explained_variance,
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a>grad_norm_global, loss_scale,
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>lr,
+<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a>action_entropy_avg, action_parse_fail_rate,
+<a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a>ep_return_mean, ep_return_std, ep_return_min, ep_return_max, ep_return_n,
+<a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a>ep_length_mean, ep_length_std,
+<a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a>rollout_wall_s, train_wall_s, generate_wall_s,
+<a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a>per_env_return_0..per_env_return_{num_envs-1},
+<a id="__codelineno-10-11" name="__codelineno-10-11" href="#__codelineno-10-11"></a>lora_weight_norm_actor, lora_weight_norm_critic,          # reviewer m5 — Inv-2 proxy
+<a id="__codelineno-10-12" name="__codelineno-10-12" href="#__codelineno-10-12"></a>adapter_sync_wall_s,                                       # reviewer m5 — spec §9 mandate
+<a id="__codelineno-10-13" name="__codelineno-10-13" href="#__codelineno-10-13"></a>gen_truncated_rate,                                        # reviewer m4 — signal per §0
+<a id="__codelineno-10-14" name="__codelineno-10-14" href="#__codelineno-10-14"></a>inv_1_status, inv_3_status, inv_4_status, inv_5_status,
+<a id="__codelineno-10-15" name="__codelineno-10-15" href="#__codelineno-10-15"></a>inv_6_status, inv_9_status, inv_10_status, inv_11_status,
+<a id="__codelineno-10-16" name="__codelineno-10-16" href="#__codelineno-10-16"></a>inv_13_status
+</code></pre></div>
+<p>Per-layer grad-norm histograms → <code>runs/&lt;name&gt;/histograms.parquet</code>.
+Per-iteration manifest (git SHA, pip freeze, config) → <code>manifest.json</code>.</p>
+<h2 id="10-expected-deliverable-sequence-writing-plans-skill-input">§10. Expected deliverable sequence (→ writing-plans skill input)<a class="headerlink" href="#10-expected-deliverable-sequence-writing-plans-skill-input" title="Permanent link">&para;</a></h2>
+<p>This design is the input to writing-plans. That skill's plan file will
+decompose the work into ~25–40 bite-sized tasks in roughly this order:</p>
+<ol>
+<li><code>configs/backbones.yaml</code> + <code>configs/targets.yaml</code> + <code>configs/envs/VizdoomBasic-v0.yaml</code> (with per-env <code>processor_min/max_pixels</code> override wiring — reviewer B3)</li>
+<li><code>src/cleanrl_vlm/envs/wrappers.py</code> + <code>tests/unit/test_env_factory.py</code> (TDD); <code>DiscreteMultiBinaryWrapper</code> <strong>supersedes</strong> prototype <code>DeadlyCorridor</code> / <code>DefendTheLine</code> wrappers (reviewer m2)</li>
+<li><code>src/cleanrl_vlm/envs/vizdoom/action_tables.py</code> + <code>factories.py</code></li>
+<li><code>src/cleanrl_vlm/envs/registry.py</code></li>
+<li><code>src/cleanrl_vlm/models/lora_topology.py</code> + <code>tests/unit/test_lora_topology.py</code></li>
+<li><code>src/cleanrl_vlm/models/heads.py</code></li>
+<li><code>src/cleanrl_vlm/models/base_vlm.py</code></li>
+<li><code>src/cleanrl_vlm/models/actor_critic.py</code> (includes <code>active_adapter</code> ctxmgr — reviewer m7) + <code>tests/invariants/test_inv_01_lora_trainability.py</code> (extended to assert base-weight identity + disjoint optimizer param groups — reviewer M4) + <code>test_inv_03_active_adapter.py</code></li>
+<li><code>src/cleanrl_vlm/prompts/templates/vizdoom/basic/*.txt</code></li>
+<li><code>src/cleanrl_vlm/prompts/parser.py</code> + <code>src/cleanrl_vlm/prompts/builder.py</code> (parsing split out — reviewer M2, M3) + <code>tests/unit/test_action_parser.py</code> (regex w/ last-match, whitelist, repeated-ACTION pathology) + <code>tests/unit/test_prompt_builder.py</code></li>
+<li><code>src/cleanrl_vlm/rollout/buffer.py</code> + <code>tests/unit/test_rollout_buffer.py</code> + <code>tests/unit/test_gae.py</code> + <code>test_inv_10_episode_boundary.py</code></li>
+<li><code>src/cleanrl_vlm/rollout/in_process.py</code> (returns <code>@dataclass CotRolloutStep</code> — reviewer M1, includes <code>gen_truncated</code> field for m4 logging)</li>
+<li><code>src/cleanrl_vlm/training/distributed.py</code> (accelerate config loader only) + <code>precision.py</code> + <code>test_inv_06_fp16_scale.py</code></li>
+<li><code>src/cleanrl_vlm/training/microbatch_probe.py</code> (reviewer M7) + <code>test_microbatch_probe.py</code></li>
+<li><code>src/cleanrl_vlm/training/logging.py</code> (full §9 schema including <code>lora_weight_norm_{actor,critic}</code>, <code>adapter_sync_wall_s</code>, <code>gen_truncated_rate</code>, <code>inv_4_status</code> — reviewer m5)</li>
+<li><code>src/cleanrl_vlm/training/checkpoint.py</code> (<code>save_vlm_actor_critic_checkpoint</code>, algo-slug-parameterized — reviewer m6)</li>
+<li><code>src/cleanrl_vlm/training/invariants.py</code> scaffold + per-Inv check funcs + the remaining invariant tests: <code>test_inv_04_logprob_parity.py</code> (single-path, reviewer B2), <code>test_inv_05_grad_norm.py</code>, <code>test_inv_09_reward_pipeline.py</code>, <code>test_inv_11_determinism.py</code> (bitwise, with explicit <code>use_deterministic_algorithms</code> + cuda workspace + cudnn deterministic + vizdoom seed — reviewer M5), <code>test_inv_13_pad_image_token_mask.py</code></li>
+<li><code>scripts/_cluster_env.sh</code></li>
+<li><code>algos/ppo_cot.py</code> — assemble everything.</li>
+<li><code>tests/integration/test_trainer_short_run.py</code> (tier1 gpu).</li>
+<li><code>scripts/probe_vision.py</code> + run on (<code>VizdoomBasic</code>, <code>qwen3-vl-2b</code>) → commit <code>docs/vision_probes/.../report.md</code>.</li>
+<li><code>scripts/probe_backbone.py</code> (or onboarding block in <code>algos/ppo_cot.py</code> — reviewer m1) → <code>docs/backbone_probes/qwen3-vl-2b-instruct.md</code> auto-generated with Inv-8 token-count + patch-coverage numbers.</li>
+<li>Actual training run (agent kicks off via <code>run_in_background</code>, schedules wakeups on milestone events).</li>
+<li>Update <code>docs/ALGORITHMS.md</code>, <code>docs/ENVS.md</code>, <code>docs/RECIPES.md</code>, <code>docs/RESULTS.md</code> (first row), <code>docs/BACKBONES.md</code> (probe link).</li>
+<li><code>simplify</code> skill pass (<strong>before</strong> code review so reviewer sees final form — reviewer m12).</li>
+<li><code>code-reviewer</code> subagent on the full diff; fix findings.</li>
+<li>Commit journals; pivot LOOP_STATE to next task per priority queue.</li>
+</ol>
+<h2 id="11-risks-contingencies">§11. Risks + contingencies<a class="headerlink" href="#11-risks-contingencies" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Risk</th>
+<th>Mitigation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Qwen3-VL architecture differs from spec's assumed Gated-DeltaNet / MoE → some LoRA groups no-op.</td>
+<td><code>default_target_modules</code> probes the actual module names via <code>[n for n, _ in model.named_modules()]</code> at startup and intersects with the requested groups. <code>docs/backbone_probes/...</code> records what actually got LoRA.</td>
+</tr>
+<tr>
+<td><code>AutoModelForImageTextToText</code> API surface may differ from prototype's <code>Qwen3VLForConditionalGeneration</code>.</td>
+<td><code>get_model_class</code> helper maps backbone → model class; iter 4 uses <code>AutoModelForImageTextToText</code> directly (per iter-3 smoke success). Test integrates across classes.</td>
+</tr>
+<tr>
+<td>Pixel budget mismatch with vizdoom's 320×240 screen → processor upscales unnecessarily, wasting memory.</td>
+<td><code>configs/backbones.yaml</code> pixel budget = 262144 min, 1310720 max. <code>320*240 = 76800</code> → under min → processor upscales. Fix: either drop <code>min_pixels</code> to <code>320*240</code> or downscale in wrapper. Decision deferred to iter-4 implementation — <code>PromptBuilder</code> tests assert the final token count is finite and under a budget.</td>
+</tr>
+<tr>
+<td>Generate wall-clock ≫ expected at 2B.</td>
+<td>Fall-back to <code>max_new_tokens = 128</code>. If still too slow, prioritize promoting <code>E-vllm-rollout-path</code>. Schedule wakeups every ~30 min around the long training run rather than /loop-iterating on it.</td>
+</tr>
+<tr>
+<td>LoRA-adapter swap overhead dominates rollout time.</td>
+<td>Spec's design is one <code>set_adapter</code> call per iteration (not per step). This design respects that — generate all actions under "actor", compute values under "critic", never interleave.</td>
+</tr>
+<tr>
+<td>Integration test requires GPU + model download in CI.</td>
+<td>Test is <code>@tier1 @gpu</code>; CI job for tier1 is behind <code>if: false</code> until a self-hosted runner is wired (iter 2's <code>ci.yml</code>). iter 4 runs the integration locally before merge; CI catches regressions only once the GPU runner is live.</td>
+</tr>
+<tr>
+<td>Reward scaling difference between Doom's <code>+101 kill / -5 step</code> and PPO clip window.</td>
+<td>Leave raw; log advantage distribution (<code>action_entropy_avg</code>, <code>explained_variance</code>) and agent adjusts per §0.</td>
+</tr>
+<tr>
+<td>Determinism under vizdoom + CUDA + HF generation is fragile.</td>
+<td>Inv-11 commits to <strong>bitwise equality</strong> per master-spec §0 + §8 — non-determinism under fixed seed is an explicit hard-fail item. Test fixture enforces all of: <code>torch.use_deterministic_algorithms(True)</code>, <code>CUBLAS_WORKSPACE_CONFIG=:4096:8</code>, <code>torch.backends.cudnn.benchmark=False</code>, <code>torch.backends.cudnn.deterministic=True</code>, explicit vizdoom seed (<code>set_seed(...)</code>), and a pinned <code>HF_SEED</code>. If any individual component cannot honor bitwise equality after investigation (e.g., a specific transformers op), the test <code>pytest.xfail()</code> with an explicit reason + open a follow-up issue — <strong>the invariant is not loosened to fp16 tolerance</strong>; that would be a master-spec override, which requires a separate amendment to §0 / §8. Reviewer major M5.</td>
+</tr>
+<tr>
+<td>LoRA target-module lists could diverge between actor and critic adapters (dict-ordering fluke on the <code>groups</code> set).</td>
+<td><code>DecoupledActorCriticVLM_COT.__init__</code> snapshots <code>default_target_modules(groups)</code> into a local list ONCE, then passes the same list into both <code>LoraConfig</code>s. Build-time assert <code>actor_cfg.target_modules == critic_cfg.target_modules</code>. Reviewer minor m10.</td>
+</tr>
+<tr>
+<td>Generation truncation: model hits <code>max_new_tokens</code> before emitting <code>ACTION:</code> → parser returns random, inflating variance.</td>
+<td>Log <code>gen_truncated_rate</code> as a first-class scalar (§9 schema); agent watches per §0. If rate sits above agent-judged threshold, cut <code>max_new_tokens</code> further or rewrite prompt for brevity. Reviewer minor m4.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="12-non-goals-explicit">§12. Non-goals (explicit)<a class="headerlink" href="#12-non-goals-explicit" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Not a learning-curve target. §9 green = agent judges "genuinely learning."</li>
+<li>Not a multi-backbone sweep. Only <code>Qwen/Qwen3-VL-2B-Instruct</code> at iter 4.</li>
+<li>Not a paper-ablations result. That's <code>paper-ablations</code> task, triggered post-M.</li>
+<li>Not a "production CleanRL clone". This is a <em>living trainer</em> that the
+  /loop will continue to refine per §13.3 loop cycles.</li>
+</ul>
+<h2 id="13-reviewer-findings-resolutions">§13. Reviewer findings + resolutions<a class="headerlink" href="#13-reviewer-findings-resolutions" title="Permanent link">&para;</a></h2>
+<p>Code-reviewer subagent reviewed this spec at commit <code>794e7a9</code> (before this
+§13 update). Findings summary; full text archived in AUTONOMY_LOG iter-4
+entry.</p>
+<h3 id="blockers-all-resolved-in-spec-this-revision">Blockers — all resolved in-spec this revision.<a class="headerlink" href="#blockers-all-resolved-in-spec-this-revision" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>B1 (entropy sign).</strong> Rewrote §4 "Loss" with explicit signed
+  formula: <code>Loss = mean(L_clip) + c_v·mean(L_value) − c_e·H</code>. Matches
+  prototype <code>src/train_decoupled_actor_critic_cot.py:608-611</code>.</li>
+<li><strong>B2 (cheap Inv-4).</strong> Added single-path Inv-4 variant to §6 invariant
+  table: re-score cached <code>full_ids</code> under same actor adapter at update
+  epoch 0 minibatch 0 every iteration, assert <code>|Δ logprob_sum| &lt; 1e-4</code>.
+  Two-path (vLLM ↔ HF) variant stays in <code>E-vllm-rollout-path</code>.</li>
+<li><strong>B3 (pixel budget).</strong> Chose option (a) — per-env YAML override. §8
+  <code>configs/envs/VizdoomBasic-v0.yaml</code> now sets
+  <code>processor_min_pixels = processor_max_pixels = 76800</code> (native
+  320×240). Backbone YAML's 262144 floor is the <em>default</em> when no env
+  override is present; the override wiring is part of §10 task 1.</li>
+</ul>
+<h3 id="majors-assigned-to-named-writing-plans-tasks-see-10">Majors — assigned to named writing-plans tasks (see §10).<a class="headerlink" href="#majors-assigned-to-named-writing-plans-tasks-see-10" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>M1 (typed rollout return)</strong> → writing-plans task for step 12
+  (<code>rollout/in_process.py</code>) MUST return a <code>@dataclass CotRolloutStep</code>.</li>
+<li><strong>M2 (parser split)</strong> → new unit <code>src/cleanrl_vlm/prompts/parser.py</code>
+  alongside <code>builder.py</code>; writing-plans updates §3 module table to
+  split them.</li>
+<li><strong>M3 (regex-based parser + whitelist)</strong> → parser spec: regex
+  <code>r"ACTION:\s*([A-Z_]+)"</code>, take <strong>last</strong> match, whitelist against
+  action names, None on fail (caller samples uniformly). Unit test
+  covers repeated-ACTION pathology.</li>
+<li><strong>M4 (shared base-weight invariant)</strong> → extend
+  <code>test_inv_01_lora_trainability.py</code> to assert <code>id(base_param)</code>
+  stability across <code>set_adapter</code> swaps + disjoint optimizer param
+  groups between actor and critic heads.</li>
+<li><strong>M5 (Inv-11 bitwise commitment)</strong> → §11 risks row updated; invariant
+  stays binary per master-spec.</li>
+<li><strong>M6 (single-frame link)</strong> → <code>LOOP_STATE.md</code> gets an explicit TODO
+  under <code>C-envs-tier1-expand</code>: "re-evaluate frame_stack when corridor +
+  defend_line ports land."</li>
+<li><strong>M7 (microbatch probe)</strong> → new unit
+  <code>src/cleanrl_vlm/training/microbatch_probe.py</code>; runs at startup,
+  writes <code>runs/&lt;name&gt;/microbatch_probe.json</code>. §3 module table extends
+  in writing-plans output.</li>
+<li><strong>M8 (VizdoomBasic max_episode_steps)</strong> → fixed in §8: set to <code>null</code>
+  with comment pointing at ViZDoom's native tic cap.</li>
+</ul>
+<h3 id="minors-folded-into-simplify-pass-at-10-task-25">Minors — folded into <code>simplify</code> pass at §10 task 25.<a class="headerlink" href="#minors-folded-into-simplify-pass-at-10-task-25" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>m1</strong> probe-artifact script clarified: <code>docs/backbone_probes/...</code>
+  generated by a one-shot onboarding block inside <code>algos/ppo_cot.py</code>
+  (or a dedicated <code>scripts/probe_backbone.py</code> if cleaner); <code>scripts/
+  probe_vision.py</code> only generates vision probe.</li>
+<li><strong>m2</strong> <code>DiscreteMultiBinaryWrapper</code> explicitly <strong>supersedes</strong> both
+  prototype wrappers; the button-name list comes from
+  <code>action_tables.py</code>.</li>
+<li><strong>m3</strong> <code>TinyVLMForImageTextToText</code> stub: time-boxed. If the stub
+  exceeds ~150 LOC, demote invariant tests 1/3/10/11/13 to
+  <code>@tier1 @gpu</code> on the real backbone. Implementation note in
+  writing-plans.</li>
+<li><strong>m4</strong> <code>gen_truncated_rate</code> metric added to §9 logging schema.</li>
+<li><strong>m5</strong> <code>lora_weight_norm_{actor,critic}</code> + <code>adapter_sync_wall_s</code>
+  added to §9 logging schema.</li>
+<li><strong>m6</strong> <code>checkpoint.py::save_ppo_cot</code> renamed to
+  <code>save_vlm_actor_critic_checkpoint(... algo_slug: str, ...)</code> so the 8
+  future canon trainers reuse.</li>
+<li><strong>m7</strong> <code>active_adapter</code> ctxmgr moves to <code>models/actor_critic.py</code> as
+  a method (+ helper function); <code>training/distributed.py</code> keeps only
+  accelerate-config loading.</li>
+<li><strong>m8</strong> duplicate of m5 in code-reviewer enumeration; same fix (M5).</li>
+<li><strong>m9</strong> §5 critic prompt clarified: critic path = one <code>.forward()</code>
+  only, never <code>.generate()</code>. Comment added in-spec.</li>
+<li><strong>m10</strong> adapter target-module divergence risk listed in §11 with
+  mitigation (snapshot the list once at build).</li>
+<li><strong>m11</strong> startup log line "sharding=<name> (ignored at num_processes=1)"
+  when single-rank.</li>
+<li><strong>m12</strong> <code>simplify</code> runs at §10 task 25 <strong>before</strong> <code>code-reviewer</code> at
+  task 24 — reordered; updated §10.</li>
+</ul>
+<h3 id="10-sequence-updated-to-reflect-reviewer-findings">§10 sequence updated to reflect reviewer findings.<a class="headerlink" href="#10-sequence-updated-to-reflect-reviewer-findings" title="Permanent link">&para;</a></h3>
+<p>(The in-line §10 list below is authoritative; the §13 enumeration here
+is just the summary of what changed.)</p>
+<h2 id="14-sign-off">§14. Sign-off<a class="headerlink" href="#14-sign-off" title="Permanent link">&para;</a></h2>
+<p>Self-reviewed per §13.1, reviewed by code-reviewer subagent at commit
+<code>794e7a9</code>, all blockers resolved in the revision at commit <code>&lt;next&gt;</code>.
+Majors folded into named writing-plans tasks; minors folded into the
+simplify pass at §10 task 25. AUTONOMY_LOG iter-4 entry cites both
+commits. writing-plans skill consumes §10's sequence next iteration to
+emit the task-level plan.</p>
+
+
+
+
+
+
+
+  
+  
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../../..", "features": ["navigation.tabs", "navigation.sections", "toc.integrate", "search.highlight", "content.code.copy"], "search": "../../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

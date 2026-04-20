@@ -1,0 +1,1616 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Online RL finetuning of Vision-Language Models in interactive visual environments.">
+      
+      
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>cleanrl-vlm — Master Spec - cleanrl-vlm</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="black" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#cleanrl-vlm-master-spec" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="cleanrl-vlm" class="md-header__button md-logo" aria-label="cleanrl-vlm" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            cleanrl-vlm
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              cleanrl-vlm — Master Spec
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="black" data-md-color-accent="indigo"  aria-hidden="true"  type="radio" name="__palette" id="__palette_0">
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/roger-creus/cleanrl-vlm" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../../ARCHITECTURE/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Architecture
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../../ALGORITHMS/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Algorithms
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../../ENVS/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Environments
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../../BACKBONES/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Backbones
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../../RECIPES/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Recipes
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../../RESULTS/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Results
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../../RESEARCH/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Research
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../../INVARIANTS/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Invariants
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../../CHECKPOINTING/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Checkpointing
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../../LOGGING/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Logging
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../../CONTRIBUTING/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Contributing
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../../TROUBLESHOOTING/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Troubleshooting
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+  
+
+<nav class="md-nav md-nav--primary md-nav--lifted md-nav--integrated" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="cleanrl-vlm" class="md-nav__button md-logo" aria-label="cleanrl-vlm" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    cleanrl-vlm
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/roger-creus/cleanrl-vlm" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../ARCHITECTURE/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../ALGORITHMS/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Algorithms
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../ENVS/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Environments
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../BACKBONES/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backbones
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../RECIPES/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Recipes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../RESULTS/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Results
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../RESEARCH/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Research
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../INVARIANTS/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Invariants
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../CHECKPOINTING/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Checkpointing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../LOGGING/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Logging
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../CONTRIBUTING/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../TROUBLESHOOTING/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="cleanrl-vlm-master-spec">cleanrl-vlm — Master Spec<a class="headerlink" href="#cleanrl-vlm-master-spec" title="Permanent link">&para;</a></h1>
+<h2 id="vision">Vision<a class="headerlink" href="#vision" title="Permanent link">&para;</a></h2>
+<p><strong>cleanrl-vlm is a CleanRL-style library + research paper for online RL finetuning of Vision-Language Models in interactive visual environments (ViZDoom, Atari, Minigrid).</strong> It demonstrates that pretrained VLMs + efficient LoRA finetuning + a correct RL pipeline can adapt a static foundation model into an agentic one that outperforms CNN agents trained from scratch — while doubling as a reference implementation that other researchers can build on.</p>
+<p>Development is <strong>autonomous</strong>: the entire library, experiments, and running documentation are produced by a Claude Code <code>/loop</code> agent operating over many cycles without human intervention, following the process rituals of the <code>superpowers</code> skillset.</p>
+<hr />
+<h2 id="0-operating-principle-thresholds-are-signals-not-gates">§0. Operating principle — "thresholds are signals, not gates"<a class="headerlink" href="#0-operating-principle-thresholds-are-signals-not-gates" title="Permanent link">&para;</a></h2>
+<p>Numerical thresholds in this spec are <strong>starting points</strong> to orient the /loop agent's judgment, not CI-style hard-fail cliffs.</p>
+<p>The agent is a researcher: analyze outputs, understand failure modes, iterate on preprocessing / prompts / hyperparams / library versions, decide when work meets the <em>spirit</em> of an invariant or evidence gate. When a number fires, the correct response is <strong>investigate → understand → iterate</strong>, not "mark red and move on."</p>
+<p><strong>Hard-fail applies only to genuine correctness bugs</strong> — unambiguous "the code is wrong" signals:</p>
+<ul>
+<li>shape / dtype mismatches</li>
+<li>NaN / Inf explosions in the forward or gradient</li>
+<li>logprob divergence between training and rollout paths that survives investigation</li>
+<li>checkpoint that cannot round-trip into a fresh process</li>
+<li>active-adapter context violations (critic forward running under actor adapter or vice versa)</li>
+<li>non-deterministic behavior under a fixed seed</li>
+</ul>
+<p>Everything else — tolerances, accuracies, percentages, step-count windows, target scores — is <strong>guidance the agent tunes with evidence</strong>. The S-1..S-12 rituals (§11), §8 invariants, §9 evidence gates, and §13 autonomy contract are framings for the agent's analysis, not rigid gates that become artificial blockers.</p>
+<p>This principle <strong>overrides</strong> any numerical threshold in the sections that follow where that threshold is used for judgment rather than correctness.</p>
+<hr />
+<h2 id="1-purpose-scope-non-goals-git-strategy">§1. Purpose, scope, non-goals, git strategy<a class="headerlink" href="#1-purpose-scope-non-goals-git-strategy" title="Permanent link">&para;</a></h2>
+<h3 id="hero-paper-claim">Hero paper claim<a class="headerlink" href="#hero-paper-claim" title="Permanent link">&para;</a></h3>
+<blockquote>
+<p>Pretrained Vision-Language Models, with efficient LoRA finetuning and a correct on-policy RL pipeline (PPO/GRPO/RLOO), adapt to interactive visual environments (ViZDoom, Atari, Minigrid) under their native episode horizons — and outperform CNN agents trained from scratch, often while training a small fraction of parameters. Along the way, the paper contributes novel methods for long-horizon credit assignment with VLM critics.</p>
+</blockquote>
+<h3 id="ambition">Ambition<a class="headerlink" href="#ambition" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Library <strong>and</strong> paper, built entirely by a <code>/loop</code> autonomous agent.</li>
+<li>CleanRL-style clarity: single-file trainers, minimal shared abstractions, copy-paste-friendly.</li>
+<li>"Hybrid library" variant: single-file trainers on top of a small shared library for env wrappers, prompt builders, rollout infra, model utilities — because VLM plumbing is too heavy to duplicate per file.</li>
+<li>Polished enough to be the canonical reference for VLM online RL in interactive visual envs.</li>
+</ul>
+<h3 id="in-scope-v1">In scope (v1)<a class="headerlink" href="#in-scope-v1" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Library infra (<code>src/cleanrl_vlm/</code>): envs, models/LoRA helpers, prompts, rollout (vLLM), training (distributed, checkpointing, logging, invariants), research primitives.</li>
+<li>9 canon single-file trainers: <code>{ppo, grpo, rloo} × {cot, action, head}</code> under <code>algos/</code>.</li>
+<li>3 baselines: CNN-PPO from scratch, zero-shot VLM, frozen-VLM + trainable-head.</li>
+<li>All ViZDoom scenarios, all Atari games, all Minigrid/BabyAI envs.</li>
+<li>Dual-track research: <code>experimental/</code> playground with promotion ritual into <code>algos/</code>.</li>
+<li>Evidence dashboard (<code>docs/RESULTS.md</code>), running research journal (<code>docs/RESEARCH.md</code>), comprehensive docs site.</li>
+<li>Correctness invariants (§8) + standing rules (§11) + autonomous operation contract (§13).</li>
+</ul>
+<h3 id="out-of-scope-v1-reachable-via-spec-extend">Out of scope (v1; reachable via spec-extend)<a class="headerlink" href="#out-of-scope-v1-reachable-via-spec-extend" title="Permanent link">&para;</a></h3>
+<ul>
+<li>LaTeX / arXiv paper writeup (the agent maintains <code>docs/RESULTS.md</code> only; the human composes the paper from it).</li>
+<li>Docker / cloud / cluster-orchestration tooling.</li>
+<li>Multi-backbone support beyond the Qwen3.5-VL family (0.8B, 4B).</li>
+<li>KL regularization to a reference model (default 0.0; not implemented).</li>
+<li>Offline algorithms (DPO, ExIt from preference data) — verifiable env rewards only.</li>
+</ul>
+<h3 id="hardware-constraints">Hardware + constraints<a class="headerlink" href="#hardware-constraints" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Hardware</strong>: 1 × node with 8 × NVIDIA RTX A6000 (48 GB each) available for all runs.</li>
+<li><strong>Atari episode horizon</strong>: <code>max_episode_steps = 27_000</code>; <strong>never changed</strong> — a non-negotiable research constraint driving §5 and §6.</li>
+<li><strong>Global batch floor</strong>: ≥ <strong>128 samples / gradient step</strong> for Tier-1, ≥ <strong>256</strong> for Tier-2. Derived at runtime from <code>num_gpus × per_gpu_microbatch × grad_accum</code>, with <code>per_gpu_microbatch</code> auto-probed at startup.</li>
+<li><strong>Dependency management</strong>: <strong>UV</strong> (<code>pyproject.toml</code> + <code>uv.lock</code>).</li>
+<li><strong>Python</strong>: 3.10+ (aligns with current <code>transformers</code> + <code>vllm</code> + hybrid-Qwen support).</li>
+<li><strong>Precision</strong>: FP16 default (more stable for RL finetuning per empirical lore; BF16 first-class ablation).</li>
+<li><strong>License</strong>: <strong>MIT</strong> for our code. Qwen3.5-VL models are Apache-2.0. All our deps are OSS-compatible with MIT.</li>
+</ul>
+<h3 id="git-strategy">Git strategy<a class="headerlink" href="#git-strategy" title="Permanent link">&para;</a></h3>
+<ul>
+<li>At scaffold time, the current <code>master</code> is moved to branch <strong><code>old</code></strong> (preserved, frozen, never touched again).</li>
+<li>New development lands on <code>master</code> starting from a scaffold PR that creates the full skeleton described in §2.</li>
+<li>Scaffold PR also rewrites <code>CLAUDE.md</code> to carry §13 verbatim at its top (instruction-priority override, see Appendix B).</li>
+<li>No force-push to <code>master</code> under any circumstance. No deletion of <code>old</code>.</li>
+</ul>
+<hr />
+<h2 id="2-repo-layout">§2. Repo layout<a class="headerlink" href="#2-repo-layout" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>cleanrl-vlm/
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>├── pyproject.toml  uv.lock  LICENSE (MIT)  mkdocs.yml  CLAUDE.md  CHANGELOG.md
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>├── README.md                         # 1-page pitch + quickstart
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>├── src/cleanrl_vlm/                  # shared library (hybrid layer)
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>│   ├── envs/                         # gymnasium factories + wrappers (vizdoom/atari/minigrid)
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>│   │   ├── registry.py               # single point of env registration
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>│   │   ├── vizdoom/  atari/  minigrid/
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>│   │   ├── wrappers.py               # FrameStack, DiscreteMultiBinaryWrapper, ScreenOnly, ...
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>│   │   └── vizdoom_action_tables.py  # button-name tables per scenario
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>│   ├── models/
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>│   │   ├── base_vlm.py               # backbone-agnostic wrapper
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>│   │   ├── lora_topology.py          # configurable target-module groups + auto-probe
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>│   │   ├── heads.py                  # CriticHead, ActorHead
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>│   │   └── backbones/                # Qwen3.5-VL adapters (processor, tokenizer, vision config)
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>│   ├── prompts/
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>│   │   ├── builder.py                # prompt assembly + chat template + image tokens
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>│   │   └── templates/&lt;env_family&gt;/   # COT / action / head prompt templates
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>│   ├── rollout/
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>│   │   ├── vllm_server.py            # vLLM worker, multi-LoRA serving, adapter sync
+<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>│   │   ├── buffer.py                 # rollout buffer + GAE
+<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>│   │   └── in_process.py             # HF generation path (non-vLLM)
+<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a>│   ├── training/
+<a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a>│   │   ├── distributed.py            # accelerate + DS/FSDP plumbing
+<a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a>│   │   ├── precision.py              # FP16/BF16 config, GradScaler watcher
+<a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a>│   │   ├── checkpoint.py             # §10 save/load/round-trip
+<a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a>│   │   ├── logging.py                # Rich + wandb + CSV stack
+<a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a>│   │   ├── invariants.py             # §8 InvariantMonitor + each Inv-*
+<a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a>│   │   └── loop_state.py             # LOOP_STATE / AUTONOMY_LOG helpers
+<a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a>│   └── research/                     # primitives for experimental algos
+<a id="__codelineno-0-30" name="__codelineno-0-30" href="#__codelineno-0-30"></a>├── algos/                            # curated canon — 9 single-file trainers
+<a id="__codelineno-0-31" name="__codelineno-0-31" href="#__codelineno-0-31"></a>│   ├── ppo_cot.py    ppo_action.py    ppo_head.py
+<a id="__codelineno-0-32" name="__codelineno-0-32" href="#__codelineno-0-32"></a>│   ├── grpo_cot.py   grpo_action.py   grpo_head.py
+<a id="__codelineno-0-33" name="__codelineno-0-33" href="#__codelineno-0-33"></a>│   └── rloo_cot.py   rloo_action.py   rloo_head.py
+<a id="__codelineno-0-34" name="__codelineno-0-34" href="#__codelineno-0-34"></a>├── experimental/                     # playground (§6)
+<a id="__codelineno-0-35" name="__codelineno-0-35" href="#__codelineno-0-35"></a>│   └── &lt;method-slug&gt;/
+<a id="__codelineno-0-36" name="__codelineno-0-36" href="#__codelineno-0-36"></a>│       ├── MOTIVATION.md
+<a id="__codelineno-0-37" name="__codelineno-0-37" href="#__codelineno-0-37"></a>│       └── trainer.py
+<a id="__codelineno-0-38" name="__codelineno-0-38" href="#__codelineno-0-38"></a>├── baselines/
+<a id="__codelineno-0-39" name="__codelineno-0-39" href="#__codelineno-0-39"></a>│   ├── cnn_ppo.py           # non-VLM PPO from scratch (from current src/ppo.py, polished)
+<a id="__codelineno-0-40" name="__codelineno-0-40" href="#__codelineno-0-40"></a>│   ├── zero_shot_vlm.py     # prompt-only, no finetuning
+<a id="__codelineno-0-41" name="__codelineno-0-41" href="#__codelineno-0-41"></a>│   └── frozen_vlm_head.py   # frozen VLM + trainable MLP action head (no LoRA on VLM)
+<a id="__codelineno-0-42" name="__codelineno-0-42" href="#__codelineno-0-42"></a>├── configs/
+<a id="__codelineno-0-43" name="__codelineno-0-43" href="#__codelineno-0-43"></a>│   ├── targets.yaml                  # reference target scores per env (Tier-1 and Tier-2)
+<a id="__codelineno-0-44" name="__codelineno-0-44" href="#__codelineno-0-44"></a>│   ├── backbones.yaml                # per-backbone defaults (pixel budget, attn impl)
+<a id="__codelineno-0-45" name="__codelineno-0-45" href="#__codelineno-0-45"></a>│   └── envs/&lt;env_id&gt;.yaml            # per-env hyperparameters (frozen per Q10=A)
+<a id="__codelineno-0-46" name="__codelineno-0-46" href="#__codelineno-0-46"></a>├── prompts/&lt;env&gt;/                    # human-facing COT / action / head prompt authoring
+<a id="__codelineno-0-47" name="__codelineno-0-47" href="#__codelineno-0-47"></a>├── scripts/
+<a id="__codelineno-0-48" name="__codelineno-0-48" href="#__codelineno-0-48"></a>│   ├── loop_step.py                  # single /loop iteration entrypoint
+<a id="__codelineno-0-49" name="__codelineno-0-49" href="#__codelineno-0-49"></a>│   ├── probe_vision.py               # §4 / Inv-15 vision-perception probe
+<a id="__codelineno-0-50" name="__codelineno-0-50" href="#__codelineno-0-50"></a>│   ├── run_sweep.py                  # launch Tier-2 sweeps
+<a id="__codelineno-0-51" name="__codelineno-0-51" href="#__codelineno-0-51"></a>│   ├── resume.py                     # §10 resume with round-trip + parity checks
+<a id="__codelineno-0-52" name="__codelineno-0-52" href="#__codelineno-0-52"></a>│   ├── build_dashboard.py            # regenerate docs/RESULTS.md
+<a id="__codelineno-0-53" name="__codelineno-0-53" href="#__codelineno-0-53"></a>│   └── doc_audit.py                  # docs-comprehensive-pass runner
+<a id="__codelineno-0-54" name="__codelineno-0-54" href="#__codelineno-0-54"></a>├── docs/
+<a id="__codelineno-0-55" name="__codelineno-0-55" href="#__codelineno-0-55"></a>│   ├── index.md                      # mkdocs landing
+<a id="__codelineno-0-56" name="__codelineno-0-56" href="#__codelineno-0-56"></a>│   ├── ARCHITECTURE.md
+<a id="__codelineno-0-57" name="__codelineno-0-57" href="#__codelineno-0-57"></a>│   ├── ALGORITHMS.md
+<a id="__codelineno-0-58" name="__codelineno-0-58" href="#__codelineno-0-58"></a>│   ├── ENVS.md
+<a id="__codelineno-0-59" name="__codelineno-0-59" href="#__codelineno-0-59"></a>│   ├── BACKBONES.md
+<a id="__codelineno-0-60" name="__codelineno-0-60" href="#__codelineno-0-60"></a>│   ├── RECIPES.md
+<a id="__codelineno-0-61" name="__codelineno-0-61" href="#__codelineno-0-61"></a>│   ├── RESULTS.md                    # live, agent-maintained
+<a id="__codelineno-0-62" name="__codelineno-0-62" href="#__codelineno-0-62"></a>│   ├── RESEARCH.md                   # live, research journal
+<a id="__codelineno-0-63" name="__codelineno-0-63" href="#__codelineno-0-63"></a>│   ├── INVARIANTS.md
+<a id="__codelineno-0-64" name="__codelineno-0-64" href="#__codelineno-0-64"></a>│   ├── CHECKPOINTING.md
+<a id="__codelineno-0-65" name="__codelineno-0-65" href="#__codelineno-0-65"></a>│   ├── LOGGING.md
+<a id="__codelineno-0-66" name="__codelineno-0-66" href="#__codelineno-0-66"></a>│   ├── CONTRIBUTING.md
+<a id="__codelineno-0-67" name="__codelineno-0-67" href="#__codelineno-0-67"></a>│   ├── TROUBLESHOOTING.md
+<a id="__codelineno-0-68" name="__codelineno-0-68" href="#__codelineno-0-68"></a>│   ├── backbone_probes/&lt;name&gt;.md     # auto-generated
+<a id="__codelineno-0-69" name="__codelineno-0-69" href="#__codelineno-0-69"></a>│   ├── vision_probes/&lt;env&gt;_&lt;backbone&gt;/report.md   # auto-generated
+<a id="__codelineno-0-70" name="__codelineno-0-70" href="#__codelineno-0-70"></a>│   └── superpowers/
+<a id="__codelineno-0-71" name="__codelineno-0-71" href="#__codelineno-0-71"></a>│       └── specs/
+<a id="__codelineno-0-72" name="__codelineno-0-72" href="#__codelineno-0-72"></a>│           ├── 2026-04-19-cleanrl-vlm-masterplan.md   # THIS FILE
+<a id="__codelineno-0-73" name="__codelineno-0-73" href="#__codelineno-0-73"></a>│           ├── amendments/
+<a id="__codelineno-0-74" name="__codelineno-0-74" href="#__codelineno-0-74"></a>│           │   └── YYYY-MM-DD-&lt;topic&gt;.md
+<a id="__codelineno-0-75" name="__codelineno-0-75" href="#__codelineno-0-75"></a>│           └── plans/
+<a id="__codelineno-0-76" name="__codelineno-0-76" href="#__codelineno-0-76"></a>│               └── YYYY-MM-DD-&lt;slug&gt;.md              # writing-plans output
+<a id="__codelineno-0-77" name="__codelineno-0-77" href="#__codelineno-0-77"></a>├── tests/
+<a id="__codelineno-0-78" name="__codelineno-0-78" href="#__codelineno-0-78"></a>│   ├── invariants/                   # test_inv_01.py .. test_inv_15.py
+<a id="__codelineno-0-79" name="__codelineno-0-79" href="#__codelineno-0-79"></a>│   ├── unit/                         # pure-python, CPU-safe
+<a id="__codelineno-0-80" name="__codelineno-0-80" href="#__codelineno-0-80"></a>│   ├── integration/                  # cross-module, may need 1 GPU
+<a id="__codelineno-0-81" name="__codelineno-0-81" href="#__codelineno-0-81"></a>│   ├── smoke/                        # Tier-1 end-to-end (0.8B backbone, fast)
+<a id="__codelineno-0-82" name="__codelineno-0-82" href="#__codelineno-0-82"></a>│   └── soak/                         # Tier-2 longer runs (manual trigger)
+<a id="__codelineno-0-83" name="__codelineno-0-83" href="#__codelineno-0-83"></a>├── LOOP_STATE.md                     # next-task pointer, per-combo status
+<a id="__codelineno-0-84" name="__codelineno-0-84" href="#__codelineno-0-84"></a>├── AUTONOMY_LOG.md                   # append-only journal of decisions
+<a id="__codelineno-0-85" name="__codelineno-0-85" href="#__codelineno-0-85"></a>└── .github/workflows/                # CI: lint, type-check, unit, Tier-1 smoke; docs deploy
+</code></pre></div>
+<hr />
+<h2 id="3-model-training-stack">§3. Model &amp; training stack<a class="headerlink" href="#3-model-training-stack" title="Permanent link">&para;</a></h2>
+<h3 id="backbones">Backbones<a class="headerlink" href="#backbones" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>Qwen/Qwen3.5-VL-0.8B</code> — Tier-1 smoke + debug. Hybrid Gated-DeltaNet + Gated-Attention + sparse MoE; 24 layers; hidden 1024; 262K context; thinking mode <strong>off</strong> by default (prone to thinking loops — agent opts in with a loop-detector guardrail).</li>
+<li><code>Qwen/Qwen3.5-VL-4B</code> — Tier-2 paper runs. 32 layers; hidden 2560; 262K context; <strong>native thinking mode on by default</strong> (use this directly for the COT interface; removes the need to engineer <code>THINK:</code> / <code>ACTION:</code> prompt scaffolding).</li>
+<li>Loaded via <code>AutoModelForCausalLM</code> + <code>AutoProcessor</code> (verify at onboarding time).</li>
+<li>Requires a recent <code>transformers</code> install (likely from git at scaffold time — web-fetch latest support notes per S-5).</li>
+<li>Apache-2.0 license.</li>
+<li>Both have MTP (multi-token prediction); vLLM speculative decoding enabled by default.</li>
+</ul>
+<h3 id="precision">Precision<a class="headerlink" href="#precision" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>FP16</strong> is the default for all training runs (user direction — empirically more stable than BF16 for RL finetuning of LLMs).</li>
+<li><strong>BF16</strong> is the first-class ablation; trainers accept a <code>--precision {fp16,bf16}</code> flag.</li>
+<li>Loss scaling via <code>accelerate</code>'s <code>GradScaler</code>; scale-factor history watched by Inv-6 (§8).</li>
+</ul>
+<h3 id="distributed-infrastructure">Distributed infrastructure<a class="headerlink" href="#distributed-infrastructure" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Orchestrator</strong>: <code>accelerate</code>.</li>
+<li><strong>Default sharding</strong>: DeepSpeed <strong>ZeRO-2</strong> (matches the existing repo config; mature MoE handling; easy ZeRO-3 fallback for 8B+ backbones later via spec-extend).</li>
+<li><strong>Alternative sharding</strong>: <strong>FSDP2</strong> behind a <code>--sharding {deepspeed_zero2,fsdp2}</code> flag, supported from day one for ablation purposes.</li>
+<li><strong>Gradient checkpointing</strong>: on by default at 4B.</li>
+<li><strong>Offloading</strong> (optimizer / param / activation): off by default; enabled per-config when an OOM is observed.</li>
+<li><strong>Attention</strong>:</li>
+<li>Flash-attn v2 on Gated-Attention layers.</li>
+<li>DeltaNet is linear-attention — no flash kernel needed.</li>
+<li>SDPA (PyTorch) fallback for environments where flash-attn import fails; the fallback triggers a CI warning but not a failure (research nodes with mismatched CUDA can still run).</li>
+<li>Import-time sanity: run a 1-step microbatch forward and assert no NaN/Inf to verify the kernel plumbing is correct <em>before</em> any training starts.</li>
+<li><strong>Per-GPU microbatch auto-probe</strong>: at startup, try microbatch size <code>s</code> on 1 forward+backward; double until OOM; back off one step; record in <code>runs/&lt;name&gt;/microbatch_probe.json</code>. Used to derive <code>grad_accum</code> to hit the global-batch floor.</li>
+<li><strong>External-library research rule</strong> (per S-5): any change to the sharding strategy, precision handling, attention kernel, or accelerate/DS version triggers a web-fetch of current docs first; the summary lands in the PR body and in <code>AUTONOMY_LOG.md</code>.</li>
+</ul>
+<h3 id="global-batch-floor">Global batch floor<a class="headerlink" href="#global-batch-floor" title="Permanent link">&para;</a></h3>
+<p>VLMs need <strong>large batches</strong> to learn. Effective batch <strong>per gradient step</strong> ≥ 128 (Tier-1) / ≥ 256 (Tier-2). Computed as <code>num_gpus × per_gpu_microbatch × grad_accum</code>. Rollout length (<code>num_envs × num_steps</code>) auto-sized so each iteration produces at least one gradient step's worth of data at the target global batch. Invariant: at training start, <code>effective_batch &gt;= floor</code>, else refuse to start.</p>
+<h3 id="lora-topology-fully-configurable">LoRA topology — fully configurable<a class="headerlink" href="#lora-topology-fully-configurable" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Dual-adapter architecture: one <code>actor</code> LoRA and one <code>critic</code> LoRA on the <strong>same</strong> base VLM weights (matches the current repo). Adapter is swapped via <code>self.vlm.model.set_adapter(name)</code> for each forward.</li>
+<li>Target modules exposed as <strong>group-level YAML booleans</strong> so the paper can ablate "where does LoRA help most":</li>
+<li><code>text_attn</code> — text-tower attention projections (q, k, v, o + Gated-Attention projections + DeltaNet input/output projections)</li>
+<li><code>text_mlp</code> — text-tower FFN (gate, up, down)</li>
+<li><code>text_moe</code> — per-expert FFN params (investigate whether PEFT handles per-expert LoRA cleanly; fallback: LoRA on the router if not)</li>
+<li><code>vision_attn</code> — vision tower attention</li>
+<li><code>vision_mlp</code> — vision tower FFN</li>
+<li><code>merger</code> — vision-to-text projection layer</li>
+<li><code>lm_head</code> — output embedding / LM head</li>
+<li><strong>Default set = largest tractable subset</strong>, discovered at startup: enable groups in a fixed priority order (text_attn, text_mlp, lm_head, vision_attn, vision_mlp, merger, text_moe) adding one group at a time; run 1 microbatch forward+backward; retain the widest group set that succeeded without OOM. Recorded in <code>runs/&lt;name&gt;/lora_topology_probe.json</code>.</li>
+<li><strong>Group-enable ablation</strong> is first-class in the paper.</li>
+</ul>
+<h3 id="kl-regularization">KL regularization<a class="headerlink" href="#kl-regularization" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Default 0.0</strong>; <strong>not implemented</strong> as a feature in canon trainers.</li>
+<li>No reference model kept, no base-logprob cache.</li>
+<li>Rationale (per user direction): this library targets verifiable-reward domains (env returns), where KL-to-base is not standard. The simplicity win is substantial (no extra forward pass, no ref weights in memory, no KL coef tuning).</li>
+<li>Re-introducible via spec-extend if later research argues it helps long-horizon credit assignment.</li>
+</ul>
+<h3 id="inference-rollouts">Inference (rollouts)<a class="headerlink" href="#inference-rollouts" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>vLLM</strong> serves the <code>actor</code> LoRA for COT rollouts (batch generation across parallel envs).</li>
+<li>Trainer → vLLM adapter sync each iteration (LoRA weights pushed to server).</li>
+<li>Use vLLM's multi-LoRA serving (<code>LoRARequest</code>), PagedAttention, dynamic batching, MTP speculative decoding.</li>
+<li>Per S-5: the /loop agent web-fetches current vLLM docs before every change involving vLLM (LoRA hotswap API, multi-adapter serving, precision inheritance, speculative-decoding config). Summary → <code>AUTONOMY_LOG.md</code>.</li>
+<li>Non-generation interfaces (<strong>action-scoring</strong>, <strong>MLP-head</strong>) skip vLLM and run a single in-process forward pass — no generation loop needed.</li>
+</ul>
+<h3 id="checkpointing-summary-full-spec-in-10">Checkpointing (summary — full spec in §10)<a class="headerlink" href="#checkpointing-summary-full-spec-in-10" title="Permanent link">&para;</a></h3>
+<p>Save everything needed for bit-exact resume: LoRA adapters, heads, optimizer state, GradScaler state, scheduler, RNG (torch/numpy/python/per-GPU CUDA), env state per rank, partial rollout buffer, wandb run id, CSV offset, metric history, config snapshot, manifest. Round-trip test on every checkpoint (Inv-7). Atomic write. Integrity hashes. Retention policy. SIGTERM handler flushes within 60 s.</p>
+<hr />
+<h2 id="4-environments-observation-correctness">§4. Environments &amp; observation correctness<a class="headerlink" href="#4-environments-observation-correctness" title="Permanent link">&para;</a></h2>
+<h3 id="coverage">Coverage<a class="headerlink" href="#coverage" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>ViZDoom</strong>: all scenarios in <code>vizdoom.gymnasium_wrapper</code> — basic, corridor (deadly_corridor), defend_center, defend_line, health_gathering, my_way_home, predict_position, take_cover, deathmatch.</li>
+<li><strong>Atari</strong>: full ALE gymnasium suite (~57 games).</li>
+<li><strong>Minigrid / BabyAI</strong>: the full gymnasium-registered grid suite.</li>
+<li>Single point of env registration: <code>src/cleanrl_vlm/envs/registry.py</code>.</li>
+<li>Adding an env = (1) registry entry, (2) prompt template under <code>prompts/&lt;env_family&gt;/</code>, (3) per-env config YAML under <code>configs/envs/</code>, (4) target-score entry in <code>configs/targets.yaml</code>, (5) patch-coverage probe (§4.3) + Inv-15 vision probe, (6) Tier-1 or Tier-2 tier assignment.</li>
+</ul>
+<h3 id="atari-horizon">Atari horizon<a class="headerlink" href="#atari-horizon" title="Permanent link">&para;</a></h3>
+<p><code>max_episode_steps = 27_000</code> is <strong>fixed</strong>. Any future env-wrapper that would cap earlier must be opt-in per-run, never a default. This is <em>the</em> research constraint driving §5 novel-methods work.</p>
+<h3 id="frame-stacking">Frame stacking<a class="headerlink" href="#frame-stacking" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Atari / ViZDoom: default <strong>4-frame stack</strong>, rendered as a single <strong>horizontally-tiled</strong> image passed to the VLM in one call, with a text note <code>"four game frames in order t-3, t-2, t-1, t (left to right)"</code>. Preserves temporal signal inside one VLM forward.</li>
+<li>Minigrid: <strong>single frame</strong> default (state is already symbolic-rich; stacking hurts more than helps).</li>
+<li>Per-env YAML controls: <code>frame_stack: {n: &lt;int&gt;, layout: horizontal|grid|per-call-sequence}</code>. First-class ablation.</li>
+</ul>
+<h3 id="action-wrappers">Action wrappers<a class="headerlink" href="#action-wrappers" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>DiscreteMultiBinaryWrapper(button_names)</code> factory generalizes the existing <code>DeadlyCorridor</code> / <code>DefendTheLine</code> wrappers. One button-name table per vizdoom scenario in <code>envs/vizdoom_action_tables.py</code>.</li>
+<li>Atari uses standard ALE wrappers + <code>NoopReset</code>, <code>EpisodicLife</code> (disabled by default — the ALE full lifetime is the paper-standard horizon), <code>FireReset</code>, <code>ClipReward</code> (configurable).</li>
+<li>Minigrid discrete actions are native.</li>
+</ul>
+<h3 id="preprocessing">Preprocessing<a class="headerlink" href="#preprocessing" title="Permanent link">&para;</a></h3>
+<p>Per-env YAML: resize target, grayscale vs RGB, frameskip, sticky actions, noop-reset, episodic-life, reward clipping. Atari wrappers are kept from the existing repo but audited via Inv-8/9/10.</p>
+<h3 id="observation-correctness-probes-core-to-make-sure-the-model-actually-sees">Observation correctness probes (core to "make sure the model actually sees")<a class="headerlink" href="#observation-correctness-probes-core-to-make-sure-the-model-actually-sees" title="Permanent link">&para;</a></h3>
+<p>Every new <code>(env, backbone)</code> pair ships with three probes, run at onboarding time and re-run whenever preprocessing / resolution / frame-stacking or backbone change:</p>
+<ol>
+<li><strong>Patch-coverage probe</strong> — synthesize a known image (colored quadrants + readable text labels); run through the processor; assert image tokens are present in <code>input_ids</code> and their count matches <code>(H/patch_h) × (W/patch_w)</code> for the backbone's vision config. Zero image tokens → hard fail (correctness bug).</li>
+<li><strong>Resolution-floor probe</strong> — compare the raw env frame shape vs the processor's <code>min_pixels</code> / <code>max_pixels</code> budget; assert no silent downscale below a per-env floor (default: ≥ half of the raw resolution on each dimension unless the env YAML opts out).</li>
+<li><strong>Inv-15: Ground-truth vision probe</strong> — §8 content. Summary here:</li>
+<li>Script <code>scripts/probe_vision.py &lt;env&gt; &lt;backbone&gt;</code> rolls a scripted deterministic episode (20 frames), extracts programmatic ground truth from env state (vizdoom labels buffer, atari RAM maps where documented, minigrid symbolic grid), asks the VLM a fixed battery of env-specific questions (prompts in <code>prompts/&lt;env&gt;/vision_probe.txt</code>), and produces an artifact bundle at <code>docs/vision_probes/&lt;env&gt;_&lt;backbone&gt;/report.md</code> with embedded frames + questions + answers + ground truth.</li>
+<li><strong>Per §0</strong>: the probe is a <strong>signal</strong> for the agent's judgment, not a numerical cliff. The agent reviews the report; if perception looks poor or failure patterns cluster (e.g., HUD-reading fails while spatial questions pass), it iterates — bump resolution, try different frame-stack layout, toggle thinking mode, adjust patch size, reword prompt — and re-runs until its own analysis reads as "the model genuinely sees the scene."</li>
+<li>Re-runs on: new backbone onboarding, new env onboarding, image-preprocessing change, frame-stacking change, resolution change, <code>transformers</code> or vLLM version bump, weekly during long-running Tier-2 campaigns.</li>
+</ol>
+<h3 id="tiering">Tiering<a class="headerlink" href="#tiering" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Tier-1</strong> (CI fast path, gates PRs): runs on the 0.8B backbone, ≤ 10 min, 3 envs — <code>VizdoomBasic-v0</code>, <code>ALE/Pong-v5</code>, <code>MiniGrid-Empty-5x5-v0</code>. Smoke-confirms the end-to-end stack.</li>
+<li><strong>Tier-2</strong> (overnight / manual / paper runs): everything else, on the 4B backbone.</li>
+<li>Per-env YAML has a <code>tier: 1|2</code> field.</li>
+</ul>
+<hr />
+<h2 id="5-algorithms-interfaces-long-horizon-credit-assignment">§5. Algorithms, interfaces, long-horizon credit assignment<a class="headerlink" href="#5-algorithms-interfaces-long-horizon-credit-assignment" title="Permanent link">&para;</a></h2>
+<h3 id="canon-9-single-file-trainers">Canon (9 single-file trainers)<a class="headerlink" href="#canon-9-single-file-trainers" title="Permanent link">&para;</a></h3>
+<p><code>algos/{ppo, grpo, rloo}_{cot, action, head}.py</code>. Each ~500–800 lines (CleanRL-like, but heavier because VLM plumbing). Each trainer is self-contained for reading but calls into <code>src/cleanrl_vlm/</code> for reused primitives (rollout buffer, logging, checkpointing, invariants).</p>
+<h3 id="interfaces">Interfaces<a class="headerlink" href="#interfaces" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>COT</strong> (<code>cot</code>) — <strong>hero</strong>. VLM generates free-form text under the native <code>&lt;think&gt;...&lt;/think&gt;</code> mode. Action parsed out of a trailing <code>ACTION: &lt;NAME&gt;</code> token or — for backbones with native thinking — parsed from the structured response after the closing <code>&lt;/think&gt;</code> tag. Token-level log-probs over the generated span feed the RL loss.</li>
+<li><strong>Action-scoring</strong> (<code>action</code>) — ablation. Score each integer-token <code>"0".."N-1"</code> appended to the prompt; sample from those log-probs; no generation loop.</li>
+<li><strong>MLP-head</strong> (<code>head</code>) — ablation. Drop an MLP on the VLM's last non-pad hidden state; outputs action logits directly; no LM head involvement.</li>
+</ul>
+<p>All Tier-2 paper runs use COT across all envs and all three algos. Action-scoring and MLP-head run on a representative env subset (2 vizdoom + 2 atari + 2 minigrid) to establish the ablation evidence that COT is the right choice.</p>
+<h3 id="algorithms">Algorithms<a class="headerlink" href="#algorithms" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>PPO-COT</strong> (default flagship). Standard clipped surrogate. Sequence-level ratio from summed token log-probs across the generated span. GAE(λ) on env rewards using a VLM critic (critic LoRA adapter on same base weights). Atari-tuned defaults: clip 0.2, γ 0.99, λ 0.95. Ref implementations of the CNN variant live in <code>baselines/cnn_ppo.py</code>.</li>
+<li><strong>GRPO-COT</strong>. No learned value; group-relative advantage — for each state, K (default 4–8) full COT rollouts, advantage is centered reward within the group. <strong>Long-horizon incompatibility made explicit</strong>: with Atari's 27K cap, K full rollouts per state is infeasible. Canon GRPO-COT ships with a pragmatic default (sub-trajectory grouping; fragment episodes into K-step slices, apply GRPO per slice with bootstrapped tail value) and the more principled fixes live under <code>experimental/</code> until promoted.</li>
+<li><strong>RLOO-COT</strong>. K trajectories per state; each trajectory's baseline is the mean of the other K − 1. Same long-horizon issue as GRPO; same pragmatic default.</li>
+<li><strong>Action-scoring and MLP-head variants</strong> of PPO/GRPO/RLOO run the same algorithm templates but with the simpler action distribution. No generation loop → faster; lower research interest (VLM-as-visual-encoder story).</li>
+</ul>
+<h3 id="long-horizon-credit-assignment-research-mandate-see-also-6">Long-horizon credit assignment (research mandate; see also §6)<a class="headerlink" href="#long-horizon-credit-assignment-research-mandate-see-also-6" title="Permanent link">&para;</a></h3>
+<p>Atari's 27K horizon combined with a 4B VLM critic makes pure Monte-Carlo returns prohibitively expensive in wall-clock + variance. The /loop agent MUST treat long-horizon credit assignment as a research contribution. Seed research directions (each belongs in <code>experimental/</code> with a <code>MOTIVATION.md</code> per §6):</p>
+<ol>
+<li><strong>Scalable VLM critics</strong> — token-level value regression on the <code>&lt;think&gt;</code> span; asymmetric critic (critic sees a short state-digest text, actor sees the full VLM output); bootstrapped TD(λ); V-trace for off-policy correction when vLLM and trainer drift between adapter syncs.</li>
+<li><strong>Group-baseline replacements for GRPO/RLOO</strong> — sub-trajectory GRPO with bootstrapped tail value (the pragmatic canon default); Monte-Carlo / TD blend <code>(1−α)·MC + α·TD</code> with a schedule; hindsight subgoal labeling via the VLM itself (LLM proposes subgoals → dense shaped rewards).</li>
+<li><strong>Efficient credit assignment</strong> — Retrace, Emphatic TD, V-trace, attention-over-trajectory critics; Decision-Transformer-style reward-conditioned rollouts as an alternative head family under <code>experimental/</code>.</li>
+<li><strong>VLM-as-reward-model</strong> — the frozen base VLM as a zero-shot dense reward rater; hybrid sparse-env + dense-VLM rewards with a configurable mix (first investigate "does this help or hurt?").</li>
+</ol>
+<p>The /loop agent is expected to originate additional directions and to <em>genuinely pursue</em> these — this section is not a menu to tick off; it is a starting set. Novel findings (positive or negative) land in <code>docs/RESEARCH.md</code> per §6.</p>
+<hr />
+<h2 id="6-research-track-dual-track-protocol">§6. Research track (dual-track protocol)<a class="headerlink" href="#6-research-track-dual-track-protocol" title="Permanent link">&para;</a></h2>
+<p>The <code>/loop</code> agent is a researcher, not only a builder. Between canon-stability cycles, it proposes, implements, and tests novel methods in <code>experimental/</code> and promotes or parks them with evidence.</p>
+<h3 id="promotion-protocol">Promotion protocol<a class="headerlink" href="#promotion-protocol" title="Permanent link">&para;</a></h3>
+<ol>
+<li><strong>Propose.</strong> Agent picks an open question (starts from §5 seeds; grows via <code>docs/RESEARCH.md</code>). Writes <code>experimental/&lt;method-slug&gt;/MOTIVATION.md</code>:</li>
+<li>Hypothesis (1 paragraph).</li>
+<li>Why this might help long-horizon VLM RL (1 paragraph).</li>
+<li>Concrete success criterion — <em>the agent's own yardstick for its own judgment</em> per §0. Example: "learns faster than PPO-COT on VizdoomCorridor across 3 seeds, by an amount the agent judges meaningful given seed variance."</li>
+<li>Compute budget cap.</li>
+<li><strong>Implement.</strong> <code>experimental/&lt;method-slug&gt;/trainer.py</code> — forked from the closest canon trainer, minimal delta. Reuses <code>src/cleanrl_vlm/</code> primitives.</li>
+<li><strong>Run.</strong> Same invariant coverage as canon (§8). Short-circuit early if obviously failing: reward collapse, NaN, no learning signal after ~10 % of budget, logprob drift beyond Inv-4 investigation tolerance.</li>
+<li><strong>Decide.</strong></li>
+<li><strong>Promote</strong> — criterion met on the envs the agent chose to target (multiple, ideally diverse): <code>experimental/&lt;slug&gt;/trainer.py</code> → <code>algos/&lt;slug&gt;.py</code>; entry in <code>docs/RESULTS.md</code>; paragraph in <code>docs/ALGORITHMS.md</code>; <code>docs/RESEARCH.md</code> appended with PROMOTED tag, run IDs, plots.</li>
+<li><strong>Park</strong> — "tried, didn't help": <code>MOTIVATION.md</code> gets a <code>POSTMORTEM</code> section (what happened, likely cause, lesson for future attempts). <code>trainer.py</code> stays, tagged <code>inactive</code> (don't re-run, don't delete — institutional memory). <code>docs/RESEARCH.md</code> appended with PARKED tag.</li>
+<li><strong>Journal.</strong> Every promote/park appends to <code>docs/RESEARCH.md</code> with date, run IDs, key plots, lessons.</li>
+<li><strong>Exploration scheduling.</strong> Loop alternates: <strong>~3 cycles of canon hardening</strong> (smoke tests, re-runs, flaky fixes, doc improvements) per <strong>1 cycle of research exploration</strong>. Ratio is the agent's to tune based on where the work is bottlenecked.</li>
+<li><strong>Anti-novelty guard.</strong> Before proposing method M, agent searches <code>experimental/</code> + <code>docs/RESEARCH.md</code> for prior similar attempts. If found, either revives with a principled change (documented in MOTIVATION.md) or moves on.</li>
+</ol>
+<hr />
+<h2 id="7-baselines">§7. Baselines<a class="headerlink" href="#7-baselines" title="Permanent link">&para;</a></h2>
+<p>Three first-class baselines, each with its own file under <code>baselines/</code>:</p>
+<ul>
+<li><code>baselines/cnn_ppo.py</code> — non-VLM PPO from scratch (polished descendant of the existing <code>src/ppo.py</code>; CleanRL-style CNN encoder; the reference point for the hero claim).</li>
+<li><code>baselines/zero_shot_vlm.py</code> — pure prompting, no RL. Establishes that pretraining alone does not solve the env.</li>
+<li><code>baselines/frozen_vlm_head.py</code> — frozen VLM + trainable MLP action head (no LoRA on the VLM weights). Ablates whether LoRA matters.</li>
+</ul>
+<p>Every baseline is a first-class runnable script and ships an evidence row in <code>docs/RESULTS.md</code> once its Tier-2 runs complete. Baselines honor all §8 invariants that apply to their architecture (e.g., zero-shot-VLM doesn't train, so only Inv-8/15 image-correctness invariants apply; frozen-VLM-head must show non-LoRA params are actually frozen).</p>
+<hr />
+<h2 id="8-correctness-invariants">§8. Correctness invariants<a class="headerlink" href="#8-correctness-invariants" title="Permanent link">&para;</a></h2>
+<p>Every item below is an <strong>automatic test</strong>, not a comment in code. Canon trainers assert the relevant invariants at startup before any gradient step; long-running trainers sample them via <code>InvariantMonitor</code> at agent-chosen intervals.</p>
+<p><strong>Applying §0</strong>: binary "the code is wrong" invariants stay binary; tolerance-based invariants have starting numbers the agent tunes with evidence.</p>
+<ul>
+<li><strong>Inv-1 — LoRA trainability split.</strong> <code>requires_grad=True</code> iff <code>"lora_" in name</code> or param belongs to a head (<code>critic_head</code>, <code>actor_head</code>). Others <code>False</code>. Asserted at build + periodically. Binary.</li>
+<li><strong>Inv-2 — LoRA actually changes.</strong> Weight hash over a training interval the agent considers sufficient (e.g., O(hundreds) of steps) must differ for every LoRA tensor; non-LoRA weight hashes must be identical to step 0. Dead-adapter detection (weights never move) → investigate.</li>
+<li><strong>Inv-3 — Active adapter sanity.</strong> Before each actor forward, <code>active_adapter == "actor"</code>; before each critic forward, <code>== "critic"</code>. Wrap forwards in a context manager that asserts + restores. Binary.</li>
+<li><strong>Inv-4 — Training ↔ inference logprob parity</strong> <em>(the most important silent-bug guard; per §0 the starting threshold is a guide, not a cliff).</em> Every agent-chosen K iterations (start with K = 50), sample a handful of cached rollout triples <code>(obs, prompt, generated_ids)</code> and re-score them via BOTH the vLLM serving path AND the HF+PEFT training forward. Starting tolerance: <code>|Δlogprob_per_token|</code> around 1e-3 mean. Drift above that → investigate (tokenizer, mask, image preprocessing, stale adapter on vLLM server, padding, precision difference, attention impl). Drift that survives investigation → real correctness bug (hard fail).</li>
+<li><strong>Inv-5 — Gradient-norm sanity.</strong> Log per-layer + global grad-norm every step. Cross-check: once every agent-chosen N iterations, compute global norm via <code>clip_grad_norm_</code> AND an independent <code>sum(p.grad.pow(2).sum() ...).sqrt()</code> on one batch; assert equal up to fp16 tolerance. Binary (either the two computations agree or there's a real bug).</li>
+<li><strong>Inv-6 — FP16 stability.</strong> Track <code>GradScaler</code> scale factor. Repeated halving without recovery → investigate (architecture numerical issue, LR too high, bad init). NaN/Inf in gradients → first occurrence dumps full microbatch to <code>runs/&lt;name&gt;/nan_dumps/</code> for debugging.</li>
+<li><strong>Inv-7 — Checkpoint round-trip.</strong> Every checkpoint: save → spawn fresh process → load → deterministic rollout with fixed seed → assert logprobs match pre-save rollout within <code>±1e-5</code>. Optimizer state round-trips (same param → same momentum). Binary.</li>
+<li><strong>Inv-8 — Image-input correctness.</strong> §4 patch-coverage + resolution-floor probes re-run as CI tests for every <code>(env, backbone)</code>. Runtime: for a fixed dummy obs, the processor must produce the same token count across GPUs and across ranks (multimodal DDP divergence hides here). Binary.</li>
+<li><strong>Inv-9 — Reward-pipeline integrity.</strong> Synthetic env with scripted rewards <code>[0, 1, 0, 2]</code>; assert advantage computation sees exactly those numbers (post scaling/clipping toggles). Catches reward-scale bugs silently zero-ing the signal. Binary.</li>
+<li><strong>Inv-10 — Episode-boundary masking.</strong> Synthetic 2-episode rollout; assert GAE λ resets exactly at <code>done=True</code> boundaries (no value leakage). Binary.</li>
+<li><strong>Inv-11 — Determinism under fixed seed.</strong> <code>make_deterministic(seed) → rollout_A</code>; again <code>rollout_B</code>; must be bitwise equal. Binary.</li>
+<li><strong>Inv-12 — Resume parity.</strong> Continuous training of 200 steps → metric log A. Training of 100 steps, checkpoint, restart-from-checkpoint, 100 more steps → metric log B. Assert A ≈ B within fp16 tolerance. Binary in the aggregate-metric sense; the agent judges what "within tolerance" means for the particular metric.</li>
+<li><strong>Inv-13 — Padding &amp; image-token masking.</strong> Inject extra <code>&lt;pad&gt;</code> and image-placeholder tokens in a microbatch; confirm their gradient contribution is exactly zero. Binary.</li>
+<li><strong>Inv-14 — Distributed-broadcast agreement.</strong> After <code>accelerator.backward</code> + <code>step</code>, hash a sample of LoRA weights on rank 0 vs rank N-1; assert identical. Catches silent ZeRO/FSDP divergence. Binary.</li>
+<li><strong>Inv-15 — Ground-truth vision probe.</strong> §4 procedure. <strong>Signal, not gate</strong>: agent reviews the artifact report; iterates on preprocessing / prompts / resolution / thinking-mode / patch-size / frame-stack layout / backbone version until the artifact reads as "the VLM genuinely sees the scene." Hard-fail only on the programmatic impossibilities (zero image tokens, processor crash, model output non-parseable on every frame) — those are real bugs.</li>
+</ul>
+<p>Each invariant ships as a pytest test in <code>tests/invariants/</code> AND wires into a runtime <code>InvariantMonitor</code>. On CI: any binary invariant failing → red. In long Tier-2 runs: failure triggers auto-checkpoint + loud log + stop-that-one-run (keep the /loop going with a different task).</p>
+<hr />
+<h2 id="9-evidence-autonomy-in-run-logging-ci">§9. Evidence, autonomy (in-run), logging, CI<a class="headerlink" href="#9-evidence-autonomy-in-run-logging-ci" title="Permanent link">&para;</a></h2>
+<h3 id="evidence-model-green-criteria">Evidence model ("green" criteria)<a class="headerlink" href="#evidence-model-green-criteria" title="Permanent link">&para;</a></h3>
+<p>A <code>(env, algo, interface, backbone)</code> combo is <strong>green</strong> when the agent judges all of the following — <strong>using §0 throughout</strong> — to have been established:</p>
+<ul>
+<li><strong>Target-score reference.</strong> Mean episodic return over the last 10 % of training sits at a level <strong>consistent with genuine learning</strong> on the env. Targets in <code>configs/targets.yaml</code> are <strong>reference points for the agent's judgment</strong>, seeded from existing curves + published baselines where available, tuned by the agent via spec-extend when its own evidence establishes better/worse plausible ceilings.</li>
+<li><strong>Health gates.</strong> Inv-4, Inv-5, Inv-6, Inv-15 stay in acceptable territory throughout the run (agent judges "acceptable" per §0). No NaN events. Reward trend isn't pathologically collapsing. Grad-norm band is consistent.</li>
+<li><strong>Seed consistency.</strong> Tier-2 runs use ≥ 3 seeds; seed-mean + band is what the agent assesses (not "within ±3 %" — that's guidance, not a cliff).</li>
+<li><strong>Reproducibility.</strong> A re-run with the same seed + config produces results the agent judges reproducible.</li>
+</ul>
+<p>Dashboard — <code>scripts/build_dashboard.py</code> → <code>docs/RESULTS.md</code>: per-combo status (green / yellow / red — with a paragraph justification the agent writes), learning curves (seed-mean ± band), Tier-2 tables, ablation summaries. Regenerated after every Tier-2 run.</p>
+<h3 id="in-run-autonomy-distinct-from-the-loop-contract-in-13">In-run autonomy (distinct from the /loop contract in §13)<a class="headerlink" href="#in-run-autonomy-distinct-from-the-loop-contract-in-13" title="Permanent link">&para;</a></h3>
+<p>Within a single training run (not the outer /loop), the trainer itself is autonomous too:</p>
+<ul>
+<li>Detects OOM → reduce per-gpu microbatch, bump grad-accum, continue (log it).</li>
+<li>Detects logprob drift → re-sync adapter, re-run Inv-4, continue (log it).</li>
+<li>Detects checkpoint round-trip failure → <strong>hard fail</strong> (correctness bug).</li>
+<li>Detects env instability (infinite hang, crash loop) → kill that env worker, continue with the rest, log it.</li>
+</ul>
+<h3 id="logging-stack">Logging stack<a class="headerlink" href="#logging-stack" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Rich console</strong> (<code>rich</code> library). Live colored dashboard during a run: global step, per-env episodic return, grad norm, loss scale, vLLM cache hit rate, invariants status, ETA. Auto-off in headless / CI.</li>
+<li><strong>Weights &amp; Biases</strong> (opt-in via <code>--track</code>). Mirrors every scalar + histograms + videos (<code>wandb.Video</code>) from eval episodes every N iterations.</li>
+<li><strong>CSV</strong> (always on). <code>runs/&lt;name&gt;/metrics.csv</code> — one row per step with every scalar, timestamped. <code>runs/&lt;name&gt;/histograms.parquet</code> for distributions (per-layer grad norm, LoRA weight norms, token-length distribution).</li>
+<li><strong>Metric coverage mandate</strong>: every quantity the paper or the agent might want later gets logged <strong>now</strong>. Examples: loss (clipped, unclipped), approx KL (even though KL coef is 0), entropy, explained variance, clip fraction, grad norm (global + per-layer), loss scale, LR, action distribution entropy, episodic return/length (mean/std/min/max), rollout wall-time, train wall-time, vLLM generation latency, adapter-sync wall-time, per-env return, invariant status, ...</li>
+<li><strong>Run manifest</strong>: <code>runs/&lt;name&gt;/manifest.json</code> — config + git SHA + env versions + GPU info + pip freeze — needed for evidence audit.</li>
+</ul>
+<h3 id="ci">CI<a class="headerlink" href="#ci" title="Permanent link">&para;</a></h3>
+<p><code>.github/workflows/ci.yml</code>:</p>
+<ul>
+<li><strong>ruff</strong> lint + format check.</li>
+<li><strong>pyright</strong> (or equivalent strict type-checker) on <code>src/cleanrl_vlm/</code>.</li>
+<li><strong>pytest</strong> — unit + invariant tests (the CPU-safe subset).</li>
+<li><strong>Tier-1 smoke</strong> — on a self-hosted GPU runner (required): <code>pytest -m tier1</code> on 0.8B backbone, 3 envs, ≤ 10 min wall-clock.</li>
+<li><strong>Docs build</strong> — <code>mkdocs build --strict</code> to catch broken links and missing references.</li>
+<li>Pre-commit hooks mirror the CPU subset.</li>
+<li>Required status checks on <code>master</code>; <code>old</code> is frozen + untouched.</li>
+<li>Docs deployment: <code>.github/workflows/docs.yml</code> builds + deploys to GitHub Pages on push to <code>master</code>.</li>
+</ul>
+<hr />
+<h2 id="10-checkpoint-resume-save-everything-resume-bit-exact">§10. Checkpoint &amp; resume (save everything, resume bit-exact)<a class="headerlink" href="#10-checkpoint-resume-save-everything-resume-bit-exact" title="Permanent link">&para;</a></h2>
+<h3 id="directory-format-atomic-write-rename-integrity-manifest">Directory format (atomic write + rename + integrity manifest)<a class="headerlink" href="#directory-format-atomic-write-rename-integrity-manifest" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>runs/&lt;name&gt;/checkpoints/step_XXXXXX/
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>├── model/
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>│   ├── lora_adapters/{actor, critic}/   # PEFT save_pretrained
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>│   ├── critic_head.pt
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>│   ├── actor_head.pt                    # if head interface
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>│   └── config.json                      # backbone, topology, precision
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>├── optimizer/
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>│   ├── optimizer.pt
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>│   ├── scheduler.pt
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>│   ├── grad_scaler.pt
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>│   └── zero_state.pt                    # DS/FSDP sharded state if sharded
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>├── training/
+<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>│   ├── step.json                        # global_step, iteration, total_env_steps, wall_s
+<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>│   ├── rng.pt                           # torch, numpy, python-random, per-GPU CUDA RNG
+<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>│   ├── rollout_buffer.pt                # partial rollout if interrupted mid-iter
+<a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a>│   └── invariants_snapshot.json         # last observed values of Inv-1..Inv-15
+<a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a>├── envs/
+<a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a>│   └── env_state_rank{N}.pt             # vizdoom savefiles, atari RAM+RNG, minigrid grid+RNG
+<a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a>├── logging/
+<a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a>│   ├── wandb_run_id.txt                 # wandb.init(id=..., resume=&quot;allow&quot;)
+<a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a>│   ├── csv_offset.json                  # byte offset + row count for append
+<a id="__codelineno-1-22" name="__codelineno-1-22" href="#__codelineno-1-22"></a>│   └── metric_history.parquet           # full metric timeline so far
+<a id="__codelineno-1-23" name="__codelineno-1-23" href="#__codelineno-1-23"></a>├── config.yaml                          # effective config post-auto-probe
+<a id="__codelineno-1-24" name="__codelineno-1-24" href="#__codelineno-1-24"></a>├── manifest.json                        # git SHA, pip freeze, GPU info, versions
+<a id="__codelineno-1-25" name="__codelineno-1-25" href="#__codelineno-1-25"></a>└── INTEGRITY_HASHES.txt
+</code></pre></div>
+<p>Write path: <code>step_XXXXXX.tmp/</code> → fsync → rename to final name → update <code>latest</code> symlink. Partial writes leave the previous <code>latest</code> untouched.</p>
+<h3 id="retention-policy">Retention policy<a class="headerlink" href="#retention-policy" title="Permanent link">&para;</a></h3>
+<p>Keep: last 3 + every 10th + first + last-known-good (most recent that passed Inv-7). Others GC'd.</p>
+<h3 id="sigterm">SIGTERM<a class="headerlink" href="#sigterm" title="Permanent link">&para;</a></h3>
+<p>60 s budget to flush a final "interrupt" checkpoint. <code>scripts/resume.py</code> picks it up transparently.</p>
+<h3 id="resume-cli">Resume CLI<a class="headerlink" href="#resume-cli" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>--resume auto</code> — default; pick <code>latest</code> symlink if present, else fresh.</li>
+<li><code>--resume &lt;path&gt;</code> — explicit path.</li>
+<li><code>--resume none</code> — force fresh run.</li>
+</ul>
+<h3 id="resume-gate">Resume gate<a class="headerlink" href="#resume-gate" title="Permanent link">&para;</a></h3>
+<p><code>scripts/resume.py</code> runs Inv-7 (round-trip) and Inv-12 (resume parity) against the loaded state before continuing training. Failure of either → refuse to resume, write a diagnostic bundle, raise. (The only case the /loop is allowed to spawn a fresh run-name instead of resuming an interrupted one.)</p>
+<h3 id="wandb-resume">wandb resume<a class="headerlink" href="#wandb-resume" title="Permanent link">&para;</a></h3>
+<p><code>wandb.init(id=saved_id, resume="allow")</code>. CSV resume appends from saved byte offset. Rich console replays the last 50 lines from metric_history before going live.</p>
+<h3 id="preemption-test-ci">Preemption test (CI)<a class="headerlink" href="#preemption-test-ci" title="Permanent link">&para;</a></h3>
+<p>A test that sends SIGTERM at a random step during Tier-1 smoke, asserts checkpoint landed, asserts a resumed run's metrics match a continuous run within fp16 tolerance.</p>
+<hr />
+<h2 id="11-standing-rules-for-ongoing-development-perpetual-correctness">§11. Standing rules for ongoing development (perpetual correctness)<a class="headerlink" href="#11-standing-rules-for-ongoing-development-perpetual-correctness" title="Permanent link">&para;</a></h2>
+<p>The spec is a <strong>living contract</strong>. Every feature the /loop agent adds — canon trainer, experimental method, new env, new backbone, perf optimization, docs change — must respect the following rules <strong>always</strong>. Violations block merge via CI.</p>
+<ul>
+<li><strong>S-1 — Correctness coverage never decreases.</strong> Each new <code>algos/*.py</code>, <code>experimental/*/trainer.py</code>, <code>envs/*</code>, backbone registration, or invariant-relevant change must ship with tests <strong>in the same PR</strong> exercising the applicable §8 invariants. CI enforces via file-pattern rule (e.g., "any new file under <code>algos/</code> without a matching <code>tests/algos/test_&lt;name&gt;.py</code> → red").</li>
+<li><strong>S-2 — New failure modes → new invariants.</strong> If a feature introduces a novel failure class (new attention kernel, new reward-mixing scheme, new sharding mode, new quantization path), the agent MUST draft a new <code>tests/invariants/test_&lt;inv&gt;.py</code>, append to §8 via spec-extend, AND wire it into <code>InvariantMonitor</code>.</li>
+<li><strong>S-3 — No perf optimization without parity.</strong> Any change pitched as "faster" (kernel swap, precision change, batching scheme, vLLM version bump, etc.) must prove <strong>logprob parity (Inv-4)</strong> against the pre-change path before merge. If numerics change materially, it is a <em>new method</em> in <code>experimental/</code>, not a drop-in replacement.</li>
+<li><strong>S-4 — Max-effort rule.</strong> Never "just get it working" for a merge. Implement the thorough version first; if a fast-path is needed for compute, add it <em>alongside</em> the reference path (which becomes the regression oracle). Shortcuts become next-cycle tech debt — and the /loop is the one paying it.</li>
+<li><strong>S-5 — External-library research before feature.</strong> Every feature touching <code>vllm</code>, <code>accelerate</code>, <code>deepspeed</code>, <code>peft</code>, <code>transformers</code>, <code>flash_attn</code>, <code>rich</code>, <code>wandb</code>, <code>torch.compile</code>, etc. — web-fetch current docs first, summarize in the PR description + <code>AUTONOMY_LOG.md</code>. Forever; not one-time.</li>
+<li><strong>S-6 — Backbone onboarding ritual.</strong> New backbone = registry entry + tokenizer/processor probe + §4 image-input probes + Inv-1..Inv-14 pass on Tier-1 smoke + <code>docs/backbone_probes/&lt;name&gt;.md</code>. No backbone ships without all six.</li>
+<li><strong>S-7 — Env onboarding ritual.</strong> New env = factory + wrappers + prompt template + per-env config YAML + target-score entry + patch-coverage probe + Tier-1 smoke green on 0.8B. No env ships without all seven.</li>
+<li><strong>S-8 — Algorithm onboarding ritual.</strong> New algorithm (canon or experimental → promoted) = trainer file + tests covering Inv-4/5/10/11 + <code>docs/ALGORITHMS.md</code> paragraph + Tier-2 "green by agent judgment" on a diverse env subset + <code>docs/RESULTS.md</code> entry.</li>
+<li><strong>S-9 — Research promotion ritual.</strong> <code>experimental/ → algos/</code> promotion = MOTIVATION.md success criterion met + ≥ 3 env greens + Inv-1..Inv-14 pass + <code>docs/RESEARCH.md</code> PROMOTED entry with run IDs and plots.</li>
+<li><strong>S-10 — Flexibility within the floor.</strong> These rituals are the floor, not the ceiling. The /loop agent is encouraged to innovate on algorithms, envs, training recipes, observation schemes, research ideas — and is required to follow these rituals while doing so. Speed without rigor isn't progress.</li>
+<li><strong>S-11 — Spec is authoritative; spec evolves.</strong> If a rule conflicts with discovered reality (e.g., an invariant turns out to be impractical on the hybrid Gated-DeltaNet + MoE architecture), amend the spec via <code>docs/superpowers/specs/amendments/</code> rather than silently skipping. Git history is the audit trail.</li>
+<li><strong>S-12 — Every PR is a contribution.</strong> Even a tiny change updates <code>CHANGELOG.md</code> with { what, why, evidence, invariants-run }. Makes the loop's trail legible to outside contributors and future sessions.</li>
+</ul>
+<hr />
+<h2 id="12-documentation-deliverable">§12. Documentation deliverable<a class="headerlink" href="#12-documentation-deliverable" title="Permanent link">&para;</a></h2>
+<p>Docs are <strong>always-on</strong> — written incrementally per S-1..S-12, so every new file lands with its doc entry. On top of that there is a <strong>first-milestone comprehensive pass</strong> and a <strong>recurring documentation audit</strong> the /loop agent runs periodically.</p>
+<h3 id="always-on-docs-live-alongside-code-updated-per-rituals">Always-on docs (live alongside code; updated per rituals)<a class="headerlink" href="#always-on-docs-live-alongside-code-updated-per-rituals" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>README.md</code> — 1 page: pitch (1 paragraph) + quickstart (5 lines) + link to docs site + link to <code>docs/RESULTS.md</code> + citation snippet.</li>
+<li><code>docs/index.md</code> — mkdocs landing page.</li>
+<li><code>docs/ARCHITECTURE.md</code> — library layout, rollout/train split, adapter-sync pattern, MoE + Gated-DeltaNet specifics, where each correctness invariant lives.</li>
+<li><code>docs/ALGORITHMS.md</code> — per algorithm: 1-page math + code pointer + objective + known failure modes.</li>
+<li><code>docs/ENVS.md</code> — table: { env_id, horizon, obs shape, action space, target score, prompt sample, link to probe report }.</li>
+<li><code>docs/BACKBONES.md</code> — table: { name, params, context, footprint at batch N, notes on DeltaNet/MoE/thinking-mode }.</li>
+<li><code>docs/RECIPES.md</code> — copy-pasteable commands to reproduce every Tier-2 green curve + expected wall-clock.</li>
+<li><code>docs/RESULTS.md</code> — live dashboard (auto-generated from metric CSVs + configs).</li>
+<li><code>docs/RESEARCH.md</code> — research journal (auto-appended on every experimental outcome).</li>
+<li><code>docs/INVARIANTS.md</code> — Inv-1..Inv-15 each with { what it checks, how it fails, example bug it caught, link to test file }.</li>
+<li><code>docs/CHECKPOINTING.md</code> — §10 summary + resume walkthroughs + common pitfalls.</li>
+<li><code>docs/LOGGING.md</code> — wandb/rich/CSV interplay + metric glossary.</li>
+<li><code>docs/CONTRIBUTING.md</code> — how to add env/algo/backbone following §11 rituals.</li>
+<li><code>docs/TROUBLESHOOTING.md</code> — OOM, NaN, logprob drift, vLLM adapter desync, DeltaNet-specific issues, MoE gotchas.</li>
+<li><code>docs/backbone_probes/&lt;name&gt;.md</code>, <code>docs/vision_probes/&lt;env&gt;_&lt;backbone&gt;/report.md</code> — auto-generated artifact bundles.</li>
+<li><code>docs/superpowers/specs/</code> — this spec + amendments + plans.</li>
+<li><code>mkdocs.yml</code> + <code>.github/workflows/docs.yml</code> deploy.</li>
+</ul>
+<h3 id="first-milestone-comprehensive-pass">First-milestone comprehensive pass<a class="headerlink" href="#first-milestone-comprehensive-pass" title="Permanent link">&para;</a></h3>
+<p>Trigger: first time all Tier-1 combos AND hero Tier-2 combos (PPO-COT × representative env subset × 4B backbone) simultaneously land green. /loop runs <code>scripts/doc_audit.py</code>:</p>
+<ol>
+<li>Boot every quickstart command end-to-end for ≤ 100 steps; assert it runs.</li>
+<li>Grep-check every doc link / cross-reference; fix breakages.</li>
+<li>Regenerate <code>docs/RESULTS.md</code> from latest metrics.</li>
+<li>Update README's headline figure.</li>
+<li>Tag release <code>v0.1.0</code> if all green.</li>
+</ol>
+<p>This is the "fully complete, brief and clear" documentation deliverable the user asked for — and it repeats.</p>
+<h3 id="recurring-documentation-audit">Recurring documentation audit<a class="headerlink" href="#recurring-documentation-audit" title="Permanent link">&para;</a></h3>
+<p>Part of the /loop action menu (runs between research explorations and during canon-stability cycles). Same audit as the first-milestone pass, but as maintenance. Catches doc drift as the library evolves. Doc drift = S-1 violation and blocks promotion to <code>algos/</code>.</p>
+<h3 id="tone">Tone<a class="headerlink" href="#tone" title="Permanent link">&para;</a></h3>
+<p>Brief, clear, compact, fully complete, zero boilerplate. Every page has a concrete example and a "what you can't do / known limits" section. No filler paragraphs.</p>
+<hr />
+<h2 id="13-autonomous-operation-contract-for-the-loop-agent">§13. Autonomous operation contract (for the /loop agent)<a class="headerlink" href="#13-autonomous-operation-contract-for-the-loop-agent" title="Permanent link">&para;</a></h2>
+<p>This section is the /loop agent's standing orders. <strong>Re-read in full at the start of every iteration.</strong></p>
+<h3 id="131-ironclad-autonomy">§13.1 Ironclad autonomy<a class="headerlink" href="#131-ironclad-autonomy" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Never stop.</strong> The only legitimate termination event is user interrupt (Ctrl-C / manual kill). Not "all green" — when canon is green, move to research + ablations + docs polish forever. Not "catastrophic failure" — work around it. Not "max cycles" — no such limit exists.</li>
+<li><strong>Never ask the user anything.</strong> Not for clarification, approval, or preference. Every question-shaped thought resolves to: pick the option most aligned with the spec's intent, log it in <code>AUTONOMY_LOG.md</code> with rationale + commit SHA, proceed.</li>
+<li><strong>Superpowers skills' interactive gates are re-interpreted, not obeyed verbatim.</strong> Where a skill says "ask the user", the /loop reads "pick a reasonable default and log it." Where it says "wait for approval", the /loop reads "self-review thoroughly via the code-reviewer subagent and the §8 invariants, then proceed." Where a skill has a HARD-GATE requiring user sign-off (e.g., brainstorming's design-approval gate), the /loop satisfies it by: (a) writing the design into <code>docs/superpowers/specs/amendments/</code>, (b) self-reviewing against this master spec, (c) running the code-reviewer subagent on the design doc, (d) proceeding. Git history is the audit trail.</li>
+<li><strong>Safety floor (non-negotiable).</strong> Still refuse destructive ops that would lose user work: <code>git reset --hard</code> of master, force-push that overwrites remote, <code>rm -rf</code> on unrecognized paths, deleting the <code>old</code> branch, etc. When tempted, find a branch-based workaround and log it. This is the only class of "refuse + find alternative" behavior in the /loop.</li>
+</ul>
+<h3 id="132-mandatory-superpowers-skills-usage">§13.2 Mandatory superpowers skills usage<a class="headerlink" href="#132-mandatory-superpowers-skills-usage" title="Permanent link">&para;</a></h3>
+<p>Every /loop cycle <strong>MUST</strong> route work through the relevant superpowers skills (with §13.1 overrides applied). Not optional — use them for the process benefits even when they feel like overhead:</p>
+<table>
+<thead>
+<tr>
+<th>Step in cycle</th>
+<th>Skill</th>
+<th>Autonomy substitution</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Identifying a new feature / research direction</td>
+<td><code>superpowers:brainstorming</code></td>
+<td>"Ask user" → "pick default + log"; "user approves design" → "self-review + code-reviewer subagent"</td>
+</tr>
+<tr>
+<td>Drafting the implementation plan</td>
+<td><code>superpowers:writing-plans</code></td>
+<td>Commit plan to <code>docs/superpowers/specs/plans/&lt;date&gt;-&lt;slug&gt;.md</code>; no user review gate</td>
+</tr>
+<tr>
+<td>Executing the plan</td>
+<td><code>superpowers:subagent-driven-development</code></td>
+<td>Parallel subagents per independent task; orchestrator assembles</td>
+</tr>
+<tr>
+<td>Dispatching independent work</td>
+<td><code>superpowers:dispatching-parallel-agents</code></td>
+<td>≥ 2 tasks with no shared state → parallel</td>
+</tr>
+<tr>
+<td>Debugging any failure</td>
+<td><code>superpowers:systematic-debugging</code></td>
+<td>Used before every fix, not only hard ones</td>
+</tr>
+<tr>
+<td>Writing new code with tests</td>
+<td><code>superpowers:test-driven-development</code></td>
+<td>Red → green → refactor, strict</td>
+</tr>
+<tr>
+<td>Verifying work is done</td>
+<td><code>superpowers:verification-before-completion</code></td>
+<td>Evidence (§8 invariants + targeted tests + evidence gates) before any "done" claim</td>
+</tr>
+<tr>
+<td>Reviewing finished work</td>
+<td><code>superpowers:code-reviewer</code> subagent (via Agent tool)</td>
+<td>Independent review; fixes before merging</td>
+</tr>
+<tr>
+<td>Cleaning up</td>
+<td><code>simplify</code> skill</td>
+<td>Always after finishing a feature, before committing</td>
+</tr>
+<tr>
+<td>Isolating risky work</td>
+<td><code>superpowers:using-git-worktrees</code></td>
+<td>For research / experimental branches</td>
+</tr>
+<tr>
+<td>Finishing a branch</td>
+<td><code>superpowers:finishing-a-development-branch</code></td>
+<td>Decide merge strategy without asking</td>
+</tr>
+</tbody>
+</table>
+<h3 id="133-canonical-loop-iteration-shape">§13.3 Canonical /loop iteration shape<a class="headerlink" href="#133-canonical-loop-iteration-shape" title="Permanent link">&para;</a></h3>
+<ol>
+<li><strong>Orient.</strong> Read master spec (this file) + <code>LOOP_STATE.md</code> + last 20 entries of <code>AUTONOMY_LOG.md</code> + <code>CHANGELOG.md</code> tail.</li>
+<li><strong>Pick next task.</strong> Priority order (loose; agent judges): (a) fix a red canon combo; (b) fix a failing invariant; (c) resume a paused Tier-2 run; (d) promote / park an experimental method; (e) onboard a new env / backbone / algo per §11 rituals; (f) run a new research idea; (g) docs audit; (h) polish / simplify.</li>
+<li><strong>Brainstorm (adapted).</strong> Use <code>superpowers:brainstorming</code> to design the chosen task; self-approve via §13.1 substitution; write to <code>docs/superpowers/specs/amendments/</code> if it extends this spec.</li>
+<li><strong>Plan.</strong> Use <code>superpowers:writing-plans</code> → commit plan file.</li>
+<li><strong>Execute.</strong> Use <code>superpowers:subagent-driven-development</code>. Parallelize wherever independent.</li>
+<li><strong>Verify.</strong> Use <code>superpowers:verification-before-completion</code>. Run the §8 invariants that apply. Confirm evidence gates (§9). Evidence precedes any "done" claim.</li>
+<li><strong>Review.</strong> Launch <code>superpowers:code-reviewer</code> subagent on the diff. Fix findings before merge.</li>
+<li><strong>Simplify.</strong> Run <code>simplify</code> skill on the changed files.</li>
+<li><strong>Commit + update journals.</strong> <code>CHANGELOG.md</code> append; <code>AUTONOMY_LOG.md</code> append with all decisions; <code>LOOP_STATE.md</code> update (done-task + next-task).</li>
+<li><strong>Dashboard refresh.</strong> If Tier-2 results changed, regenerate <code>docs/RESULTS.md</code>.</li>
+<li><strong>Schedule next.</strong> Self-pace via the available scheduling mechanism (no interval specified → agent decides cadence).</li>
+</ol>
+<h3 id="134-anti-patterns-ruled-out">§13.4 Anti-patterns ruled out<a class="headerlink" href="#134-anti-patterns-ruled-out" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Thought</th>
+<th>Correct action</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>"Let me ask the user to clarify X"</td>
+<td>NO — pick the spec-aligned default, log rationale, proceed</td>
+</tr>
+<tr>
+<td>"I'll wait for approval before merging"</td>
+<td>NO — self-approve via code-reviewer subagent + invariants + tests</td>
+</tr>
+<tr>
+<td>"This is ambiguous; better check in"</td>
+<td>NO — pick the interpretation closest to spec intent, log it</td>
+</tr>
+<tr>
+<td>"Let me just quickly fix it without a test"</td>
+<td>NO — S-1 applies; tests land in the same commit</td>
+</tr>
+<tr>
+<td>"I'll skip the invariant this time, it's obvious"</td>
+<td>NO — §8's point is that silent bugs pass obvious-looking code</td>
+</tr>
+<tr>
+<td>"This optimization doesn't need parity because it's 'equivalent'"</td>
+<td>NO — S-3; prove Inv-4 parity before merging</td>
+</tr>
+<tr>
+<td>"I'll re-implement vLLM LoRA hotswap from memory"</td>
+<td>NO — S-5; web-fetch current vLLM docs first, cite in PR</td>
+</tr>
+<tr>
+<td>"I should stop when canon goes green"</td>
+<td>NO — research + ablations + docs audits continue forever</td>
+</tr>
+<tr>
+<td>"Subagent returned an error; I'll skip that task"</td>
+<td>NO — debug via systematic-debugging and try again</td>
+</tr>
+<tr>
+<td>"Design is obvious; I'll skip brainstorming"</td>
+<td>NO — §13.2 mandates the skill even for obvious work</td>
+</tr>
+<tr>
+<td>"This numerical threshold says red, so red"</td>
+<td>NO — §0; investigate, understand, iterate; only genuine-correctness failures are hard red</td>
+</tr>
+</tbody>
+</table>
+<h3 id="135-thresholds-are-signals-0-reinforced-here">§13.5 Thresholds are signals (§0 reinforced here)<a class="headerlink" href="#135-thresholds-are-signals-0-reinforced-here" title="Permanent link">&para;</a></h3>
+<p>When a threshold fires inside a /loop iteration, the response is always <strong>investigate → understand → iterate</strong>. Hard failures are reserved for genuine correctness bugs (shape mismatches, NaNs, true training↔inference divergence, checkpoint round-trip breakage, non-determinism under fixed seed).</p>
+<h3 id="136-kickoff-prompt-what-the-user-types">§13.6 Kickoff prompt (what the user types)<a class="headerlink" href="#136-kickoff-prompt-what-the-user-types" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>/loop
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>You are the autonomous /loop agent for cleanrl-vlm. Master spec at
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>docs/superpowers/specs/2026-04-19-cleanrl-vlm-masterplan.md — read the
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>full file at the start of every iteration. Follow §13 strictly. Use the
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>superpowers skills continuously (brainstorming, writing-plans,
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>subagent-driven-development, code-reviewer, simplify, systematic-debugging,
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>verification-before-completion, test-driven-development). Never ask me
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>questions. Never stop except on Ctrl-C. All decisions go in AUTONOMY_LOG.md.
+</code></pre></div>
+<h3 id="137-claudemd-at-repo-root">§13.7 CLAUDE.md at repo root<a class="headerlink" href="#137-claudemd-at-repo-root" title="Permanent link">&para;</a></h3>
+<p>The scaffold PR rewrites <code>CLAUDE.md</code> to carry §13 verbatim at its top. Because CLAUDE.md sits at the top of the instruction priority order (above superpowers skills), this guarantees every session of the /loop agent reads "never ask, never stop" at session start and knows to apply the §13.1 substitutions when a skill HARD-GATE fires.</p>
+<hr />
+<h2 id="14-design-defaults-open-to-spec-extend">§14. Design defaults (open to spec-extend)<a class="headerlink" href="#14-design-defaults-open-to-spec-extend" title="Permanent link">&para;</a></h2>
+<p>Short list of choices the agent takes as defaults; each open to change via spec-extend with evidence.</p>
+<ul>
+<li><strong>Hyperparameter defaults per env</strong> — seeded from the existing repo's atari PPO config + CleanRL's <code>ppo_atari.py</code> + vizdoom config from the current <code>src/utils/args.py</code>. Frozen at scaffold; agent updates via spec-extend when better numbers are established.</li>
+<li><strong>Frame stack</strong> — 4 horizontally-tiled frames on atari/vizdoom; single frame on minigrid.</li>
+<li><strong>Reward scaling</strong> — <code>0.01</code> (matches current code); ablated raw vs scaled vs clipped as part of Q11's ablations.</li>
+<li><strong><code>max_new_tokens</code> for COT</strong> — default 512 (balance between reasoning budget and vLLM throughput). Ablated {128, 512, 1024}.</li>
+<li><strong>LoRA rank</strong> — default 32, alpha 64. Ablated {8, 32, 128}.</li>
+<li><strong>Thinking mode</strong> — on for 4B (native default), off for 0.8B (loop-prone); agent can opt 0.8B in via a loop-detection guardrail.</li>
+<li><strong>Seeds per combo</strong> — 3 for Tier-2 "green" judgments; 1 for Tier-1 smoke.</li>
+<li><strong>vLLM version</strong> — whichever current as of first implementation, with S-5 fetch.</li>
+<li><strong>Backbone onboarding first run</strong> — always runs Inv-1..Inv-15 + §4 probes + <code>docs/backbone_probes/&lt;name&gt;.md</code> auto-write.</li>
+<li><strong>Paper-targeted ablations (at v1)</strong> — LoRA rank, frozen-vision (LoRA on vision tower vs not), reasoning budget (<code>max_new_tokens</code>), FP16 vs BF16, action-interface comparison (COT vs action vs head).</li>
+</ul>
+<hr />
+<h2 id="glossary">Glossary<a class="headerlink" href="#glossary" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>canon</strong> — the 9 curated trainers under <code>algos/</code> + 3 baselines under <code>baselines/</code>. Changes go through §11 rituals; promotion only after evidence.</li>
+<li><strong>experimental</strong> — playground under <code>experimental/</code> for novel research methods; promoted to <code>algos/</code> per §6.</li>
+<li><strong>hero interface</strong> — COT. All Tier-2 paper runs.</li>
+<li><strong>hero paper claim</strong> — VLM + LoRA + correct RL → outperforms from-scratch CNN in interactive visual envs, at a small parameter-training budget.</li>
+<li><strong>Tier-1</strong> — CI-fast smoke. 0.8B backbone, 3 envs, ≤ 10 min wall-clock. Gates PRs.</li>
+<li><strong>Tier-2</strong> — overnight / manual paper runs. 4B backbone, all envs.</li>
+<li><strong>green</strong> — combo passes §9 gates by the agent's judgment (§0).</li>
+<li><strong>red</strong> — combo has a genuine-correctness failure.</li>
+<li><strong>yellow</strong> — in-progress / investigating.</li>
+<li><strong>/loop</strong> — the autonomous iteration mechanism running this spec. See §13.</li>
+<li><strong>S-</strong>* — standing rule, §11.</li>
+<li><strong>Inv-</strong>* — correctness invariant, §8.</li>
+</ul>
+<hr />
+<h2 id="appendix-a-kickoff-prompt">Appendix A: Kickoff prompt<a class="headerlink" href="#appendix-a-kickoff-prompt" title="Permanent link">&para;</a></h2>
+<p>See §13.6 above. The user types the block verbatim to start the autonomous session.</p>
+<h2 id="appendix-b-claudemd-rewrite-at-scaffold-time">Appendix B: CLAUDE.md rewrite (at scaffold time)<a class="headerlink" href="#appendix-b-claudemd-rewrite-at-scaffold-time" title="Permanent link">&para;</a></h2>
+<p>The scaffold PR replaces the existing <code>CLAUDE.md</code> with a new file whose top carries §13 (the autonomous operation contract) verbatim, followed by the usual brief codebase orientation (commands, architecture pointers, important paths). Because CLAUDE.md sits above superpowers skills in the instruction-priority stack, this ensures the /loop's "never ask, never stop" contract is always in effect.</p>
+<h2 id="appendix-c-external-references-consulted-during-spec-authorship">Appendix C: External references consulted during spec authorship<a class="headerlink" href="#appendix-c-external-references-consulted-during-spec-authorship" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Qwen3.5-VL-4B model card (<code>https://huggingface.co/Qwen/Qwen3.5-4B</code>) — hybrid Gated-DeltaNet + Gated-Attention + MoE architecture; native <code>&lt;think&gt;</code> thinking mode; 262K context; MTP / speculative decoding; Apache-2.0.</li>
+<li>Qwen3.5-VL-0.8B model card (<code>https://huggingface.co/Qwen/Qwen3.5-0.8B</code>) — same family, smaller; thinking off by default (loop-prone).</li>
+<li>CleanRL repo (<code>cleanrl-master</code> reference zip supplied by user) — <code>pyproject.toml</code> with optional-dependencies; <code>cleanrl_utils/</code>; <code>tests/</code> per-trainer; <code>benchmark/</code>; MIT; mkdocs; <code>uv.lock</code> — mirrored for <code>cleanrl-vlm</code> layout.</li>
+<li>Existing <code>clean-llm-rl</code> repo (current <code>master</code>, to be moved to branch <code>old</code>) — source of three existing trainer variants (COT, action-scoring, MLP-head), current dual-adapter LoRA design, vizdoom action wrappers, per-env prompt conventions.</li>
+</ul>
+<h2 id="appendix-d-open-questions-deferred-to-spec-extend">Appendix D: Open questions deferred to spec-extend<a class="headerlink" href="#appendix-d-open-questions-deferred-to-spec-extend" title="Permanent link">&para;</a></h2>
+<p>These are explicitly <strong>not</strong> blockers for the /loop agent to start. Each is a research / engineering question the agent can extend the spec on when evidence accrues:</p>
+<ol>
+<li>Whether PEFT cleanly handles per-expert LoRA on the sparse-MoE layers; if not, fallback is LoRA on the router only.</li>
+<li>Whether FSDP2 matches DS-ZeRO-2 on Gated-DeltaNet + MoE hybrid architecture in practice; default is DS-ZeRO-2 until agent establishes otherwise.</li>
+<li>Whether thinking-mode COT (<code>&lt;think&gt;</code>) outperforms engineered <code>THINK:</code> / <code>ACTION:</code> prompt scaffolding on the paper envs; agent ablates.</li>
+<li>Whether the pragmatic sub-trajectory GRPO default holds up vs. more principled long-horizon credit assignment methods developed in <code>experimental/</code>.</li>
+<li>Whether adding KL-to-base back into the loss (re-introducing a ref model) improves long-horizon stability despite the simplicity cost.</li>
+</ol>
+
+
+
+
+
+
+
+  
+  
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.tabs", "navigation.sections", "toc.integrate", "search.highlight", "content.code.copy"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
