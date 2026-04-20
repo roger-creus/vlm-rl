@@ -4,7 +4,7 @@
 
 | env_id | horizon | obs shape | actions | target | prompt | probe |
 |---|---|---|---|---|---|---|
-| VizdoomBasic-v1 | 300 tics / ~75 env steps @ frame_skip=4 | (240, 320, 3) uint8 | Discrete(3): MOVE_LEFT / MOVE_RIGHT / ATTACK | 60.0 | [actor](../src/cleanrl_vlm/prompts/templates/vizdoom/basic/actor.txt) | [report](vision_probes/VizdoomBasic-v1_qwen3-vl-2b-instruct/report.md) |
+| VizdoomBasic-v1 | 300 tics / ~75 env steps @ frame_skip=4 | (240, 320, 3) uint8 | Discrete(3): MOVE_LEFT / MOVE_RIGHT / ATTACK | 60.0 | `src/cleanrl_vlm/prompts/templates/vizdoom/basic/actor.txt` | [report](vision_probes/VizdoomBasic-v1_qwen3-vl-2b-instruct/report.md) |
 
 Placeholder — remaining envs populated as onboarded per master-spec §11 S-7.
 
