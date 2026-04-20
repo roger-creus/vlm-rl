@@ -6,7 +6,7 @@ relevant), follow-ups. Newest at the bottom.
 
 ---
 
-### 2026-04-20 — iter 1 — loop-bootstrap — @(pending)
+### 2026-04-20 — iter 1 — loop-bootstrap — @8f0c71c
 
 **Context.** First `/loop` invocation against the master spec committed at
 `docs/superpowers/specs/2026-04-19-cleanrl-vlm-masterplan.md`. Repo is
