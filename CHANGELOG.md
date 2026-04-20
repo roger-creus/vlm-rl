@@ -6,6 +6,99 @@ One entry per iteration, not per commit within an iteration.
 
 ---
 
+## 2026-04-20 — iter 20 — simplify pass + backbone switch to Qwen3.5 (plan task 25 + user pivot)
+
+**What.** Two substantial commits closing plan Task 25 and executing a
+user-directed backbone switch mid-iter.
+
+- `8dab039` — **simplify pass** on the iter-5..HEAD plan diff. Three
+  parallel reviews (reuse / quality / efficiency) via the superpowers
+  simplify skill. Real wins:
+  - Extracted `generated_span_mask` helper used by both rollout and PPO
+    re-score — keeps f10b7c8's ratio≈1 parity structural.
+  - `AdapterName` Literal + `ACTOR`/`CRITIC` constants replacing
+    scattered string literals.
+  - Collapsed dual LoraConfig → one shared.
+  - Cached `lora_params_{all,actor,critic}` once instead of per-minibatch
+    `named_parameters()` rescan. Vectorized `_lora_weight_norm`.
+  - Pre-pad `flat_full_ids[batch, S_max]` once per iter; per-minibatch
+    gather is now a single `index_select` (removed per-row `.item()`
+    GPU→CPU syncs).
+  - Vectorized `gen_truncated` (one broadcast vs B per-env
+    `.sum().item()` calls).
+  - Fixed `_atomic_rename` to preserve atomicity under existing dst
+    (no longer `rmtree` before rename).
+  - Chunked sha256 hashing in checkpoint save.
+  - Removed `Args.{batch_size, minibatch_size, num_iterations}` —
+    derived, not CLI-settable; tyro was silently shadowing overrides.
+  - Reviewer-tag + iter-N + narrate-the-change comment sweep (CLAUDE.md
+    "don't reference the task, fix, or callers").
+  - Dedup `_build_tiny_ac_model` wrapper; fixed iter-14 env-rename
+    bitrot in `test_prompt_builder.py` (v0 → v1).
+
+- `b8636b3` — **backbone switch to Qwen3.5** (user directive mid-iter).
+  `Qwen/Qwen3.5-{0.8,2,4}B` register under `AutoModelForImageTextToText`
+  with vision encoder despite missing `-VL-` infix. Confirms master
+  spec §3's original hybrid Gated-DeltaNet + Gated-Attention + MoE
+  architecture.
+  - `configs/backbones.yaml`: Qwen3.5-0.8B (Tier-1 debug), Qwen3.5-2B
+    (Tier-1 primary), Qwen3.5-4B (Tier-2). `lora_groups_default` = all
+    6 towers per user directive "loras in all vision and language
+    towers".
+  - `lora_topology.py`: `text_attn` extended with DeltaNet
+    `linear_attn.in_proj_{a,b,qkv,z}` + `linear_attn.out_proj`. Added
+    `ALL_TOWERS_DEFAULT`.
+  - `algos/ppo_cot.py::Args` defaults flipped.
+  - `tests/smoke/test_hello_vlm.py` default MODEL_ID bumped.
+  - `scripts/probe_backbone.py` re-run on Qwen3.5-2B; artifact
+    `docs/backbone_probes/qwen3.5-2b.md` (280 image tokens, Inv-8 PASS).
+  - New `tests/integration/test_qwen35_backbone_wiring.py` — 7 tier1
+    GPU tests: image tokens present, every LoRA group wraps ≥1 module
+    on real backbone, Inv-1 trainability split, Inv-3 base-weight
+    identity + ctxmgr tripwire, actor/critic param-id disjointness.
+  - Caught + fixed: `_adapter_param_ids` filtering by `requires_grad`
+    made disjointness assertion state-dependent (PEFT's `set_adapter`
+    flips that flag); now uses identity semantics only.
+  - Amendment doc: `docs/superpowers/specs/amendments/
+    2026-04-20-backbone-switch-to-qwen3.5.md`.
+
+**Why.** Task 25 was the simplify milestone before the code-reviewer
+pass. User pivot brought forward the Qwen3.5 migration that master-spec
+§3 anticipated but the 2026-04-20 backbone-names-correction amendment
+had postponed (those models now exist).
+
+**Evidence.**
+- `ruff check .` + `ruff format --check .` + `mkdocs build --strict`
+  all clean.
+- `pyright src/cleanrl_vlm algos`: 12 → 10 errors (pre-existing type
+  stubs; simplify removed 2, introduced 0).
+- `pytest tests/unit tests/invariants -m "not gpu"`: 49/49 pass (was
+  48/49 — fixed prompt-builder bitrot).
+- `pytest tests/smoke/test_hello_vlm.py -m "tier1 and gpu"`: PASS in
+  45.94 s on Qwen3.5-2B.
+- `pytest tests/integration/test_qwen35_backbone_wiring.py`: **7/7
+  PASS** in 65.67 s (full mechanical tests per user request).
+- `pytest tests/integration/test_trainer_short_run.py`: PASS in 76.83 s.
+  Full PPO-COT pipeline end-to-end on Qwen3.5-2B + all-towers LoRA.
+
+**Known signal (per spec §0 — investigate not hard-fail).**
+Integration test `inv_4_status=red`, first-minibatch drift ~8e-3.
+Isolated single-row debug probe gives exact parity (drift=0.0). Likely
+fp16 kernel/reduction noise in the batched (batch=2) re-score forward
+versus rollout's sequential batch=1 forwards. Fix options captured in
+the amendment doc; investigation deferred to a follow-up iter.
+
+**Invariants run.**
+- Inv-1 green on real backbone + tiny fixture.
+- Inv-2 green (LoRA params identified and disjoint).
+- Inv-3 green (adapter sharing + ctxmgr tripwire).
+- Inv-4 single-path: isolated parity green; integration batched re-score
+  red (logged signal).
+- Inv-5/6/9/10/11/13 all green on CPU tests.
+- Inv-8 green (280 image tokens on Qwen3.5-2B @ 76800 px).
+
+---
+
 ## 2026-04-20 — iter 19 — reward scaling + ep_return + docs (plan task 24)
 
 **What.** 4 commits closing iter-18's follow-up queue and executing

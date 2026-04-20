@@ -1760,3 +1760,111 @@ forwards (rollout's generate-then-score vs update's action_ids
 forward). Bit-exact ratio=1 would require caching log_probs directly
 — defeats PPO gradient flow. Current state effectively = 1 at fp16
 floor; Inv-4 tolerance 1e-4 holds comfortably.
+
+---
+
+### 2026-04-20 — iter 20 — simplify-pass + qwen3.5-backbone-switch — @8dab039..b8636b3
+
+**Context.** Fresh `/loop` session resumed at `b8f76f8`. Plan file showed
+24/27 tasks done; next task was Plan-25 (simplify). User pivoted
+mid-iter to switch backbone from Qwen/Qwen3-VL-2B-Instruct to
+Qwen/Qwen3.5-{0.8,2,4}B and add mechanical tests for image perception +
+LoRA application.
+
+**Decisions.**
+
+1. **Completed Plan-25 simplify pass before the user pivot.** Three
+   parallel reviews (general-purpose subagents: code-reuse, code-
+   quality, efficiency) against the iter-5..HEAD plan diff. Applied the
+   high-signal fixes only; deferred invasive perf work (vocab-wide
+   entropy, double rollout forward, obs→PIL pipeline) to future iters
+   with Inv-4 parity per S-3. Committed at `8dab039`.
+
+2. **Verified Qwen3.5 models exist and are VL.** `WebFetch` on
+   `huggingface.co/Qwen/Qwen3.5-2B` and `-0.8B`: both are
+   AutoModelForImageTextToText with vision encoders. The 2026-04-20
+   backbone-names-correction amendment (iter 3) had concluded these
+   didn't exist; by iter 20 they had been published. `Qwen/Qwen3.5-2B`
+   is already fully cached under `$SCRATCH/hub/`. Updated amendment
+   folder with a new doc superseding the correction (partial).
+
+3. **Adopted user directive "loras in all vision and language towers"
+   as the new default.** `lora_groups_default` in
+   `configs/backbones.yaml` now lists all 6 towers (text_attn,
+   text_mlp, vision_attn, vision_mlp, merger, lm_head). Same change
+   propagated to `algos/ppo_cot.py::Args.lora_groups`.
+
+4. **Extended `text_attn` LoRA group to include Gated DeltaNet
+   projections.** Qwen3.5's text tower alternates `self_attn` blocks
+   and `linear_attn` (DeltaNet) blocks. Previous target set only
+   covered `self_attn.{q,k,v,o}_proj`. Added
+   `linear_attn.in_proj_{a,b,qkv,z}` + `linear_attn.out_proj` so LoRA
+   hits both attention types. Master-spec §3 mandates this.
+
+5. **Wrote mechanical tests per user request.** New
+   `tests/integration/test_qwen35_backbone_wiring.py` — 7 tier1-gpu
+   tests: base-VLM preprocessing shape, image-token presence (Inv-8
+   smoke), every LoRA group wraps ≥1 module on real backbone, Inv-1
+   requires_grad split, Inv-3 base-weight identity across
+   set_adapter, Inv-3 ctxmgr tripwire, actor/critic param-id
+   disjointness. All 7 PASS in 65.67 s on Qwen3.5-2B.
+
+6. **Real bug caught by the new wiring tests.**
+   `_adapter_param_ids` was filtering by `p.requires_grad`, which made
+   the disjointness assertion state-dependent: PEFT's
+   `set_adapter(name)` flips `requires_grad=False` on the non-active
+   adapter, so calling `actor_param_ids()` while critic is active
+   returns empty. Removed the filter — the method returns parameter
+   **identities** now, which is adapter-state-independent. Updated
+   the tiny fixture's matching wrappers. CPU Inv-1 tests still green.
+
+7. **inv_4_status=red signal logged, not hard-failed (per §0).**
+   Integration test showed ~8e-3 first-minibatch drift. Isolated
+   single-row debug probe (`scripts/_debug_parity.py`, since removed)
+   gave exact parity (drift = 0.0). Root cause hypothesis: fp16
+   kernel/reduction noise in the batched (batch=2) re-score forward
+   vs rollout's sequential batch=1 forwards across 24 layers. Not a
+   correctness bug in the span-mask logic. Fix options captured in
+   the amendment doc for a follow-up iter.
+
+**Verification evidence (full matrix).**
+
+- `ruff check .` / `ruff format --check .` / `mkdocs build --strict`
+  — all clean.
+- `pyright src/cleanrl_vlm algos`: 12 → 10 errors (all pre-existing
+  type-stub issues; simplify eliminated 2, introduced 0).
+- `pytest tests/unit tests/invariants -m "not gpu"` — **49/49 pass**
+  (was 48/49; fixed `test_prompt_builder.py::VizdoomBasic-v0` →
+  `v1` bitrot caused by iter-14's env rename).
+- `pytest tests/smoke/test_hello_vlm.py -m "tier1 and gpu"` —
+  **PASS in 45.94 s** on Qwen/Qwen3.5-2B.
+- `pytest tests/integration/test_qwen35_backbone_wiring.py -m
+  "tier1 and gpu"` — **7/7 PASS in 65.67 s**.
+- `pytest tests/integration/test_trainer_short_run.py -m
+  "tier1 and gpu"` — **PASS in 76.83 s**. Full PPO-COT pipeline
+  runs end-to-end against Qwen3.5-2B + all-towers LoRA.
+
+**Commits.**
+- `8dab039` — simplify pass.
+- `b8636b3` — backbone switch + mechanical tests + amendment.
+
+**Skills invoked.**
+- `superpowers:using-superpowers` — session bootstrap.
+- `superpowers:simplify` — 3-agent parallel review (reuse + quality +
+  efficiency).
+- `superpowers:systematic-debugging` — parity probe to isolate the
+  inv_4 drift signal (rollout vs batched re-score).
+- `superpowers:verification-before-completion` — pytest + ruff +
+  mkdocs + pyright before each commit.
+
+**Follow-ups (iter 21+).**
+- Investigate inv_4 batched-vs-single drift. Options: row-by-row
+  re-score; BF16 ablation; raise `INV_04_TOLERANCE` with evidence.
+- Cache `Qwen/Qwen3.5-0.8B` to enable the faster debug backbone test
+  path.
+- Plan-task 26 (code-reviewer subagent) can now proceed against the
+  iter-6..b8636b3 diff.
+- Plan-task 27 pivot to `C-envs-tier1-expand` (ALE/Pong-v5 +
+  MiniGrid-Empty-5x5-v0 per §11 S-7).
+- Long-campaign Tier-2 training run on VizdoomBasic-v1 once inv_4
+  signal is explained.

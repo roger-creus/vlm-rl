@@ -1,30 +1,61 @@
 # LOOP_STATE.md
 
-**Last updated:** 2026-04-20 (iter 19 — correctness milestones + ratio=1 fix).
+**Last updated:** 2026-04-20 (iter 20 — simplify pass + Qwen3.5 backbone switch).
 **Maintained by:** the autonomous `/loop` agent; humans read only.
 
 ## Current phase
 
-**Phase:** `B-ppo-cot-vizdoom-basic-2B` — **correctness milestones green**. Plan tasks 1-24/27 complete (89% through). 3-iter smoke after iter-19 fixes:
-- `loss_value` 0.01-0.4 (was 60-660; `reward_scale=0.01` per spec §14)
-- `loss_scale = 32768.0` constant (FP16 stable → Inv-6 green)
-- `ep_return_n > 0` for 4/10 iters (episode returns captured)
-- Both LoRA adapters training (iter-18 fix)
-- **First-minibatch-first-epoch `approx_kl = −2.52e-05`** (was 1.51e-02; iter-19 ratio=1 fix)
-- Inv-4 single-path green
+**Phase:** `B-ppo-cot-vizdoom-basic-Qwen3.5-2B` — plan tasks 1-25/27
+complete (93% through). Backbone switched mid-iter-20 from
+Qwen/Qwen3-VL-2B-Instruct to Qwen/Qwen3.5-2B per user directive; LoRA
+default is now all 6 towers (text_attn + text_mlp + vision_attn +
+vision_mlp + merger + lm_head).
+
+- `hello_vlm` smoke: PASS on Qwen3.5-2B in 45.94 s.
+- Backbone wiring mechanical tests (7/7 PASS in 65.67 s): image tokens
+  present, every LoRA group wraps ≥1 module, Inv-1 trainability split,
+  Inv-3 base-weight identity + ctxmgr tripwire, actor/critic disjoint.
+- Integration test (full PPO-COT pipeline): PASS in 76.83 s on new
+  backbone + all-towers LoRA.
+- `loss_value`, `loss_scale = 32768.0`, LoRA actor + critic both
+  drifting, Inv-6 green from iter-19.
+- **Known signal**: integration-test `inv_4_status=red` with
+  first-minibatch drift ~8e-3. Isolated single-row parity probe gave
+  drift=0.0 — likely fp16 batched-vs-single forward noise. Logged to
+  `docs/superpowers/specs/amendments/2026-04-20-backbone-switch-to-
+  qwen3.5.md`; investigation deferred to iter 21.
 
 ## Immediate next task (fresh session resumes here)
 
-**Plan task 25 — `simplify` pass** on `algos/ppo_cot.py` + `src/cleanrl_vlm/*` + `tests/**`. Plan reference: `docs/superpowers/specs/plans/2026-04-20-ppo-cot-vizdoom-basic.md` line ~3552. Invoke `superpowers:simplify` skill via `Skill` tool; apply to the diff between iter 5 commits and HEAD (most files produced under this plan cycle).
+**Iter 21 — investigate batched Inv-4 drift on Qwen3.5-2B.**
 
-Then:
+The integration test's inv_4 red signal (~8e-3 mean drift at
+first-minibatch-first-epoch) is the highest-priority follow-up.
+Isolated single-row parity is exact (drift = 0.0) per the iter-20
+debug probe. Options, in order of simplicity:
+
+1. Re-score row-by-row (batch=1) in the PPO update loop. Matches
+   rollout's batch=1 forward exactly — kills the noise source.
+   Wall-clock cost: `minibatch_size × forward_time` per minibatch.
+2. Raise `INV_04_TOLERANCE` to a level consistent with observed fp16
+   noise floor; gather drift evidence across 10+ iters to pick it.
+3. Ablate BF16 (master-spec §1's first-class ablation) — larger
+   exponent, less reduction-order noise; if drift drops to ~1e-4,
+   supports the fp16-noise hypothesis without new code.
+
+After that, per the existing plan:
+
 - **Plan task 26 — `superpowers:code-reviewer` subagent** on the full
-  diff (iter 6..HEAD). Address findings with per-finding commits.
-- **Plan task 27 — journals + LOOP_STATE pivot to
+  diff (iter 6..b8636b3). Address findings with per-finding commits.
+- **Plan task 27 — pivot LOOP_STATE to
   `C-envs-tier1-expand`** (adds `ALE/Pong-v5` + `MiniGrid-Empty-5x5-v0`
   as Tier-1 envs per §11 S-7 ritual).
+- Cache `Qwen/Qwen3.5-0.8B` locally → enable the faster debug
+  backbone path in `test_qwen35_backbone_wiring.py`.
+- Kick off a longer Tier-2 training run once inv_4 signal is
+  understood.
 
-## Handoff state (as of commit `f10b7c8`)
+## Handoff state (as of commit `b8636b3`)
 
 Everything needed for a fresh `/loop` session to continue from this
 exact point is on disk + in git:
@@ -141,9 +172,10 @@ available, verifies locally, commits.
 - [x] Task 22 — scripts/probe_backbone.py (m1) — iter 16 (Inv-8 PASS on 2B @ 76800 px)
 - [x] Task 23 — **training run kickoff** (iter 17-19; smoke runs only; long-campaign deferred post-plan)
 - [x] Task 24 — docs update (ALGORITHMS / ENVS / RECIPES / RESULTS / BACKBONES) — iter 19
-- [ ] Task 25 — simplify pass (m12)
-- [ ] Task 26 — code-reviewer subagent pass
+- [x] Task 25 — simplify pass (m12) — iter 20 (@ `8dab039`)
+- [ ] Task 26 — code-reviewer subagent pass (on iter-6..`b8636b3` diff)
 - [ ] Task 27 — journals + LOOP_STATE pivot to `C-envs-tier1-expand`
+- [ ] Task 28 (iter-20 addition) — investigate batched Inv-4 drift on Qwen3.5-2B (see amendment `2026-04-20-backbone-switch-to-qwen3.5.md`)
 
 ## Planned iter boundaries (rough)
 
