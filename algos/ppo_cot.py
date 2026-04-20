@@ -306,6 +306,18 @@ def main() -> None:  # noqa: C901  (trainer orchestration; complexity expected)
                 # Master-spec §4: Loss = L_clip + c_v * L_value - c_e * H.
                 loss = pg_loss + args.vf_coef * v_loss - args.ent_coef * ent
 
+                # PEFT's set_adapter(name) calls .requires_grad_(False) on the
+                # non-active adapter. After get_value switches to "critic", the
+                # actor LoRA params end up frozen — and .backward() only
+                # populates grads on leaves with requires_grad=True, so the
+                # actor never trains. Re-enable both adapters' trainable flag
+                # before backward; each loss only contributes gradients through
+                # the adapter it was forwarded under, so correctness is
+                # preserved.
+                for n, p in ac_model.vlm.model.named_parameters():
+                    if "lora_" in n:
+                        p.requires_grad_(True)
+
                 optimizer.zero_grad()
                 fp16.scale(loss).backward()
                 fp16.unscale_(optimizer)
