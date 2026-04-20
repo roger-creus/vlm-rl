@@ -96,8 +96,6 @@ class RichDashboard:
     def update(self, row: dict[str, Any]) -> None:
         if not self.enabled:
             return
-        # Simple implementation: log a single formatted line. Full Rich live-table
-        # upgrade lands in D-invariants-runtime.
         logging.getLogger(__name__).info(
             "step=%s ret=%s grad=%s",
             row.get("global_step"),

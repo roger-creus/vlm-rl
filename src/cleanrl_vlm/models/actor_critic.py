@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
+from typing import Literal
 
 import torch
 import torch.nn as nn
@@ -14,9 +15,13 @@ from cleanrl_vlm.models.base_vlm import BaseVLM
 from cleanrl_vlm.models.heads import CriticHead
 from cleanrl_vlm.models.lora_topology import default_target_modules
 
+AdapterName = Literal["actor", "critic"]
+ACTOR: AdapterName = "actor"
+CRITIC: AdapterName = "critic"
+
 
 @contextmanager
-def active_adapter(ac_model: DecoupledActorCriticVLM_COT, name: str) -> Iterator[None]:
+def active_adapter(ac_model: DecoupledActorCriticVLM_COT, name: AdapterName) -> Iterator[None]:
     """Tripwire ctxmgr: asserts the PEFT active adapter equals ``name`` on enter.
 
     Setting the adapter happens inside :meth:`get_action` / :meth:`get_value`;
@@ -35,7 +40,7 @@ def active_adapter(ac_model: DecoupledActorCriticVLM_COT, name: str) -> Iterator
 
 
 def _active_adapter_name(peft_model) -> str:
-    """PEFT's .active_adapter can be a str or a list depending on version."""
+    # PEFT's .active_adapter is a str in some versions, a single-element list in others.
     active = peft_model.active_adapter
     if isinstance(active, list):
         assert len(active) == 1, f"expected single active adapter, got {active!r}"
@@ -78,28 +83,17 @@ class DecoupledActorCriticVLM_COT(nn.Module):
         self.critic_head = CriticHead(hidden_size).to(device=self.vlm.model.device)
         self.max_new_tokens = max_new_tokens
 
-        # Snapshot the target-module list ONCE; feed the identical list to both
-        # LoraConfigs to avoid dict-ordering divergence (reviewer m10).
-        target_modules = list(default_target_modules(set(lora_groups)))
-
-        actor_cfg = LoraConfig(
+        # One LoraConfig shared across both adapters so target_modules cannot
+        # diverge between actor and critic (PEFT consumes the list in-order).
+        cfg = LoraConfig(
             r=lora_r,
             lora_alpha=lora_alpha,
             lora_dropout=lora_dropout,
-            target_modules=list(target_modules),
+            target_modules=list(default_target_modules(set(lora_groups))),
             bias="none",
         )
-        critic_cfg = LoraConfig(
-            r=lora_r,
-            lora_alpha=lora_alpha,
-            lora_dropout=lora_dropout,
-            target_modules=list(target_modules),
-            bias="none",
-        )
-        assert actor_cfg.target_modules == critic_cfg.target_modules, "actor/critic LoRA target modules diverged"
-
-        self.vlm.model = get_peft_model(self.vlm.model, actor_cfg, adapter_name="actor")
-        self.vlm.model.add_adapter("critic", critic_cfg)
+        self.vlm.model = get_peft_model(self.vlm.model, cfg, adapter_name=ACTOR)
+        self.vlm.model.add_adapter(CRITIC, cfg)
 
         # Re-freeze: only lora_* params train (critic head handled separately in
         # get_trainable_params). Cast trainable LoRA params to fp32 so the
@@ -117,14 +111,10 @@ class DecoupledActorCriticVLM_COT(nn.Module):
         return params
 
     def actor_param_ids(self) -> set[int]:
-        return {
-            id(p) for n, p in self.vlm.model.named_parameters() if "lora_" in n and ".actor." in n and p.requires_grad
-        }
+        return _adapter_param_ids(self.vlm.model, ACTOR)
 
     def critic_param_ids(self) -> set[int]:
-        ids = {
-            id(p) for n, p in self.vlm.model.named_parameters() if "lora_" in n and ".critic." in n and p.requires_grad
-        }
+        ids = _adapter_param_ids(self.vlm.model, CRITIC)
         ids |= {id(p) for p in self.critic_head.parameters() if p.requires_grad}
         return ids
 
@@ -135,8 +125,8 @@ class DecoupledActorCriticVLM_COT(nn.Module):
         action_ids: torch.Tensor | None = None,
         prompt_lens: torch.Tensor | None = None,
     ):
-        self.vlm.model.set_adapter("actor")
-        with active_adapter(self, "actor"):
+        self.vlm.model.set_adapter(ACTOR)
+        with active_adapter(self, ACTOR):
             inputs = self.vlm.preprocess_obs_and_text(obs, text_prompts, add_generation_prompt=True)
             batch_size = len(text_prompts)
             if action_ids is None:
@@ -193,9 +183,9 @@ class DecoupledActorCriticVLM_COT(nn.Module):
             return log_probs, entropy
 
     def get_value(self, obs: torch.Tensor, prompt_text: list[str]) -> torch.Tensor:
-        """Critic path: ``.forward()`` only, never ``.generate()`` (reviewer m9)."""
-        self.vlm.model.set_adapter("critic")
-        with active_adapter(self, "critic"):
+        """Critic path: ``.forward()`` only, never ``.generate()``."""
+        self.vlm.model.set_adapter(CRITIC)
+        with active_adapter(self, CRITIC):
             inputs = self.vlm.preprocess_obs_and_text(obs, prompt_text)
             outputs = self.vlm.model(**inputs, output_hidden_states=True)
             last_hidden = self.vlm.last_hidden_state(
@@ -205,3 +195,19 @@ class DecoupledActorCriticVLM_COT(nn.Module):
             # critic_head is fp32 to keep GradScaler happy; cast the VLM hidden
             # (fp16 in default precision) before feeding in.
             return self.critic_head(last_hidden.float())
+
+
+def _adapter_param_ids(peft_model, adapter: AdapterName) -> set[int]:
+    tag = f".{adapter}."
+    return {id(p) for n, p in peft_model.named_parameters() if "lora_" in n and tag in n and p.requires_grad}
+
+
+def lora_params_for(peft_model, adapter: AdapterName | None = None) -> list[torch.nn.Parameter]:
+    """Return the list of ``lora_*`` parameters, optionally filtered to one adapter.
+
+    Cached lookups let the trainer avoid re-scanning ``named_parameters()``
+    per minibatch (e.g., when re-enabling ``requires_grad`` after PEFT's
+    ``set_adapter`` freezes the non-active side).
+    """
+    tag = None if adapter is None else f".{adapter}."
+    return [p for n, p in peft_model.named_parameters() if "lora_" in n and (tag is None or tag in n)]

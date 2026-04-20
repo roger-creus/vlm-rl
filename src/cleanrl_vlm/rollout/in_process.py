@@ -9,17 +9,34 @@ import torch
 
 @dataclass
 class CotRolloutStep:
-    """Typed return from :func:`generate_cot_actions` (reviewer M1).
+    actions: torch.LongTensor
+    full_ids: torch.LongTensor
+    logprob_sum: torch.FloatTensor
+    prompt_lens: torch.LongTensor
+    raw_texts: list[str]
+    gen_truncated: torch.BoolTensor
 
-    All tensors live on the model device unless otherwise noted.
+
+def generated_span_mask(
+    full_ids: torch.Tensor,
+    prompt_lens: torch.Tensor,
+    pad_id: int,
+    dtype: torch.dtype | None = None,
+) -> torch.Tensor:
+    """Mask over the per-token logprob tensor ``log_probs[:, :S-1]``.
+
+    Positions ``j ∈ [L_i - 1, S-2]`` predicting non-pad target tokens
+    ``full_ids[:, j+1] != pad_id`` constitute the generated span. Rollout
+    (``generate_cot_actions``) and the PPO update's re-score path both
+    apply this mask; sharing it keeps ``ratio = 1`` at first-minibatch /
+    first-epoch (modulo fp16 reduction-order noise).
     """
-
-    actions: torch.LongTensor  # [B] parsed int action per env (uniform-sampled on parse fail)
-    full_ids: torch.LongTensor  # [B, S] prompt + generated ids, padded
-    logprob_sum: torch.FloatTensor  # [B] sum of token logprobs over the generated span
-    prompt_lens: torch.LongTensor  # [B] prompt length per row
-    raw_texts: list[str]  # len B decoded generation
-    gen_truncated: torch.BoolTensor  # [B] True iff generation hit max_new_tokens w/o EOS (reviewer m4)
+    S = full_ids.shape[1]
+    positions = torch.arange(S - 1, device=full_ids.device)
+    start_mask = positions.unsqueeze(0) >= (prompt_lens - 1).unsqueeze(1)
+    nonpad_mask = full_ids[:, 1:] != pad_id
+    mask = start_mask & nonpad_mask
+    return mask.to(dtype) if dtype is not None else mask
 
 
 def generate_cot_actions(
@@ -39,34 +56,28 @@ def generate_cot_actions(
         text_prompts=prompt_texts,
     )
 
-    B = full_ids.shape[0]
-    actions = torch.zeros(B, dtype=torch.long, device=full_ids.device)
-    gen_truncated = torch.zeros(B, dtype=torch.bool, device=full_ids.device)
+    B, S = full_ids.shape
+    device = full_ids.device
+    pad_id = ac_model.vlm.processor.tokenizer.pad_token_id or 0
     eos_id = ac_model.vlm.processor.tokenizer.eos_token_id
-    pad_id = ac_model.vlm.processor.tokenizer.pad_token_id
-    if pad_id is None:
-        pad_id = 0
-    for i, txt in enumerate(generated_texts):
+
+    actions_list: list[int] = []
+    for txt in generated_texts:
         parsed = parse_action_cot(txt, action_names)
         if parsed is None:
             parsed = int(np.random.randint(0, len(action_names)))
-        actions[i] = parsed
-        # Truncated iff no EOS id appeared among the generated tail.
-        gen_tail = full_ids[i, int(prompt_lens[i]) :]
-        if eos_id is None or (gen_tail == eos_id).sum().item() == 0:
-            gen_truncated[i] = True
+        actions_list.append(parsed)
+    actions = torch.tensor(actions_list, dtype=torch.long, device=device)
 
-    # logprob_sum over generated span: log_probs is aligned to target_ids =
-    # full_ids[:, 1:]. Sum positions ``j >= prompt_len - 1`` with non-pad
-    # target tokens ``full_ids[j+1] != pad_id``. The *exact same mask* is
-    # applied in the PPO update's re-score path (``algos/ppo_cot.py``) so the
-    # stored ``logprob_sum`` matches ``lp_new`` bit-for-bit under the same
-    # adapter — ratio = 1 at the first minibatch of the first update epoch.
-    S = full_ids.shape[1]
-    positions = torch.arange(S - 1, device=log_probs.device)
-    start_mask = positions.unsqueeze(0) >= (prompt_lens - 1).unsqueeze(1)
-    nonpad_mask = full_ids[:, 1:] != pad_id
-    span_mask = (start_mask & nonpad_mask).to(log_probs.dtype)
+    # Generation is truncated iff no EOS id appeared after the prompt.
+    positions = torch.arange(S, device=device).unsqueeze(0)
+    gen_mask = positions >= prompt_lens.unsqueeze(1)
+    if eos_id is None:
+        gen_truncated = torch.ones(B, dtype=torch.bool, device=device)
+    else:
+        gen_truncated = ((full_ids == eos_id) & gen_mask).sum(dim=1) == 0
+
+    span_mask = generated_span_mask(full_ids, prompt_lens, pad_id, dtype=log_probs.dtype)
     logprob_sum = (log_probs * span_mask).sum(dim=-1).float()
 
     return CotRolloutStep(

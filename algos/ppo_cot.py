@@ -1,8 +1,6 @@
-"""PPO-COT trainer: Qwen3-VL-2B-Instruct on VizdoomBasic-v0.
+"""PPO-COT trainer: Qwen3-VL-2B-Instruct on VizdoomBasic-v1.
 
 Single-file trainer; imports from ``src/cleanrl_vlm/`` only.
-Reviewer M1/M2/M3/M4/M5/M6/M7/M8 + m1..m12 encoded per the plan file at
-``docs/superpowers/specs/plans/2026-04-20-ppo-cot-vizdoom-basic.md``.
 """
 
 from __future__ import annotations
@@ -21,10 +19,15 @@ from gymnasium.vector import AsyncVectorEnv
 
 from cleanrl_vlm.envs.registry import make_env
 from cleanrl_vlm.envs.vizdoom.action_tables import action_tables
-from cleanrl_vlm.models.actor_critic import DecoupledActorCriticVLM_COT
+from cleanrl_vlm.models.actor_critic import (
+    ACTOR,
+    CRITIC,
+    DecoupledActorCriticVLM_COT,
+    lora_params_for,
+)
 from cleanrl_vlm.prompts.builder import PromptBuilder
 from cleanrl_vlm.rollout.buffer import RolloutBuffer
-from cleanrl_vlm.rollout.in_process import CotRolloutStep, generate_cot_actions
+from cleanrl_vlm.rollout.in_process import CotRolloutStep, generate_cot_actions, generated_span_mask
 from cleanrl_vlm.training.checkpoint import save_vlm_actor_critic_checkpoint
 from cleanrl_vlm.training.distributed import load_accelerator_config
 from cleanrl_vlm.training.invariants import (
@@ -88,16 +91,11 @@ class Args:
     lora_dropout: float = 0.0
     lora_groups: tuple[str, ...] = ("text_attn", "text_mlp", "lm_head")
 
-    # Distributed (iter 4 single-rank)
+    # Distributed
     sharding: str = "deepspeed_zero2"
     precision: str = "fp16"
     num_processes: int = 1
     grad_accum: int = 1
-
-    # Filled at runtime
-    batch_size: int = 0
-    minibatch_size: int = 0
-    num_iterations: int = 0
 
 
 def _build_run_name(args: Args) -> str:
@@ -122,12 +120,12 @@ def _set_seed(seed: int) -> None:
     torch.use_deterministic_algorithms(True, warn_only=True)
 
 
-def _lora_weight_norm(ac_model, adapter: str) -> float:
-    total = 0.0
-    for n, p in ac_model.vlm.model.named_parameters():
-        if "lora_" in n and f".{adapter}." in n:
-            total += float(p.detach().float().pow(2).sum().item())
-    return float(total**0.5)
+def _lora_weight_norm(params: list[torch.nn.Parameter]) -> float:
+    if not params:
+        return 0.0
+    with torch.no_grad():
+        total = torch.stack([p.detach().float().pow(2).sum() for p in params]).sum()
+    return float(total.sqrt().item())
 
 
 def _extract_ep_returns(info) -> list[float]:
@@ -181,7 +179,7 @@ def main() -> None:  # noqa: C901  (trainer orchestration; complexity expected)
 
     _set_seed(args.seed)
 
-    # Per-env pixel budget override (reviewer B3).
+    # Per-env pixel budget may override the backbone default.
     min_pixels = int(env_cfg.get("processor_min_pixels", bb["processor_pixel_budget"]["min_pixels"]))
     max_pixels = int(env_cfg.get("processor_max_pixels", bb["processor_pixel_budget"]["max_pixels"]))
 
@@ -207,19 +205,16 @@ def main() -> None:  # noqa: C901  (trainer orchestration; complexity expected)
     optimizer = torch.optim.AdamW(ac_model.get_trainable_params(), lr=args.learning_rate)
     fp16 = Fp16State(enabled=(args.precision == "fp16"))
 
-    # Reviewer M7: microbatch probe. At iter-4 single-rank we cap at num_envs.
     per_gpu_microbatch = probe_microbatch(try_batch_fn=lambda s: s <= args.num_envs, cap=args.num_envs)
     record_microbatch_probe(run_dir, per_gpu_microbatch, target_batch_floor=128)
 
-    # Reviewer m11: startup sharding log (best-effort).
     ds_yaml = "deepspeed_zero2.yaml" if args.sharding == "deepspeed_zero2" else "deepspeed_zero3.yaml"
     if Path(ds_yaml).exists():
         load_accelerator_config(ds_yaml, num_processes=args.num_processes)
 
-    # Runtime-filled args.
-    args.batch_size = args.num_envs * args.num_steps * args.num_processes
-    args.minibatch_size = args.batch_size // args.num_minibatches
-    args.num_iterations = args.total_timesteps // max(1, args.batch_size)
+    batch_size = args.num_envs * args.num_steps * args.num_processes
+    minibatch_size = batch_size // args.num_minibatches
+    num_iterations = args.total_timesteps // max(1, batch_size)
 
     csv = CsvWriter(run_dir / "metrics.csv")
     dash = RichDashboard(run_name)
@@ -228,9 +223,15 @@ def main() -> None:  # noqa: C901  (trainer orchestration; complexity expected)
     obs_shape = envs.single_observation_space.shape
     buffer = RolloutBuffer(args.num_envs, args.num_steps, obs_shape, device=torch.device("cuda"))
 
+    lora_params_all = lora_params_for(ac_model.vlm.model)
+    lora_params_actor = lora_params_for(ac_model.vlm.model, ACTOR)
+    lora_params_critic = lora_params_for(ac_model.vlm.model, CRITIC)
+
     monitor = InvariantMonitor(sample_every=10)
     monitor.register("inv_01", check_inv_01_lora_trainability)
     monitor.register("inv_05", check_inv_05_grad_norm)
+
+    pad_id = ac_model.vlm.processor.tokenizer.pad_token_id or 0
 
     global_step = 0
     start_time = time.time()
@@ -238,7 +239,7 @@ def main() -> None:  # noqa: C901  (trainer orchestration; complexity expected)
     obs = torch.as_tensor(obs_np, device="cuda", dtype=torch.uint8)
     done = torch.zeros(args.num_envs, device="cuda")
 
-    for iteration in range(1, args.num_iterations + 1):
+    for iteration in range(1, num_iterations + 1):
         it_start = time.time()
         gen_wall = 0.0
         cot: CotRolloutStep | None = None
@@ -284,7 +285,22 @@ def main() -> None:  # noqa: C901  (trainer orchestration; complexity expected)
         buffer.compute_gae(args.gamma, args.gae_lambda, next_value, done)
 
         # ---- PPO update ----
-        b_inds = torch.randperm(args.batch_size)
+        # Pre-pad all cached full_ids into a single [batch, S_max] tensor once
+        # per iter so each minibatch gather is a single index_select. Buffer
+        # slots are guaranteed non-None after rollout.
+        step_ids_list = [buffer.full_ids_per_step[t] for t in range(args.num_steps)]
+        step_plen_list = [buffer.prompt_lens_per_step[t] for t in range(args.num_steps)]
+        assert all(s is not None for s in step_ids_list), "rollout left empty slots"
+        mb_max_s = max(s.shape[1] for s in step_ids_list)  # type: ignore[union-attr]
+        flat_full_ids = torch.full((batch_size, mb_max_s), pad_id, dtype=torch.long, device="cuda")
+        flat_prompt_lens = torch.empty(batch_size, dtype=torch.long, device="cuda")
+        for t, (step_ids, step_plens) in enumerate(zip(step_ids_list, step_plen_list, strict=True)):
+            assert step_ids is not None and step_plens is not None
+            i0 = t * args.num_envs
+            flat_full_ids[i0 : i0 + args.num_envs, : step_ids.shape[1]] = step_ids
+            flat_prompt_lens[i0 : i0 + args.num_envs] = step_plens
+
+        b_inds = torch.randperm(batch_size, device="cuda")
         clip_fracs: list[float] = []
         approx_kls: list[float] = []
         inv_04_status = "skipped"
@@ -294,32 +310,15 @@ def main() -> None:  # noqa: C901  (trainer orchestration; complexity expected)
         loss = torch.tensor(0.0, device="cuda")
         grad_norm = torch.tensor(0.0, device="cuda")
         for epoch in range(args.update_epochs):
-            for start in range(0, args.batch_size, args.minibatch_size):
-                mb = b_inds[start : start + args.minibatch_size]
+            for start in range(0, batch_size, minibatch_size):
+                mb = b_inds[start : start + minibatch_size]
 
-                mb_obs = buffer.obs.view(args.batch_size, *obs_shape)[mb].float()
-                mb_adv = buffer.advantages.view(args.batch_size)[mb]
-                mb_ret = buffer.returns.view(args.batch_size)[mb]
-                _mb_val = buffer.values.view(args.batch_size)[mb]
-                mb_lp_old = buffer.logprob_sum.view(args.batch_size)[mb]
-
-                # Re-score path (iter 15): gather cached full_ids per minibatch
-                # row, pad to the row-max, pass as action_ids to the actor adapter.
-                # `get_action` returns (log_probs, entropy) on the action_ids path.
-                pad_id = ac_model.vlm.processor.tokenizer.pad_token_id or 0
-                rows: list[torch.Tensor] = []
-                plens: list[torch.Tensor] = []
-                for idx_t in mb:
-                    flat = int(idx_t.item())
-                    t_idx = flat // args.num_envs
-                    b_idx = flat % args.num_envs
-                    rows.append(buffer.full_ids_per_step[t_idx][b_idx])  # [S_t]
-                    plens.append(buffer.prompt_lens_per_step[t_idx][b_idx])  # []
-                max_s = max(r.shape[0] for r in rows)
-                mb_full_ids = torch.full((len(rows), max_s), pad_id, dtype=torch.long, device=rows[0].device)
-                for i, r in enumerate(rows):
-                    mb_full_ids[i, : r.shape[0]] = r
-                mb_prompt_lens = torch.stack(plens)
+                mb_obs = buffer.obs.view(batch_size, *obs_shape)[mb].float()
+                mb_adv = buffer.advantages.view(batch_size)[mb]
+                mb_ret = buffer.returns.view(batch_size)[mb]
+                mb_lp_old = buffer.logprob_sum.view(batch_size)[mb]
+                mb_full_ids = flat_full_ids[mb]
+                mb_prompt_lens = flat_prompt_lens[mb]
 
                 log_probs, entropy = ac_model.get_action(
                     obs=mb_obs,
@@ -327,16 +326,11 @@ def main() -> None:  # noqa: C901  (trainer orchestration; complexity expected)
                     action_ids=mb_full_ids,
                     prompt_lens=mb_prompt_lens,
                 )
-                # Span-sum the per-token logprobs: positions j ∈ [L_i - 1, S-2]
-                # predicting non-pad tokens at j+1 constitute the generated span.
-                positions = torch.arange(mb_full_ids.shape[1] - 1, device=log_probs.device)
-                start_mask = positions.unsqueeze(0) >= (mb_prompt_lens - 1).unsqueeze(1)
-                nonpad_mask = mb_full_ids[:, 1:] != pad_id
-                span_mask = (start_mask & nonpad_mask).to(log_probs.dtype)
+                span_mask = generated_span_mask(mb_full_ids, mb_prompt_lens, pad_id, dtype=log_probs.dtype)
                 lp_new = (log_probs * span_mask).sum(dim=-1)
-                # Mean entropy over the same generated span.
                 entropy = (entropy * span_mask).sum(dim=-1) / span_mask.sum(dim=-1).clamp(min=1)
-                # Inv-04 single-path (reviewer B2): epoch 0, minibatch 0 only.
+                # Inv-04 single-path: first minibatch of first epoch must
+                # match the rollout's cached logprob_sum (ratio ≈ 1).
                 if epoch == 0 and start == 0:
                     drift = (lp_new.detach() - mb_lp_old).abs().max().item()
                     inv_04_status = "green" if drift < INV_04_TOLERANCE else "red"
@@ -351,20 +345,16 @@ def main() -> None:  # noqa: C901  (trainer orchestration; complexity expected)
                 v_loss = 0.5 * ((newvalue - mb_ret.to(newvalue.dtype)) ** 2).mean()
 
                 ent = entropy.mean()
-                # Master-spec §4: Loss = L_clip + c_v * L_value - c_e * H.
                 loss = pg_loss + args.vf_coef * v_loss - args.ent_coef * ent
 
-                # PEFT's set_adapter(name) calls .requires_grad_(False) on the
-                # non-active adapter. After get_value switches to "critic", the
-                # actor LoRA params end up frozen — and .backward() only
-                # populates grads on leaves with requires_grad=True, so the
-                # actor never trains. Re-enable both adapters' trainable flag
-                # before backward; each loss only contributes gradients through
-                # the adapter it was forwarded under, so correctness is
-                # preserved.
-                for n, p in ac_model.vlm.model.named_parameters():
-                    if "lora_" in n:
-                        p.requires_grad_(True)
+                # PEFT's set_adapter(name) calls requires_grad_(False) on the
+                # non-active adapter. After get_value switches to CRITIC, the
+                # ACTOR LoRA params end up frozen and .backward() skips them.
+                # Re-enable both before backward; each loss only contributes
+                # gradients through the adapter it was forwarded under, so
+                # correctness is preserved.
+                for p in lora_params_all:
+                    p.requires_grad_(True)
 
                 optimizer.zero_grad()
                 fp16.scale(loss).backward()
@@ -396,8 +386,8 @@ def main() -> None:  # noqa: C901  (trainer orchestration; complexity expected)
             "generate_wall_s": gen_wall,
             "rollout_wall_s": time.time() - it_start,
             "train_wall_s": 0.0,
-            "lora_weight_norm_actor": _lora_weight_norm(ac_model, "actor"),
-            "lora_weight_norm_critic": _lora_weight_norm(ac_model, "critic"),
+            "lora_weight_norm_actor": _lora_weight_norm(lora_params_actor),
+            "lora_weight_norm_critic": _lora_weight_norm(lora_params_critic),
             "adapter_sync_wall_s": 0.0,
             "gen_truncated_rate": float(cot.gen_truncated.float().mean().item()) if cot else 0.0,
             "inv_4_status": inv_04_status,

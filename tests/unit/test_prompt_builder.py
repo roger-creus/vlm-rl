@@ -4,7 +4,7 @@ import pytest
 def test_prompt_builder_loads_vizdoom_basic_templates():
     from cleanrl_vlm.prompts.builder import PromptBuilder
 
-    pb = PromptBuilder("VizdoomBasic-v0", ["MOVE_LEFT", "MOVE_RIGHT", "ATTACK"])
+    pb = PromptBuilder("VizdoomBasic-v1", ["MOVE_LEFT", "MOVE_RIGHT", "ATTACK"])
     actor = pb.actor_prompt()
     critic = pb.critic_prompt()
     assert "MOVE_LEFT" in actor

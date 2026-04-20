@@ -1,8 +1,4 @@
-"""InvariantMonitor scaffold + per-Inv check functions.
-
-Iter-4 scope: callable at startup + end-of-training. Full runtime
-continuous hook-up lands in ``D-invariants-runtime``.
-"""
+"""InvariantMonitor scaffold + per-Inv check functions."""
 
 from __future__ import annotations
 
@@ -70,5 +66,4 @@ def check_inv_05_grad_norm(ctx: dict[str, Any]) -> InvariantResult:
     return InvariantResult("inv_05", "green", f"n={clip_norm:.4f}")
 
 
-# Public Inv-4 tolerance constant (reviewer B2).
 INV_04_TOLERANCE: float = 1e-4

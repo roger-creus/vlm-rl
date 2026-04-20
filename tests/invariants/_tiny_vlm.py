@@ -1,9 +1,7 @@
 """Tiny VLM fixture used by invariant tests.
 
 Registers a minimal nn.Module tree that PEFT can LoRA-wrap so the Inv-01/03
-tests can run on CPU without loading the real 2B backbone. If this file
-exceeds ~150 LOC (reviewer m3), delete it and mark the dependent invariant
-tests @gpu on the real Qwen3-VL-2B backbone.
+tests can run on CPU without loading the real 2B backbone.
 """
 
 from __future__ import annotations

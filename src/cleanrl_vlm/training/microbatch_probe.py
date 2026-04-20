@@ -1,4 +1,4 @@
-"""Startup microbatch auto-probe (reviewer M7)."""
+"""Startup microbatch auto-probe."""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ def probe_microbatch(try_batch_fn: Callable[[int], bool], cap: int = 64) -> int:
 
 
 def record_microbatch_probe(run_dir: Path, per_gpu_microbatch: int, target_batch_floor: int) -> None:
-    """Write ``runs/<name>/microbatch_probe.json`` per reviewer M7."""
+    """Write ``runs/<name>/microbatch_probe.json``."""
     run_dir.mkdir(parents=True, exist_ok=True)
     payload = {
         "per_gpu_microbatch": per_gpu_microbatch,

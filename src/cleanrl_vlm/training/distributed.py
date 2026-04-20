@@ -11,11 +11,7 @@ log = logging.getLogger(__name__)
 
 
 def load_accelerator_config(config_path: str | Path, num_processes: int) -> dict:
-    """Load an accelerate YAML.
-
-    If ``num_processes == 1``, emit a startup log line noting the sharding
-    strategy is ignored (reviewer m11).
-    """
+    """Load an accelerate YAML; log a note if the sharding strategy is inert."""
     cfg = yaml.safe_load(Path(config_path).read_text())
     sharding = cfg.get("distributed_type") or cfg.get("deepspeed_config") or "unknown"
     if num_processes == 1:

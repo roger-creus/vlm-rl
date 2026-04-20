@@ -13,14 +13,30 @@ import torch
 
 
 def _atomic_rename(src: Path, dst: Path) -> None:
-    # ``os.replace`` atomically replaces a file OR an *empty* directory on POSIX,
-    # but refuses to replace a non-empty directory (ENOTEMPTY / EEXIST). Checkpoint
-    # save is intended to be idempotent — overwriting the previous save at the
-    # same step is the correct semantics. If ``dst`` already exists as a
-    # directory, wipe it first so the rename can succeed.
+    # ``os.replace`` atomically replaces a file OR an *empty* directory but
+    # refuses to replace a non-empty one (ENOTEMPTY). To keep save idempotent
+    # without exposing a window where ``dst`` is missing, swap the old copy
+    # aside atomically, rename the new copy into place, then GC the old.
     if dst.exists():
-        shutil.rmtree(dst)
-    os.replace(src, dst)
+        backup = dst.with_suffix(dst.suffix + ".prev")
+        if backup.exists():
+            shutil.rmtree(backup)
+        os.replace(dst, backup)
+        os.replace(src, dst)
+        shutil.rmtree(backup)
+    else:
+        os.replace(src, dst)
+
+
+def _sha256_file(path: Path, chunk: int = 1 << 20) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as fh:
+        while True:
+            block = fh.read(chunk)
+            if not block:
+                break
+            h.update(block)
+    return h.hexdigest()
 
 
 def save_vlm_actor_critic_checkpoint(
@@ -33,7 +49,7 @@ def save_vlm_actor_critic_checkpoint(
     wandb_run_id: str | None,
     manifest: dict[str, Any],
 ) -> Path:
-    """Save an atomic actor+critic checkpoint (reviewer m6).
+    """Save an atomic actor+critic checkpoint.
 
     Layout::
 
@@ -73,11 +89,7 @@ def save_vlm_actor_critic_checkpoint(
 
     (tmp / "manifest.json").write_text(json.dumps(manifest, indent=2))
 
-    hashes = []
-    for p in sorted(tmp.rglob("*")):
-        if p.is_file():
-            h = hashlib.sha256(p.read_bytes()).hexdigest()
-            hashes.append(f"{p.relative_to(tmp)}  {h}")
+    hashes = [f"{p.relative_to(tmp)}  {_sha256_file(p)}" for p in sorted(tmp.rglob("*")) if p.is_file()]
     (tmp / "INTEGRITY_HASHES.txt").write_text("\n".join(hashes))
 
     _atomic_rename(tmp, path)
