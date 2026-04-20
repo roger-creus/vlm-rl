@@ -357,11 +357,11 @@ class AtariWrapper(gym.Wrapper[np.ndarray, int, np.ndarray, int]):
             env = ClipRewardEnv(env)
 
         super().__init__(env)
-        
+
 class DeadlyCorridorActionWrapper(gym.ActionWrapper):
     """
     Wrap a MultiBinary/MultiDiscrete action space to Discrete(7).
-    
+
     The mapping uses this button order:
         0: MOVE_LEFT
         1: MOVE_RIGHT
@@ -384,14 +384,14 @@ class DeadlyCorridorActionWrapper(gym.ActionWrapper):
             "TURN_RIGHT",
         ]
         self.action_space = gym.spaces.Discrete(len(self.button_names))
-    
+
     def action(self, act):
         # Map Discrete int to MultiBinary/MultiDiscrete vector
         arr = [0] * len(self.button_names)
         if 0 <= act < len(self.button_names):
             arr[act] = 1
         return arr
-    
+
 class DefendTheLineActionWrapper(gym.ActionWrapper):
     """
     Wrap a MultiBinary/MultiDiscrete action space to Discrete(3).
@@ -400,7 +400,7 @@ class DefendTheLineActionWrapper(gym.ActionWrapper):
         super().__init__(env)
         self.button_names = ["TURN_LEFT", "TURN_RIGHT", "ATTACK"]
         self.action_space = gym.spaces.Discrete(len(self.button_names))
-    
+
     def action(self, act):
         arr = [0] * len(self.button_names)
         if 0 <= act < len(self.button_names):

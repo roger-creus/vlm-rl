@@ -22,7 +22,8 @@ env/
 # UV — lockfile IS tracked; cache and venv are not
 .uv/
 
-# IDE / OS
+# IDE / OS + Claude Code local state
+.claude/
 .idea/
 .vscode/
 .DS_Store

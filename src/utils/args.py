@@ -12,7 +12,7 @@ class Args:
     """if toggled, cuda will be enabled by default"""
     enable_compile: bool = False
     """whether to compile VLM"""
-    
+
     # --- Logging ---
     track: bool = False
     """if toggled, this experiment will be tracked with Weights and Biases"""
@@ -66,7 +66,7 @@ class Args:
     """the lower clip coefficient for the Dual-Clip PPO"""
     clip_coef_upper: float = 0.2
     """the upper clip coefficient for the Dual-Clip PPO"""
-    
+
     # --- Optimizer ---
     learning_rate: float = 8e-5
     """the learning rate of the optimizer"""
@@ -92,13 +92,13 @@ class Args:
     """Number of iterations to warm up the critic."""
     warmup_epochs: int = 5
     """Number of epochs to warm up the critic."""
-    
+
     # --- LoRa ---
     lora_rank: int = 32
     """the rank of the LoRA adapters"""
     lora_alpha: float = 64
     """the alpha of the LoRA adapters"""
-    
+
     # will be filled in runtime
     batch_size: int = 0
     """the batch size (computed in runtime)"""

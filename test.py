@@ -1,6 +1,6 @@
 import torch
 import gymnasium as gym
-from vizdoom import gymnasium_wrapper 
+from vizdoom import gymnasium_wrapper
 from IPython import embed
 import matplotlib.pyplot as plt
 
@@ -18,4 +18,3 @@ while not done.any():
     print(action)
     obs, reward, done, trunc, info = envs.step(action)
     print(info.keys())
-    

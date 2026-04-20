@@ -38,7 +38,7 @@ class Args:
     """The number of parallel environments to use for evaluation."""
     max_new_tokens: int = 128
     """The maximum number of new tokens to generate for an action."""
-    
+
     # --- Device Arguments ---
     torch_deterministic: bool = True
     """if toggled, `torch.backends.cudnn.deterministic=False`"""
@@ -78,14 +78,14 @@ def evaluate_parallel():
     envs = gym.vector.SyncVectorEnv(
         [make_env(args.env_id, args.seed, i, False) for i in range(args.num_eval_envs)]
     )
-    
+
     try:
         action_map = action_maps[args.env_id]
         print(f"Loaded action map for {args.env_id}")
     except KeyError:
         print(f"⚠️ Warning: No action map found for {args.env_id}. Action parsing might fail.")
         action_map = {}
-        
+
     with open(args.prompt_actor_path, "r") as f:
         prompt_text_actor = f.read()
     print("Actor prompt loaded successfully.")
@@ -104,37 +104,37 @@ def evaluate_parallel():
     completed_episodes = 0
     episode_rewards = []
     episode_lengths = []
-    
+
     # Per-environment trackers
     current_frames = [[] for _ in range(args.num_eval_envs)]
-    
+
     vlm_outputs_log_path = os.path.join(eval_dir, "vlm_outputs.log")
     with open(vlm_outputs_log_path, "w") as f: # Clear the log file
         f.write(f"Starting parallel evaluation for {args.num_eval_episodes} total episodes...\n")
 
     print(f"\n🚀 Starting evaluation for {args.num_eval_episodes} episodes across {args.num_eval_envs} environments...")
-    
+
     obs, _ = envs.reset(seed=args.seed)
-    
+
     pbar = tqdm(total=args.num_eval_episodes, desc="Completed Episodes")
     step_count = 0
-    
+
     while completed_episodes < args.num_eval_episodes:
         # Capture frames from all parallel environments
         rendered_frames = envs.call("render")
         for i in range(args.num_eval_envs):
             current_frames[i].append(rendered_frames[i])
-        
+
         # Prepare observation tensor (batch is already the first dimension)
         obs_tensor = torch.from_numpy(obs).to(device)
 
         with torch.no_grad():
             # Get a batch of actions from the VLM
             _, _, _, generated_texts = agent.get_action(
-                obs=obs_tensor, 
+                obs=obs_tensor,
                 text_prompts=[prompt_text_actor] * args.num_eval_envs
             )
-            
+
         actions = [parse_action(text, envs.single_action_space, action_map) for text in generated_texts]
 
         # Log VLM outputs for this step
@@ -145,28 +145,28 @@ def evaluate_parallel():
 
         # Step the vectorized environments
         obs, _, _, _, infos = envs.step(actions)
-        
+
         # Check for finished episodes in the `infos` dictionary
         if "final_info" in infos:
             for i, info in enumerate(infos["final_info"]):
                 if info is not None and "episode" in info:
                     if completed_episodes >= args.num_eval_episodes:
                         continue # Stop logging if we've hit our target
-                        
+
                     ep_rew = info["episode"]["r"]
                     ep_len = info["episode"]["l"]
-                    
+
                     episode_rewards.append(ep_rew)
                     episode_lengths.append(ep_len)
                     completed_episodes += 1
-                    
+
                     # Save the GIF for the completed episode
                     gif_path = os.path.join(eval_dir, f"episode_{completed_episodes}.gif")
                     imageio.mimsave(gif_path, current_frames[i], duration=0.1)
-                    
+
                     # Reset the frame buffer for this specific environment
                     current_frames[i] = []
-                    
+
                     pbar.update(1)
                     pbar.set_postfix({"Last Reward": f"{ep_rew:.2f}"})
 

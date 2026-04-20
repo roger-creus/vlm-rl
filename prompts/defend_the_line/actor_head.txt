@@ -9,4 +9,3 @@ You will receive an image of the game screen. Analyze the current game state car
 - The strategic situation for maximizing kills
 
 Provide a comprehensive analysis of the current game state that will help inform decision-making.
-

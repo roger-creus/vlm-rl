@@ -164,7 +164,7 @@ if __name__ == "__main__":
         "hyperparameters",
         "|param|value|\n|-|-|\n%s" % ("\n".join([f"|{key}|{value}|" for key, value in vars(args).items()])),
     )
-    
+
     # Setup logging directory for videos
     log_path = os.path.join(f"runs/{run_name}", "logs")
     os.makedirs(log_path, exist_ok=True)
@@ -202,7 +202,7 @@ if __name__ == "__main__":
     next_obs, _ = envs.reset(seed=args.seed)
     next_obs = torch.from_numpy(next_obs).to(device)
     next_done = torch.zeros(args.num_envs).to(device)
-    
+
     # Frame tracking for video recording
     current_episode_frames = []
     last_completed_episode_frames = []
@@ -218,7 +218,7 @@ if __name__ == "__main__":
             global_step += args.num_envs
             obs[step] = next_obs
             dones[step] = next_done
-            
+
             # Track frames for video recording
             current_episode_frames.append(next_obs[0].cpu().numpy().astype(np.uint8))
 
@@ -235,7 +235,7 @@ if __name__ == "__main__":
             rewards[step] = torch.tensor(reward).to(device).view(-1) * args.reward_scale
             next_obs = torch.from_numpy(next_obs).to(device)
             next_done = torch.Tensor(next_done).to(device)
-            
+
             # Handle episode completion for video recording
             if next_done[0]:
                 current_episode_frames.append(next_obs[0].cpu().numpy().astype(np.uint8))
@@ -344,7 +344,7 @@ if __name__ == "__main__":
                     loop=0
                 )
                 print(f"Saved episode video to {gif_path}")
-                
+
                 if args.track:
                     video_array = np.array(last_completed_episode_frames)
                     video_tensor = torch.tensor(video_array).permute(0, 3, 1, 2).unsqueeze(0)

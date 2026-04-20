@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 from torch.utils.tensorboard import SummaryWriter
 
 from accelerate.utils import TorchDynamoPlugin
-from accelerate import Accelerator 
+from accelerate import Accelerator
 from tqdm import tqdm
 from transformers import get_linear_schedule_with_warmup
 
@@ -161,9 +161,9 @@ if __name__ == "__main__":
         print("-" * 50)
         print(f"Total trainable parameters: {sum(p.numel() for p in params)}")
         print("-" * 50)
-    
+
     optimizer = optim.AdamW(params, lr=args.learning_rate, betas=(0.85, 0.9), weight_decay=args.weight_decay)
-    
+
     # --- Scheduler logic (added) ---
     # create the scheduler (linear warmup, then decay to zero)
     scheduler = get_linear_schedule_with_warmup(
@@ -173,7 +173,7 @@ if __name__ == "__main__":
     )
 
     agent, optimizer, scheduler = accelerator.prepare(agent, optimizer, scheduler)
-    
+
     if args.checkpoint_dir != "":
         print(f"Loading checkpoint from {args.checkpoint_dir}")
         accelerator.load_state(args.checkpoint_dir)
@@ -202,7 +202,7 @@ if __name__ == "__main__":
 
     for iteration in range(1, args.num_iterations + 1):
         rollout_time_start = time.time()
-        
+
         for step in range(args.num_steps):
             if accelerator.is_main_process:
                 global_step += args.num_envs * accelerator.num_processes
@@ -285,7 +285,7 @@ if __name__ == "__main__":
 
             del reward, term, trunc, infos, sampled_indices, sampled_logprob, sampled_texts, _sampled_ids, _sampled_mask, action, value
             gc_cuda_cleanup()
-        
+
         rollout_time_completed = time.time() - rollout_time_start
 
         with torch.no_grad():
@@ -345,7 +345,7 @@ if __name__ == "__main__":
                 num_gpu_limit = 2
                 sample_indices = np.random.choice(b_obs.shape[0], num_sample_states, replace=False)
                 all_action_probs = []
-                
+
                 for i in range(0, len(sample_indices), num_gpu_limit):
                     batch_indices = sample_indices[i:i+num_gpu_limit]
                     batch_obs = b_obs[batch_indices].to(device)
@@ -370,27 +370,27 @@ if __name__ == "__main__":
                 ax.set_title(f'Mean Action Distribution (Iteration {iteration}, {len(sample_indices)} states)', fontsize=14)
                 ax.set_ylim([0, 1])
                 ax.grid(axis='y', alpha=0.3)
-                
+
                 for i, (bar, prob) in enumerate(zip(bars, mean_action_probs)):
                     height = bar.get_height()
                     ax.text(bar.get_x() + bar.get_width()/2., height,
                            f'{prob:.3f}',
                            ha='center', va='bottom', fontsize=9)
-                
+
                 plt.xticks(rotation=45, ha='right')
                 plt.tight_layout()
                 plt.savefig(os.path.join(log_path, f"iter_{iteration}_action_distribution.png"))
-                
+
                 writer.add_figure("debug/action_distribution", fig, global_step)
                 plt.close(fig)
-                
+
                 for i, prob in enumerate(mean_action_probs):
                     writer.add_scalar(f"debug/action_prob/action_{i}", prob, global_step)
-                
+
                 entropy_per_state = -torch.sum(action_probs * torch.log(action_probs + 1e-8), dim=-1)
                 mean_entropy = entropy_per_state.mean().item()
                 writer.add_scalar("debug/action_entropy", mean_entropy, global_step)
-                
+
                 del all_action_probs, action_probs
                 gc_cuda_cleanup()
 
@@ -402,7 +402,7 @@ if __name__ == "__main__":
 
         b_inds = np.arange(args.total_batch_size)
         is_critic_warmup = iteration <= args.critic_warmup_iterations
-        
+
         # save 1 checkpoint after critic warmup
         if not is_critic_warmup and first_model_save and args.checkpoint_dir == "":
             print(f"Saving checkpoint at iteration {iteration}")
@@ -410,8 +410,8 @@ if __name__ == "__main__":
             accelerator.save_state(output_dir=f"runs/{run_name}/post-critic-warmup-{iteration}")
             print(f"Checkpoint saved to runs/{run_name}/post-critic-warmup-{iteration}")
             first_model_save = False
-        
-        
+
+
         true_update_epochs = args.update_epochs * 3 if is_critic_warmup else args.update_epochs
         epoch_iter = range(true_update_epochs)
         if accelerator.is_main_process:
@@ -434,7 +434,7 @@ if __name__ == "__main__":
         epoch_clipfracs_lower = []
         epoch_approx_kls = []
         epoch_old_approx_kls = []
-        
+
         if args.norm_adv:
             adv_mean = b_advantages.mean()
             adv_std = b_advantages.std()
@@ -573,7 +573,7 @@ if __name__ == "__main__":
         # --- anneal learning rate ---
         scheduler.step()
         learning_time_completed = time.time() - learning_time_start
-        
+
         # save checkpoint
         if iteration % args.checkpoint_interval == 0:
             print(f"Saving checkpoint at iteration {iteration}")

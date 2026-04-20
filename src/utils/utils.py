@@ -21,7 +21,7 @@ def make_env(env_id, idx, run_name):
         return env
     return thunk
 
-from vizdoom import gymnasium_wrapper 
+from vizdoom import gymnasium_wrapper
 def make_vizdoom_env(env_id):
     def thunk():
         env = gym.make(
@@ -52,7 +52,7 @@ def parse_action_cot(text: str, action_space: gym.spaces.Discrete, action_map: d
                 return action_map[action_str]
     except Exception as e:
         print(f"Error parsing action: {e}. Text: '{text}'")
-    
+
     print(f"Warning: Could not parse action '{text}'. Returning random action.")
     return action_space.sample()
 
@@ -67,14 +67,14 @@ def parse_action(text: str, action_space: gym.spaces.Discrete, action_map: dict)
             return action_map[action_str]
     except Exception as e:
         print(f"Error parsing action: {e}. Text: '{text}'")
-    
+
     print(f"Warning: Could not parse action '{text}'. Returning random action.")
     return action_space.sample()
 
 def gc_cuda_cleanup():
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
-        
+
 def print_trainable_parameters(model):
     """
     Prints the number of trainable parameters in the model.
@@ -88,7 +88,7 @@ def print_trainable_parameters(model):
     print(
         f"trainable params: {trainable_params} || all params: {all_param} || trainable%: {100 * trainable_params / all_param:.2f}"
     )
-    
+
 def numpy_to_pil(images: np.ndarray) -> list:
     """Converts a batch of numpy array images to a list of PIL Images."""
     return [Image.fromarray(img.astype(np.uint8)) for img in images]
@@ -99,7 +99,7 @@ def stats(x):
         mean=float(x.mean().cpu()), std=float(x.std().cpu()),
         min=float(x.min().cpu()), max=float(x.max().cpu()), median=float(x.median().cpu())
     )
-    
+
 def log_stats(stat_arr, name, writer, global_step):
     if stat_arr:
         keys = stat_arr[0].keys()
@@ -108,8 +108,8 @@ def log_stats(stat_arr, name, writer, global_step):
             writer.add_scalar(f"stats/{name}{prefix}", avgstats[k], global_step)
         return avgstats
     return None
-    
-    
+
+
 from transformers import Qwen3VLForConditionalGeneration, Qwen2_5_VLForConditionalGeneration
 def get_model_class(model_name: str):
     if "Qwen3" in model_name:
@@ -118,7 +118,7 @@ def get_model_class(model_name: str):
         return Qwen2_5_VLForConditionalGeneration
     else:
         raise ValueError(f"Model {model_name} not supported")
-    
+
 class TrainingStateTracker:
     def __init__(self, **kwargs):
         self.state = kwargs

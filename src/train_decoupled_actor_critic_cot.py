@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 from torch.utils.tensorboard import SummaryWriter
 
 from accelerate.utils import TorchDynamoPlugin
-from accelerate import Accelerator 
+from accelerate import Accelerator
 from tqdm import tqdm
 from transformers import get_linear_schedule_with_warmup
 
@@ -27,7 +27,7 @@ if __name__ == "__main__":
     args = tyro.cli(Args)
     run_name = f"exp={args.exp_name}_env={args.env_id}_seed={args.seed}_time={int(time.time())}"
     os.makedirs(f"runs/{run_name}", exist_ok=True)
-    
+
     # --- Accelerator ---
     accelerator_cfg = {
         "project_dir": f"runs/{run_name}",
@@ -44,7 +44,7 @@ if __name__ == "__main__":
         accelerator_cfg["dynamo_plugin"] = dynamo_plugin
         print("Compilation enabled!")
     accelerator = Accelerator(**accelerator_cfg)
-    
+
     # --- Arguments ---
     device = accelerator.device
     args.total_batch_size = int(args.num_envs * args.num_steps * accelerator.num_processes)
@@ -114,7 +114,7 @@ if __name__ == "__main__":
             if args.wandb_id is not None:
                 wandb_kwargs["id"] = args.wandb_id
                 wandb_kwargs["resume"] = "allow"
-                
+
             wandb.init(**wandb_kwargs)
         writer = SummaryWriter(f"runs/{run_name}")
         writer.add_text("hyperparameters", f"|param|value|\n|-|-|\n" + "\n".join([f"|{key}|{value}|" for key, value in vars(args).items()]))
@@ -146,7 +146,7 @@ if __name__ == "__main__":
         lora_alpha=args.lora_alpha,
         lora_dropout=0.0,
     )
-    
+
     params = agent.get_trainable_params()
     if accelerator.is_main_process:
         print("============ Agent =============")
@@ -156,25 +156,25 @@ if __name__ == "__main__":
         print("-" * 50)
         print(f"Total trainable parameters: {sum(p.numel() for p in params)}")
         print("-" * 50)
-        
+
     optimizer = optim.AdamW(params, lr=args.learning_rate, betas=(0.85, 0.9), weight_decay=args.weight_decay)
     scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=int(args.num_iterations * args.lr_warmup_fraction), num_training_steps=args.num_iterations)
     training_state = TrainingStateTracker(iteration=1, global_step=0)
     accelerator.register_for_checkpointing(training_state)
     agent, optimizer, scheduler = accelerator.prepare(agent, optimizer, scheduler)
-    
+
     if args.checkpoint_dir != "":
         print(f"Loading checkpoint from {args.checkpoint_dir}")
         accelerator.load_state(args.checkpoint_dir)
         print(f"Checkpoint loaded from {args.checkpoint_dir}")
 
     accelerator.wait_for_everyone()
-    
+
     # these will be either the initialized values or the loaded values from the checkpoint
     start_iteration = training_state["iteration"]
     global_step = training_state["global_step"]
     print(f"Starting training from iteration {start_iteration} and global step {global_step}")
-    
+
     # --- Storage Tensors ---
     obs = torch.zeros((args.num_steps, args.num_envs) + envs.single_observation_space.shape, device=device)
     rewards = torch.zeros((args.num_steps, args.num_envs), device=device)
@@ -183,7 +183,7 @@ if __name__ == "__main__":
     prompt_lens = torch.zeros((args.num_steps, args.num_envs), dtype=torch.long, device=device)
     action_masks = torch.zeros((args.num_steps, args.num_envs, args.max_seq_len), dtype=torch.long, device=device)
     logprobs = torch.zeros((args.num_steps, args.num_envs, args.max_seq_len), device=device)
-    
+
     # initialize full_input_ids with the pad token id
     pad_token_id = agent.vlm.processor.tokenizer.pad_token_id
     if accelerator.is_main_process: print(f"Pad token id: {pad_token_id}")
@@ -197,7 +197,7 @@ if __name__ == "__main__":
     # --- Start training ---
     first_model_save = True
     start_time = time.time()
-    
+
     next_obs, _ = envs.reset()
     next_obs = torch.Tensor(next_obs).to(device)
     next_done = torch.zeros(args.num_envs).to(device)
@@ -205,12 +205,12 @@ if __name__ == "__main__":
     if accelerator.is_main_process:
         current_episode_frames = []
         last_completed_episode_frames = []
-    
+
     for iteration in range(start_iteration, args.num_iterations + 1):
         generation_lengths = []
         seq_len_errors = []
         rollout_time_start = time.time()
-        
+
         # --- Rollout Phase: Each process collects its own data ---
         for step in range(0, args.num_steps):
             global_step += args.num_envs * accelerator.num_processes
@@ -223,7 +223,7 @@ if __name__ == "__main__":
             with torch.no_grad():
                 # sample actions from actor
                 logprob, f_ids, p_len, generated_texts = agent.get_action(
-                    obs=next_obs, 
+                    obs=next_obs,
                     text_prompts=[prompt_text_actor] * args.num_envs,
                     action_ids=None,
                     prompt_lens=None,
@@ -234,7 +234,7 @@ if __name__ == "__main__":
                     [parse_action_cot(text, envs.single_action_space, action_map) for text in generated_texts],
                     device=device
                 )
-                
+
                 # get value estimate for the current obs
                 value = agent.get_value(
                     obs=next_obs,
@@ -271,17 +271,17 @@ if __name__ == "__main__":
             action_token_mask = indices >= p_len
             pad_mask = (padded_ids != pad_token_id)
             action_masks[step] = (action_token_mask & pad_mask).long()
-            
+
             generation_len = seq_len - p_len[0].cpu().item()
             seq_len_error = 1 if seq_len >= args.max_seq_len else 0
-            
+
             generation_lengths.append(generation_len)
             seq_len_errors.append(seq_len_error)
-            
+
             # step the environment
             next_obs, reward, term, trunc, infos = envs.step(action.cpu().numpy())
             print(f"[Process {accelerator.process_index}] Step {step+1}/{args.num_steps}")
-            
+
             rewards[step] = torch.tensor(reward).to(device).view(-1) * args.reward_scale
             next_done = np.logical_or(term, trunc)
             next_obs, next_done = torch.Tensor(next_obs).to(device), torch.Tensor(next_done).to(device)
@@ -306,7 +306,7 @@ if __name__ == "__main__":
                         try:
                             pil_images_debug = [Image.fromarray(frame) for frame in last_completed_episode_frames]
                             gif_path = os.path.join(log_path, f"iter_{iteration}_episode.gif")
-                            
+
                             pil_images_debug[0].save(
                                 gif_path,
                                 save_all=True,
@@ -314,7 +314,7 @@ if __name__ == "__main__":
                                 duration=150,
                                 loop=0
                             )
-                            
+
                             log_entry_text += (
                                 f"**Last Completed Episode (Env 0):**\n"
                                 f"![Episode GIF]({os.path.basename(gif_path)})\n\n"
@@ -324,13 +324,13 @@ if __name__ == "__main__":
                                 video_array = np.array(last_completed_episode_frames)
                                 video_tensor = torch.tensor(video_array).permute(0, 3, 1, 2).unsqueeze(0)
                                 writer.add_video("debug/episode_video", video_tensor, global_step, fps=10)
-                            
+
                             last_completed_episode_frames = []
 
                         except Exception as e:
                             print(f"Warning: Failed to save episode GIF. Error: {e}")
                             log_entry_text += f"**(Failed to save GIF: {e})**\n\n"
-                    
+
                     log_entry_text += "---\n\n"
 
                     interaction_log_file.write(log_entry_text)
@@ -348,7 +348,7 @@ if __name__ == "__main__":
             # free up GPU memory after each step
             del reward, term, trunc, infos, logprob, f_ids, p_len, action, value, generated_texts, seq_len, padded_ids, padded_logprob, indices, action_token_mask, pad_mask
             gc_cuda_cleanup()
-        
+
         rollout_time_completed = time.time() - rollout_time_start
 
         # --- bootstrap last value to do GAE ---
@@ -407,20 +407,20 @@ if __name__ == "__main__":
         b_prompt_lens = gathered_prompt_lens.view(
             accelerator.num_processes, args.num_steps, args.num_envs
         ).permute(1, 0, 2).reshape(-1) # [num_envs * num_steps * num_processes]
-        
+
         b_obs = gathered_obs.view(
             accelerator.num_processes, args.num_steps, args.num_envs, *envs.single_observation_space.shape
         ).permute(1, 0, 2, 3, 4, 5).reshape(-1, *envs.single_observation_space.shape) # [num_envs * num_steps * num_processes, *envs.single_observation_space.shape]
 
         # these were already reshaped in the previous code block so only need to flatten them
-        b_advantages = advantages.reshape(-1)    
+        b_advantages = advantages.reshape(-1)
         b_returns = returns.reshape(-1)
         b_values = gathered_values.reshape(-1)
-        
+
         # --- Training ---
         b_inds = np.arange(args.total_batch_size)
         is_critic_warmup = iteration <= args.critic_warmup_iterations
-        
+
         # save 1 checkpoint after critic warmup
         if not is_critic_warmup and first_model_save and args.checkpoint_dir == "":
             print(f"Saving checkpoint at iteration {iteration}")
@@ -428,10 +428,10 @@ if __name__ == "__main__":
             accelerator.save_state(output_dir=f"runs/{run_name}/post-critic-warmup-{iteration}")
             print(f"Checkpoint saved to runs/{run_name}/post-critic-warmup-{iteration}")
             first_model_save = False
-        
+
         if accelerator.is_main_process:
             print("Training...")
-        
+
         true_update_epochs = args.warmup_epochs if is_critic_warmup else args.update_epochs
         epoch_iter = range(true_update_epochs)
         if accelerator.is_main_process:
@@ -456,7 +456,7 @@ if __name__ == "__main__":
         epoch_old_approx_kls = []
 
         # ----------- UNIFIED ACTOR-CRITIC (policy & value) UPDATE LOOP -----------
-        
+
         # normalize advantages at batch level before epoch loop
         if args.norm_adv:
             adv_mean = b_advantages.mean()
@@ -516,7 +516,7 @@ if __name__ == "__main__":
                         accelerator.backward(v_loss)
                         optimizer.step()
                         optimizer.zero_grad()
-                        
+
                         # clean up minibatch objects
                         del mb_obs, mb_input_ids, mb_prompt_lens, mb_logprobs, mb_advantages, mb_returns, mb_values, mb_action_masks, newvalue
                         gc_cuda_cleanup()
@@ -529,15 +529,15 @@ if __name__ == "__main__":
                         action_ids=mb_input_ids,
                         prompt_lens=mb_prompt_lens
                     )
-                    
+
                     old_logprobs_sliced = mb_logprobs[:, 1:]
                     action_masks_sliced = mb_action_masks[:, 1:]
                     logratio = newlogprob - old_logprobs_sliced
-                    
+
                     # this can be done for numerical stability
                     if args.logratio_clamp > 0:
                         logratio = torch.clamp(logratio, -args.logratio_clamp, args.logratio_clamp)
-                        
+
                     logratio = torch.where(action_masks_sliced.bool(), logratio, torch.zeros_like(logratio))
                     ratio = torch.exp(logratio)
 
@@ -548,7 +548,7 @@ if __name__ == "__main__":
                         newlogprob_masked = newlogprob[mask].detach().cpu()
                         logratio_masked = logratio[mask].detach().cpu()
                         ratio_masked = ratio[mask].detach().cpu()
-                        oldlogprob_masked = old_logprobs_sliced[mask].detach().cpu() 
+                        oldlogprob_masked = old_logprobs_sliced[mask].detach().cpu()
                         all_newlogprobs_stats.append(stats(newlogprob_masked))
                         all_oldlogprobs_stats.append(stats(oldlogprob_masked))
                         all_logratios_stats.append(stats(logratio_masked))
@@ -576,7 +576,7 @@ if __name__ == "__main__":
                             epoch_old_approx_kls.append(old_approx_kl.item())
 
                     # --- policy loss ---
-                    mb_advantages_exp = mb_advantages.unsqueeze(-1) 
+                    mb_advantages_exp = mb_advantages.unsqueeze(-1)
                     pg_losses1 = -mb_advantages_exp * ratio
                     pg_losses2 = -mb_advantages_exp * torch.clamp(ratio, 1 - cliprange_low, 1 + cliprange_high)
                     clip_pg_losses1 = torch.maximum(pg_losses1, pg_losses2)
@@ -607,8 +607,8 @@ if __name__ == "__main__":
 
                     # --- entropy loss ---
                     entropy_loss = (entropy_tensor * action_masks_sliced).sum() / action_masks_sliced.sum()
-                    
-                    accelerator.backward(pg_loss - args.ent_coef * entropy_loss) 
+
+                    accelerator.backward(pg_loss - args.ent_coef * entropy_loss)
 
                     # --- value loss ---
                     newvalue = agent.get_value(
@@ -630,7 +630,7 @@ if __name__ == "__main__":
                     # --- optimizer step ---
                     optimizer.step()
                     optimizer.zero_grad()
-                    
+
                     # Clean up minibatch objects after joint step
                     del mb_obs, mb_input_ids, mb_prompt_lens, mb_logprobs, mb_advantages, mb_returns, mb_values, mb_action_masks, newlogprob, entropy_tensor, logratio, ratio, mask, newvalue
                     gc_cuda_cleanup()
@@ -638,14 +638,14 @@ if __name__ == "__main__":
         # anneal lr
         scheduler.step()
         learning_time_completed = time.time() - learning_time_start
-        
+
         # save checkpoint
         if iteration % args.checkpoint_interval == 0:
             print(f"Saving checkpoint at iteration {iteration}")
             accelerator.wait_for_everyone()
             accelerator.save_state(output_dir=f"runs/{run_name}/checkpoint-{iteration}")
             print(f"Checkpoint saved to runs/{run_name}/checkpoint-{iteration}")
-        
+
         # --- Logging (compact) ---
         if accelerator.is_main_process:
             scalar_logs = [

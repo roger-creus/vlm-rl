@@ -41,13 +41,15 @@ def synthetic_image() -> Image.Image:
 def test_hello_vlm_loads_and_generates(synthetic_image: Image.Image, tmp_path: Path) -> None:
     """Load Qwen3-VL-2B-Instruct, feed a synthetic quadrant image + prompt, generate."""
     pytest.importorskip("transformers")
-    from transformers import AutoModelForCausalLM, AutoProcessor
+    from transformers import AutoModelForImageTextToText, AutoProcessor
 
     if not torch.cuda.is_available():
         pytest.skip("smoke test requires CUDA")
 
     processor = AutoProcessor.from_pretrained(MODEL_ID, trust_remote_code=True)
-    model = AutoModelForCausalLM.from_pretrained(
+    # Qwen3-VL registers under AutoModelForImageTextToText, not AutoModelForCausalLM
+    # (its config is Qwen3VLConfig — multimodal, not text-only).
+    model = AutoModelForImageTextToText.from_pretrained(
         MODEL_ID,
         dtype=torch.float16,
         trust_remote_code=True,
