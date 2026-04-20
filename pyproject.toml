@@ -106,6 +106,24 @@ packages = ["src/cleanrl_vlm"]
 [tool.ruff]
 line-length = 120
 target-version = "py310"
+# Pre-scaffold prototype files are kept in the working tree per iter-1
+# decision; they are not imported by cleanrl_vlm and will be pruned as
+# their replacements under algos/ + src/cleanrl_vlm/ land. Exclude them
+# from lint / format until then.
+extend-exclude = [
+    "src/eval.py",
+    "src/env_debug.py",
+    "src/models",
+    "src/ppo.py",
+    "src/test_vlm.py",
+    "src/tests",
+    "src/train_decoupled_actor_critic_action.py",
+    "src/train_decoupled_actor_critic_actionHead.py",
+    "src/train_decoupled_actor_critic_cot.py",
+    "src/utils",
+    "test.py",
+    "setup.py",
+]
 
 [tool.ruff.lint]
 select = [

@@ -20,7 +20,6 @@ import pytest
 import torch
 from PIL import Image
 
-
 MODEL_ID = os.environ.get("CLEANRL_VLM_SMOKE_MODEL", "Qwen/Qwen3.5-VL-0.8B")
 
 
@@ -81,14 +80,12 @@ def test_hello_vlm_loads_and_generates(synthetic_image: Image.Image, tmp_path: P
         )
 
     decoded = processor.batch_decode(
-        generated[:, inputs.input_ids.shape[1]:],
+        generated[:, inputs.input_ids.shape[1] :],
         skip_special_tokens=True,
     )[0]
 
     # Artifact: dump the prompt + response under tmp_path for inspection on CI failure.
-    (tmp_path / "hello_vlm_output.txt").write_text(
-        f"PROMPT:\n{text}\n\nRESPONSE:\n{decoded}\n", encoding="utf-8"
-    )
+    (tmp_path / "hello_vlm_output.txt").write_text(f"PROMPT:\n{text}\n\nRESPONSE:\n{decoded}\n", encoding="utf-8")
 
     # The ONLY assertion is that generation produced at least one token of output.
     # We do not assert the content (that's the ground-truth vision probe's job — Inv-15).

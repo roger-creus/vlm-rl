@@ -7,7 +7,6 @@ cheap tripwire.
 
 from pathlib import Path
 
-
 SPEC_PATH = Path("docs/superpowers/specs/2026-04-19-cleanrl-vlm-masterplan.md")
 
 
@@ -17,8 +16,7 @@ def test_spec_exists() -> None:
 
 def test_spec_non_empty() -> None:
     assert SPEC_PATH.stat().st_size > 1000, (
-        f"master spec suspiciously small ({SPEC_PATH.stat().st_size} bytes); "
-        "expected > 1000"
+        f"master spec suspiciously small ({SPEC_PATH.stat().st_size} bytes); expected > 1000"
     )
 
 

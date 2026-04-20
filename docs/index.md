@@ -4,7 +4,14 @@ CleanRL-style library + research paper for online RL finetuning of Vision-Langua
 
 ## Quickstart
 
-See the [README](../README.md).
+```bash
+uv venv --python 3.10
+uv sync --extra dev
+uv pip install flash-attn==2.7.4.post1 --no-build-isolation
+uv run pytest -m tier1 -v
+```
+
+Full README lives at the repo root (not rendered by mkdocs).
 
 ## Pages
 
