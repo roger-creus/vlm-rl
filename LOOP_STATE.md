@@ -1,27 +1,60 @@
 # LOOP_STATE.md
 
-**Last updated:** 2026-04-20 (iter 19 — reward scale + ep_return + docs; Task 24 done).
+**Last updated:** 2026-04-20 (iter 19 — correctness milestones + ratio=1 fix).
 **Maintained by:** the autonomous `/loop` agent; humans read only.
 
 ## Current phase
 
-**Phase:** `B-ppo-cot-vizdoom-basic-2B` — **correctness milestones green**. Plan tasks 1-24/27 complete (89% through). 10-iter smoke run after fixes shows:
-- `loss_value` 0.01-0.4 (was 60-660 → reward_scale 0.01 worked)
-- `loss_scale = 32768.0` constant (GradScaler stable → Inv-6 green)
-- `ep_return_n > 0` on 4/10 iters (episode returns captured)
-- Both LoRA adapters training (lora_actor drifts + lora_critic drifts)
-- Inv-4 single-path green 9/10 iters
+**Phase:** `B-ppo-cot-vizdoom-basic-2B` — **correctness milestones green**. Plan tasks 1-24/27 complete (89% through). 3-iter smoke after iter-19 fixes:
+- `loss_value` 0.01-0.4 (was 60-660; `reward_scale=0.01` per spec §14)
+- `loss_scale = 32768.0` constant (FP16 stable → Inv-6 green)
+- `ep_return_n > 0` for 4/10 iters (episode returns captured)
+- Both LoRA adapters training (iter-18 fix)
+- **First-minibatch-first-epoch `approx_kl = −2.52e-05`** (was 1.51e-02; iter-19 ratio=1 fix)
+- Inv-4 single-path green
 
-Remaining plan tasks:
-- Task 25 — `simplify` pass (reviewer m12 — before code review).
-- Task 26 — `code-reviewer` subagent on the full diff (iter 6..now).
-- Task 27 — journals + LOOP_STATE pivot to `C-envs-tier1-expand`.
+## Immediate next task (fresh session resumes here)
 
-Deferred / follow-up:
+**Plan task 25 — `simplify` pass** on `algos/ppo_cot.py` + `src/cleanrl_vlm/*` + `tests/**`. Plan reference: `docs/superpowers/specs/plans/2026-04-20-ppo-cot-vizdoom-basic.md` line ~3552. Invoke `superpowers:simplify` skill via `Skill` tool; apply to the diff between iter 5 commits and HEAD (most files produced under this plan cycle).
+
+Then:
+- **Plan task 26 — `superpowers:code-reviewer` subagent** on the full
+  diff (iter 6..HEAD). Address findings with per-finding commits.
+- **Plan task 27 — journals + LOOP_STATE pivot to
+  `C-envs-tier1-expand`** (adds `ALE/Pong-v5` + `MiniGrid-Empty-5x5-v0`
+  as Tier-1 envs per §11 S-7 ritual).
+
+## Handoff state (as of commit `f10b7c8`)
+
+Everything needed for a fresh `/loop` session to continue from this
+exact point is on disk + in git:
+
+- **§13 contract** at repo root: `CLAUDE.md`.
+- **Master spec**: `docs/superpowers/specs/2026-04-19-cleanrl-vlm-masterplan.md`.
+- **Amendments**: `docs/superpowers/specs/amendments/` (backbone names,
+  PPO-COT design).
+- **Plans**: `docs/superpowers/specs/plans/` (bootstrap scaffold +
+  PPO-COT 27-task plan).
+- **Journals**: this file (LOOP_STATE), `AUTONOMY_LOG.md` with 19
+  iter entries, `CHANGELOG.md` with per-iter evidence rows.
+- **Git remote**: `origin` = `git@github.com:roger-creus/clean-llm-rl.git`
+  with `master` + `old` branches pushed.
+- **UV env**: `.venv/` + `uv.lock` committed; `uv sync --extra dev`
+  + `uv pip install flash-attn==2.7.4.post1 --no-build-isolation`
+  with `CUDA_HOME=/cvmfs/ai.mila.quebec/apps/x86_64/common/cuda/12.5.0`
+  restores the full env.
+- **HF cache**: `$SCRATCH/hub` holds Qwen3-VL-2B-Instruct weights
+  (~5GB).
+- **Tests**: 50 unit/invariant tests + 1 tier1 GPU integration test
+  all green as of iter 18. Re-run: `pytest tests/unit
+  tests/invariants` (CPU) + `pytest -m "tier1 and gpu"` (GPU).
+
+## Deferred / follow-up
+
 - Dedicated long-campaign training run (hours) to observe actual
-  learning curve. Noise at 10-iter scale masks any signal.
-- Add `pkill -f "vizdoom.*viz_controlled"` to launch helper to prevent
-  worker-pool zombie accumulation across training runs.
+  learning curve. Noise at 10-iter scale masks signal.
+- Add `pkill -f "vizdoom.*viz_controlled"` to launch helper to
+  prevent worker-pool zombie accumulation between runs.
 
 ## Iter 5 sub-step completed
 

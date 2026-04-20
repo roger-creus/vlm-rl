@@ -1721,3 +1721,42 @@ stable (not halving) by the 10-iter mark.
    helper eventually.** Not done this iter; just killed manually.
    Note for `scripts/_cluster_env.sh` or the trainer's startup:
    `pkill -f "vizdoom.*viz_controlled"` before `AsyncVectorEnv()`.
+
+**User-flagged mid-iter: "ratio=1 at first minibatch first epoch".**
+
+User directive: PPO correctness requires that before any gradient step,
+the first minibatch of the first update epoch yields ratio=1.0 exactly
+(modulo fp16 noise). This catches training↔inference mismatch, mask
+alignment, tokenizer/padding inconsistency.
+
+**Root cause of my pre-fix 1.51e-02 drift.** Rollout's
+`cot.logprob_sum` (in `src/cleanrl_vlm/rollout/in_process.py`) summed
+`log_probs[i, prompt_len-1:]` with NO non-pad mask. The PPO update's
+`lp_new` (in `algos/ppo_cot.py`) applied a stricter mask: positions
+≥ prompt_len-1 AND `full_ids[:, 1:] != pad_id`. Pad-position
+logprobs were included in rollout's sum but excluded in update's →
+stored and re-scored sums differed even before any gradient step.
+
+**Fix** (commit `f10b7c8`, pushed). Moved the full span-mask
+computation into `generate_cot_actions` so both paths apply
+identical math. Updated `logprob_sum` now uses:
+```python
+positions = torch.arange(S - 1, device=log_probs.device)
+start_mask = positions.unsqueeze(0) >= (prompt_lens - 1).unsqueeze(1)
+nonpad_mask = full_ids[:, 1:] != pad_id
+span_mask = (start_mask & nonpad_mask).to(log_probs.dtype)
+logprob_sum = (log_probs * span_mask).sum(dim=-1).float()
+```
+
+**Verification** (3-iter smoke: --num-envs 2 --num-steps 8
+--total-timesteps 48 --num-minibatches 2 --update-epochs 1):
+- iter 1 `approx_kl`: **1.51e-02 → −2.52e-05** (600× reduction).
+- iter 1 `clip_fraction`: **0.0156 → 0.0000** (no clipping).
+- iter 2-3 `approx_kl`: ~9e-05 (real gradient-induced drift after
+  one step).
+
+Residual ~1e-5 is fp16 reduction-order noise between two independent
+forwards (rollout's generate-then-score vs update's action_ids
+forward). Bit-exact ratio=1 would require caching log_probs directly
+— defeats PPO gradient flow. Current state effectively = 1 at fp16
+floor; Inv-4 tolerance 1e-4 holds comfortably.
