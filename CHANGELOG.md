@@ -6,6 +6,57 @@ One entry per iteration, not per commit within an iteration.
 
 ---
 
+## 2026-04-20 — iter 3 — A2-bootstrap-finalize (scaffold runs end-to-end)
+
+**What.** Bootstrap completed. 6 commits (`b8dd216..7fb54bd`).
+
+- `uv.lock` — 222 packages resolved (torch 2.6.0+cu124, transformers
+  @ `a29df2d`, vllm 0.8.5, deepspeed, peft 0.19.1, vizdoom 1.3.0).
+- `pyproject.toml`: `[tool.hatch.metadata] allow-direct-references=true`
+  (needed for transformers-from-git), `[tool.ruff] extend-exclude` for
+  prototype leftovers.
+- `docs/index.md`: inline quickstart (removed `../README.md` link that
+  broke mkdocs --strict).
+- `.gitignore`: `site/`, `.claude/` added.
+- **Amendment**:
+  `docs/superpowers/specs/amendments/2026-04-20-backbone-names-correction.md`
+  — Qwen3.5-VL does not exist on HF; use `Qwen/Qwen3-VL-{2B,4B,8B}-Instruct`
+  and `-Thinking`. Updated `docs/BACKBONES.md` + `tests/smoke/test_hello_vlm.py`.
+- `tests/smoke/test_hello_vlm.py`: switched import from
+  `AutoModelForCausalLM` → `AutoModelForImageTextToText` (Qwen3-VL
+  registers multimodal).
+- Pre-commit hygiene auto-fixes on prototype files committed so future
+  pre-commits don't re-touch.
+- `docs/TROUBLESHOOTING.md`: flash-attn CUDA_HOME + hatch direct-refs
+  tips appended.
+
+**Why.** The scaffold needs to run for the /loop to validate each
+subsequent feature. Bootstrap finalize delivers the runnable floor.
+
+**Evidence.**
+- `uv sync --extra dev` → all 222 packages installed.
+- `uv pip install flash-attn==2.7.4.post1 --no-build-isolation` with
+  `CUDA_HOME=/cvmfs/.../cuda/12.5.0` → built in 17 s.
+- `uv run --no-env-file ruff check .` → All checks passed.
+- `uv run --no-env-file ruff format --check .` → 17 files formatted.
+- `uv run --no-env-file pyright src/cleanrl_vlm` → 0 errors / 0 warnings.
+- `uv run --no-env-file mkdocs build --strict` → built in 3.49 s (no
+  strict-mode warnings).
+- `uv run --no-env-file pre-commit run --all-files` → all hooks green.
+- `uv run --no-env-file pytest tests/test_imports.py tests/test_spec_exists.py -v`
+  → 12 passed under the venv (same as conda python).
+- `uv run --no-env-file pytest tests/smoke/test_hello_vlm.py -v -m tier1`
+  → **1 passed in 92.93 s** on `Qwen/Qwen3-VL-2B-Instruct`; artifact at
+  `/tmp/.../hello_vlm_output.txt` (prompt+response). Proved the dep
+  graph + vision processor + generation path all work end-to-end.
+- 8 × RTX A6000 (48 GB) visible: `torch.cuda.device_count() == 8`.
+
+**Invariants run.** None of Inv-1..Inv-15 yet — those apply to training
+surfaces that don't exist. The hello-VLM smoke is the baseline
+"software works" floor that iter-4+ invariant tests build on.
+
+---
+
 ## 2026-04-20 — iter 2 — scaffold skeleton
 
 **What.** Execute bootstrap-plan Tasks 3–8, 12–20 on top of iter 1's

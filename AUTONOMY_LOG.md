@@ -234,3 +234,133 @@ and executed inline.
 - Prune prototype files (`src/models/`, `src/train_*.py`,
   `deepspeed_zero*.yaml`, `requirements.txt`, `setup.py`,
   `test.py`) once their replacements land under `algos/` + `src/cleanrl_vlm/`.
+
+---
+
+### 2026-04-20 — iter 3 — A2-bootstrap-finalize — @b8dd216..7fb54bd
+
+**Context.** Finalize the scaffold: UV env + lockfile, flash-attn, lint
++ pre-commit + mkdocs strict, GPU hello-VLM smoke. Aim: the scaffold
+runs end-to-end on the 8 × A6000 node.
+
+**Outcome.** **Bootstrap DONE.** hello-VLM smoke green in 92.93 s on
+`Qwen/Qwen3-VL-2B-Instruct`. All 13 applicable tests pass (12 CPU
+unit + 1 GPU smoke). Next phase is the first canon trainer.
+
+**Decisions this iter.**
+
+1. **UV env on local scratch venv.** `uv venv --python 3.10` picked
+   `/usr/bin/python3.10` (3.10.12). Venv at `.venv/`. `uv lock`
+   resolved 222 packages in 52s (transformers pinned to
+   `hf/transformers@a29df2d`). `uv sync --extra dev` succeeded on
+   second try (see decision 2).
+
+2. **Fixed hatch `allow-direct-references` for transformers-from-git
+   dep.** First `uv sync` failed:
+   `ValueError: Dependency #4 of field 'project.dependencies' cannot
+   be a direct reference unless tool.hatch.metadata.allow-direct-references
+   is set to true`. Added the config to `pyproject.toml` (commit
+   `4589b7b`).
+
+3. **Ruff scope excludes prototype leftovers.** First `ruff check .`
+   reported 279 errors across the pre-scaffold files (`src/eval.py`,
+   `src/models/`, `src/ppo.py`, `src/train_decoupled_*.py`,
+   `src/utils/`, `setup.py`, `test.py`). Per iter-1 decision these
+   files are slated for pruning when their replacements land. Added
+   them to `[tool.ruff] extend-exclude`. `ruff check .` / `ruff
+   format --check .` now clean (commit `1ea7938`).
+
+4. **Mkdocs `--strict` README-link fix.** `docs/index.md` linked at
+   `../README.md` which is outside the docs tree; mkdocs strict mode
+   flagged it. Replaced with an inline quickstart block.
+
+5. **`site/` build output gitignored.**
+
+6. **flash-attn CUDA_HOME gotcha solved.** First build:
+   `OSError: CUDA_HOME environment variable is not set`. Cvmfs has
+   `cuda/12.5.0` available; torch is cu124. Built with:
+   `CUDA_HOME=/cvmfs/ai.mila.quebec/apps/x86_64/common/cuda/12.5.0
+   PATH=$CUDA_HOME/bin:$PATH ... --no-build-isolation`. Succeeded
+   in 17s (cached somewhere). Documented in
+   `docs/TROUBLESHOOTING.md`.
+
+7. **Backbone-name correction amendment.** Attempted to load
+   `Qwen/Qwen3.5-VL-0.8B` per spec §3 — **repo does not exist on
+   HF** (RepositoryNotFoundError). Searched HF: no `Qwen3.5-VL`
+   series is published yet; real series is `Qwen3-VL-{2B,4B,8B,...}-
+   {Instruct,Thinking}`. Wrote
+   `docs/superpowers/specs/amendments/2026-04-20-backbone-names-correction.md`
+   — Tier-1 replacement `Qwen/Qwen3-VL-2B-Instruct` (no 0.8B exists),
+   Tier-2 replacement `Qwen/Qwen3-VL-4B-Instruct`, thinking-ablation
+   `-4B-Thinking`. Updated `docs/BACKBONES.md` (four-row table) and
+   `tests/smoke/test_hello_vlm.py` (MODEL_ID default). Per §11 S-11.
+   Spec §3 text is NOT rewritten in-place this iter — amendment
+   stands as the active override until next full spec edit.
+
+8. **Smoke-test Auto class fix.** With the corrected model ID,
+   the smoke test failed with `ValueError: Unrecognized configuration
+   class Qwen3VLConfig for AutoModelForCausalLM`. Qwen3-VL is
+   multimodal and registers under `AutoModelForImageTextToText`.
+   Swapped the import (commit `7fb54bd`). Second smoke run passed
+   in 92.93s.
+
+9. **Pre-commit hygiene committed for prototype files.** `pre-commit
+   run --all-files` auto-fixed whitespace / EOF / mixed-line-ending
+   on 28 prototype + scaffold files. Committed the cosmetic-only
+   diff (commit `7fb54bd`) so future pre-commit runs don't re-touch
+   them. The prototype files remain in the working tree pending
+   iter-4+ port work.
+
+10. **`.claude/` gitignored.** Pre-commit/scheduler wrote
+    `.claude/scheduled_tasks.lock` which got `git add -A`-staged.
+    Added `.claude/` to `.gitignore`.
+
+**Commits this iter.**
+
+| SHA | What |
+|---|---|
+| `b8dd216` | `uv.lock` committed (222 packages) |
+| `4589b7b` | hatch `allow-direct-references` fix |
+| `1ea7938` | ruff exclude + mkdocs strict + site/ ignore |
+| `cefa7c9` | amendment: backbone names correction |
+| `7fb54bd` | pre-commit hygiene + smoke-test VLM class + .claude ignore |
+
+Plus the iter-3 journal update (this commit) — likely SHA to be
+backfilled.
+
+**Skills invoked.** `superpowers:using-superpowers` (auto).
+`superpowers:systematic-debugging` applied implicitly (hypothesize →
+verify → fix) on each of decisions 2, 6, 7, 8. S-5 "external-library
+research" applied implicitly when adapting to Qwen3-VL reality — a
+single `HfApi().list_models(author='Qwen', search='VL')` query
+substituted for the web-fetch; summary landed in the amendment.
+
+**Skills not invoked, justification.**
+- `superpowers:brainstorming` — scaffold finalization is execution,
+  not design. Model-name amendment is adaptation to reality, also
+  not net-new design.
+- `superpowers:writing-plans` — the bootstrap plan suffices.
+- `superpowers:code-reviewer` subagent — iter-3 diff is 100 % scaffold
+  glue (lockfile, lint exclusions, test fixes, amendment). The
+  reviewer is more valuable on the first canon trainer (`B`).
+- `superpowers:test-driven-development` — no new tests written this
+  iter beyond the scaffold's 13 from iter 2.
+- `superpowers:simplify` — nothing to simplify.
+- `superpowers:subagent-driven-development` — tasks were sequential
+  (many depended on UV being up first). Subagents would not have
+  parallelized usefully.
+
+**Follow-ups.**
+
+- Iter 4 kicks off `B-ppo-cot-vizdoom-basic-2B`. First sub-step:
+  brainstorm + writing-plans to produce the detailed task file.
+- The master spec §3 `Qwen3.5-VL` naming will be rewritten in-place
+  at a later spec-edit iteration (low priority). Amendment stands.
+- `docs/backbone_probes/qwen3-vl-2b-instruct.md` lands when a
+  real trainer first loads the backbone (not for the hello-smoke —
+  that's just a generation sanity).
+- HF cache lives at `$SCRATCH/hub` per env var; the smoke downloaded
+  ~5GB there. No need to re-download for iter-4 training runs.
+- Mila-specific env needs: `CUDA_HOME=/cvmfs/.../cuda/12.5.0`. Scripts
+  that run flash-attn-dependent code should set this via a shared
+  helper or document it prominently. Candidate: `scripts/_cluster_env.sh`.
