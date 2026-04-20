@@ -19,6 +19,12 @@ plan Task 24.
   `docs/RECIPES.md` full + smoke CLIs, `docs/BACKBONES.md` 2B probe
   link, `docs/RESULTS.md` first combo row with smoke-run summary.
 - `e4540dd` — mkdocs strict-mode fix (inline prompt path as code).
+- `f10b7c8` — **user-flagged ratio=1 correctness fix**: rollout
+  `logprob_sum` now uses the identical span-mask the PPO update applies
+  (positions ≥ prompt_len−1 AND non-pad target). First-minibatch-
+  first-epoch `approx_kl` dropped **1.51e-02 → −2.52e-05** (600×
+  reduction, at fp16 noise floor). `clip_fraction` iter 1: 0.0156 →
+  0.0000. PPO ratio is effectively 1.0 before the first grad step.
 
 **Why.** Value loss + ep_return were both iter-17 training-run
 findings that would block meaningful learning. Task 24 docs close the
