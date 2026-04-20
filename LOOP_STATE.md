@@ -1,11 +1,11 @@
 # LOOP_STATE.md
 
-**Last updated:** 2026-04-20 (iter 10 — generate + precision done, tasks 1-13/27).
+**Last updated:** 2026-04-20 (iter 11 — microbatch + logging + checkpoint done, tasks 1-16/27).
 **Maintained by:** the autonomous `/loop` agent; humans read only.
 
 ## Current phase
 
-**Phase:** `B-ppo-cot-vizdoom-basic-2B` — **executing**. Plan tasks 1-13/27 complete (48% through). 38 tests green (26 unit + 8 invariant [adds Inv-6] + 1 smoke + 2 meta dir + hello-VLM). Task 13 ran GPU GradScaler test on single A6000; Inv-6 test corrected from plan literal (plan assumed no-NaN on scaled grads; GradScaler is designed to detect overflow itself). Next iter picks up Task 14 (microbatch_probe).
+**Phase:** `B-ppo-cot-vizdoom-basic-2B` — **executing**. Plan tasks 1-16/27 complete (59% through). 44 tests green. Next iter picks up Task 17 (InvariantMonitor scaffold + Inv-04/05/09/11/13 tests — the biggest invariant batch).
 
 ## Iter 5 sub-step completed
 
@@ -81,9 +81,9 @@ available, verifies locally, commits.
 - [x] Task 11 — RolloutBuffer + GAE + Inv-10 — iter 9
 - [x] Task 12 — generate_cot_actions + CotRolloutStep (M1) — iter 10
 - [x] Task 13 — accelerate config loader + Fp16State + Inv-6 — iter 10
-- [ ] Task 14 — microbatch_probe (M7)
-- [ ] Task 15 — logging (Rich / CSV / W&B)
-- [ ] Task 16 — save_vlm_actor_critic_checkpoint (m6)
+- [x] Task 14 — microbatch_probe (M7) — iter 11
+- [x] Task 15 — logging (Rich / CSV / W&B) — iter 11
+- [x] Task 16 — save_vlm_actor_critic_checkpoint (m6) — iter 11
 - [ ] Task 17 — InvariantMonitor scaffold + Inv-04/05/09/11/13 tests
 - [ ] Task 18 — scripts/_cluster_env.sh
 - [ ] Task 19 — algos/ppo_cot.py assembly

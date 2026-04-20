@@ -6,6 +6,39 @@ One entry per iteration, not per commit within an iteration.
 
 ---
 
+## 2026-04-20 — iter 11 — microbatch + logging + checkpoint (plan tasks 14-16/27)
+
+**What.** 3 commits landing training-layer plumbing.
+
+- Task 14 (`c2d8173`) — `src/cleanrl_vlm/training/microbatch_probe.py`:
+  `probe_microbatch` doubles until OOM/cap; `record_microbatch_probe`
+  writes `runs/<name>/microbatch_probe.json`. 3 unit tests.
+- Task 15 (`7f7880b`) — `src/cleanrl_vlm/training/logging.py`:
+  `CsvWriter` over 39-column §9 schema including m4
+  `gen_truncated_rate`, m5 `lora_weight_norm_{actor,critic}` +
+  `adapter_sync_wall_s`, B2 `inv_4_status`. `RichDashboard` with TTY
+  auto-off. `wandb_init` shim. 2 unit tests.
+- Task 16 — `src/cleanrl_vlm/training/checkpoint.py`:
+  `save_vlm_actor_critic_checkpoint(algo_slug, ...)` (reviewer m6),
+  atomic tmp-rename + sha256 integrity hashes + full §10 directory
+  layout. Signature-only test; round-trip deferred to
+  `J-checkpoint-resume-e2e`. 1 unit test.
+
+**Why.** Training-layer plumbing needs to be in place before Task 17
+(InvariantMonitor scaffold) and Task 19 (trainer assembly). The §9
+schema, m4/m5 metric columns, and m6 checkpoint signature all ship
+together for a coherent "training utilities" landing.
+
+**Evidence.**
+- `pytest tests/unit/test_microbatch_probe.py -v` → 3 passed in 0.49s.
+- `pytest tests/unit/test_logging.py -v` → 2 passed.
+- `pytest tests/unit/test_checkpoint.py -v` → 1 passed in 36.06s.
+
+**Invariants run.** None landed this iter — Task 17 lands
+Inv-04/05/09/11/13 next.
+
+---
+
 ## 2026-04-20 — iter 10 — generate + precision (plan tasks 12-13/27)
 
 **What.** 2 commits for the generation path + precision layer.

@@ -921,3 +921,85 @@ startup behavior (reviewer m11) + Inv-6.
 - Task 15 — logging (Rich / CSV / W&B). Mostly CSV writer + column
   schema; no GPU needed. Medium-size plan section.
 - Iter 11 should handle Task 14 + Task 15 comfortably.
+
+---
+
+### 2026-04-20 — iter 11 — plan-tasks-14-16 — @c2d8173..<tbd>
+
+**Context.** Training-layer plumbing: microbatch probe, logging, and
+checkpoint save.
+
+**Accomplished.** 3 plan tasks + 3 commits (Task 16 squeezed in beyond
+the planned 14-15 scope):
+
+- Task 14 (`c2d8173`) — `training/microbatch_probe.py`: `probe_microbatch`
+  doubles size until fail; `record_microbatch_probe` writes
+  `runs/<name>/microbatch_probe.json`. 3 tests.
+- Task 15 (`7f7880b`) — `training/logging.py`: `CsvWriter` over 39-column
+  §9 schema (including m4 `gen_truncated_rate`, m5
+  `lora_weight_norm_actor/critic` + `adapter_sync_wall_s`, B2
+  `inv_4_status`), `wandb_init` shim (no-op on disabled), `RichDashboard`
+  with TTY auto-detect. 2 tests.
+- Task 16 (new SHA) — `training/checkpoint.py`:
+  `save_vlm_actor_critic_checkpoint(algo_slug, ...)` with atomic tmp-
+  rename + sha256 integrity hashes + full §10 layout skeleton.
+  Signature-only test (reviewer m6). 1 test.
+
+**Decisions.**
+
+1. **Squeezed Task 16 into iter 11.** LOOP_STATE sketched iter 11 =
+   tasks 14-15, iter 12 = 16-17. Tasks 14 and 16 each took under 5
+   min of active impl; iter 11 budget trivially covered all three.
+   Iter 12 now targets just Task 17 (the big invariant batch).
+
+2. **RichDashboard TTY auto-off.** Uses `sys.stdout.isatty()`. Keeps
+   the dashboard silent under `uv run pytest`, `python -c`, CI logs,
+   and any piped stdout — matches master-spec §9 "auto-off in
+   headless / CI".
+
+3. **Checkpoint test is signature-only, not round-trip.** Real load-
+   side correctness is Inv-7 + Inv-12, both deferred to
+   `J-checkpoint-resume-e2e`. Iter-4 scope just needs the save
+   function to exist with the m6 signature; the test validates that
+   contract without loading a real backbone.
+
+4. **CSV schema committed for the future.** §9 mandates every metric
+   the paper may want is logged now. CSV_COLUMNS has 39 entries,
+   including 10 that iter-4-scope doesn't emit yet
+   (`lora_weight_norm_*`, `adapter_sync_wall_s`, `inv_{4,9,11,13}_status`).
+   They'll be empty strings in early runs; that's intentional —
+   having the column there prevents S-1 churn when later features
+   start filling them.
+
+**Verification evidence.**
+
+- `uv run --no-env-file pytest tests/unit/test_microbatch_probe.py -v`
+  → 3 passed in 0.49s.
+- `uv run --no-env-file pytest tests/unit/test_logging.py -v`
+  → 2 passed.
+- `uv run --no-env-file pytest tests/unit/test_checkpoint.py -v`
+  → 1 passed in 36.06s (import of torch dominates).
+
+**Running totals.** 44 tests committed through iter 11:
+- 35 unit (adds 3 microbatch + 2 logging + 1 checkpoint)
+- 8 invariant
+- 1 smoke
+
+**Skills invoked.**
+- `superpowers:test-driven-development` — all three tasks followed
+  red→green, though Task 16's test is signature-only, not behavior.
+- `superpowers:verification-before-completion` — per-task pytest green.
+
+**Follow-ups (iter 12).**
+
+- **Task 17 dedicated iter.** Scope: `training/invariants.py`
+  `InvariantMonitor` scaffold (passive until D-invariants-runtime;
+  just the register-and-dispatch skeleton) + 5 invariant test files:
+  `test_inv_04_logprob_parity.py` (single-path variant, reviewer B2),
+  `test_inv_05_grad_norm.py`, `test_inv_09_reward_pipeline.py`,
+  `test_inv_11_determinism.py` (bitwise, reviewer M5 full fixture),
+  `test_inv_13_pad_image_token_mask.py`.
+- Inv-04 and Inv-11 need the real 2B backbone for end-to-end
+  coverage; Inv-05, Inv-09, Inv-13 can use synthetic fixtures.
+- Iter 12 will likely go long with the TinyVLM fixture reuse; may
+  spill into iter 13.
