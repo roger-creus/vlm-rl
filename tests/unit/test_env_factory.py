@@ -91,3 +91,19 @@ def test_discrete_multibinary_wrapper_generalizes(buttons, chosen_idx):
     expected = [0] * len(buttons)
     expected[chosen_idx] = 1
     assert base.last_action == expected
+
+
+def test_action_tables_contains_vizdoom_basic():
+    from cleanrl_vlm.envs.vizdoom.action_tables import action_tables
+
+    assert action_tables["VizdoomBasic-v0"] == ["MOVE_LEFT", "MOVE_RIGHT", "ATTACK"]
+    assert action_tables["VizdoomCorridor-v0"] == [
+        "MOVE_LEFT",
+        "MOVE_RIGHT",
+        "ATTACK",
+        "MOVE_FORWARD",
+        "MOVE_BACKWARD",
+        "TURN_LEFT",
+        "TURN_RIGHT",
+    ]
+    assert action_tables["VizdoomDefendLine-v0"] == ["TURN_LEFT", "TURN_RIGHT", "ATTACK"]
