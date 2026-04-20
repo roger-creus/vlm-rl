@@ -1497,3 +1497,54 @@ populate Inv-8 / Inv-15 artifacts under `docs/`.
      per systematic-debugging (reward scaling, lr, grad norm band).
   6. If green, bump `--total-timesteps` and re-run as a longer
      campaign.
+
+---
+
+### 2026-04-20 — iter 17 — task-23-training-kickoff — @<still-running>
+
+**Context.** First real end-to-end training run. Previous "integration
+test" was 1 iter / 1 env / 2 steps / 16 tokens — just a subprocess
+completion smoke. This iter kicks a genuinely-training subprocess and
+watches for learning.
+
+**Launch decision.** Conservative first run, scaled for ~30-min wall so
+any pathology surfaces fast:
+- `--num-envs 2 --num-steps 8 --total-timesteps 160` → 10 iterations.
+- `--max-new-tokens 64` to limit generate wall-time.
+- `--num-minibatches 2 --update-epochs 2` → 4 update steps per iter.
+- `--checkpoint-interval 5` → checkpoints at iter 5 + 10.
+
+**Observability.** Subprocess launched via Bash `run_in_background`
+(`b71svc4he`). `Monitor` armed on `/tmp/.../b71svc4he.output` with grep
+alternation: progress (`step=|iteration=|loss_total`) + failure
+(`Traceback|Error|FAILED|OOM|Killed|AssertionError|CUDA out of memory|
+ValueError|RuntimeError|inv_._status=red|nan`). Agent receives one
+notification per matching line; §0 judgment on incoming data.
+
+**Decisions logged.**
+
+1. **Cleaned the prior run_dir** before launch to avoid the iter-15
+   collision pattern across dates (run_name is date-level; iter-15
+   left step_000002/ in there). `rm -rf
+   runs/ppo_cot__VizdoomBasic-v1__qwen3-vl-2b-instruct__0__2026-04-20/`
+   is bounded to the specific stale dir; the iter-15 fix to
+   `_atomic_rename` would have handled it anyway but a clean slate
+   gives unambiguous evidence.
+
+2. **Skipped running `probe_vision`** before training. Was a
+   follow-up from iter 16. Decision: Task 23 is the higher-information
+   event per iter; probe_vision can land inline with the first
+   all-green training if the learning curve looks reasonable.
+
+3. **Fallback ScheduleWakeup at 30 min.** Monitor events are the
+   primary wake signal. Safety-net wakeup is 1800s per /loop guide
+   (Monitor armed → lean 1200-1800s).
+
+**Next-turn handling.**
+- If Monitor fires a `Traceback|Error|OOM|...` signal → systematic-
+  debugging on the error; likely next iter fixes something concrete.
+- If Monitor fires `iteration=N` signals and CSV shows reward/loss
+  trends, review curve at next wake-up; decide whether to extend
+  or investigate.
+- If no events fire by safety-net wake (30 min), investigate why —
+  subprocess stuck / buffered / model-load hung.

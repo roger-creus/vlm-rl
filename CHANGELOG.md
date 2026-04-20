@@ -6,6 +6,24 @@ One entry per iteration, not per commit within an iteration.
 
 ---
 
+## 2026-04-20 — iter 17 — first real training run kickoff (plan task 23)
+
+**What.** Task 23 launch. No file commits this iter — just a journal
+entry; training subprocess + Monitor armed.
+
+**Why.** Plan's deliverable sequence §10 item 23: kick off real
+training. Smaller scale first (~30 min) so pathologies surface fast;
+scale up on green.
+
+**Evidence.** Pending — subprocess still running at iter-17 close.
+Results review in iter 18+ when Monitor events or fallback wake
+arrives.
+
+**Invariants run.** Pending (Inv-01, Inv-05 sample every 10 iters;
+Inv-04 runs every iter at epoch 0 minibatch 0).
+
+---
+
 ## 2026-04-20 — iter 16 — vision + backbone probes (plan tasks 21-22/27)
 
 **What.** 1 commit landing both probe scripts + an executed backbone
