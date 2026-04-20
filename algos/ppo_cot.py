@@ -196,16 +196,35 @@ def main() -> None:  # noqa: C901  (trainer orchestration; complexity expected)
 
     _set_seed(args.seed)
 
-    # Per-env pixel budget may override the backbone default.
-    min_pixels = int(env_cfg.get("processor_min_pixels", bb["processor_pixel_budget"]["min_pixels"]))
-    max_pixels = int(env_cfg.get("processor_max_pixels", bb["processor_pixel_budget"]["max_pixels"]))
-
     action_names = action_tables[args.env_id]
     prompt_builder = PromptBuilder(args.env_id, action_names)
     actor_prompt = prompt_builder.actor_prompt()
     critic_prompt = prompt_builder.critic_prompt()
 
     envs = AsyncVectorEnv([make_env(args.env_id, env_cfg, args.seed, i, run_name) for i in range(args.num_envs)])
+
+    # Pixel budget *follows the actual obs shape* — H*W of whatever the env
+    # (with its wrappers, including frame_stack) produces. YAML can override
+    # for explicit experiments but by default setting frame_stack.n=1 gives a
+    # single image at native resolution and the VLM processor is told exactly
+    # that many pixels (no silent upscale, no silent downscale). Raising
+    # frame_stack.n with a tiling wrapper will scale the obs shape and the
+    # budget tracks it automatically.
+    obs_shape = envs.single_observation_space.shape
+    assert (
+        obs_shape is not None and len(obs_shape) >= 2
+    ), f"Cannot derive pixel budget from obs_shape={obs_shape!r}; env must expose a 2D+ image."
+    native_pixels = int(obs_shape[0]) * int(obs_shape[1])
+    min_pixels = int(env_cfg.get("processor_min_pixels", native_pixels))
+    max_pixels = int(env_cfg.get("processor_max_pixels", native_pixels))
+    logging.getLogger(__name__).info(
+        "pixel budget: obs_shape=%s native=%d px, min_pixels=%d, max_pixels=%d (override=%s)",
+        tuple(obs_shape),
+        native_pixels,
+        min_pixels,
+        max_pixels,
+        "yaml" if ("processor_min_pixels" in env_cfg or "processor_max_pixels" in env_cfg) else "derived",
+    )
 
     ac_model = DecoupledActorCriticVLM_COT(
         vlm_name=args.backbone,
@@ -244,7 +263,6 @@ def main() -> None:  # noqa: C901  (trainer orchestration; complexity expected)
     dash = RichDashboard(run_name)
     wandb_run = wandb_init(run_name, args.wandb_project_name, args.__dict__, args.track)
 
-    obs_shape = envs.single_observation_space.shape
     buffer = RolloutBuffer(args.num_envs, args.num_steps, obs_shape, device=torch.device("cuda"))
 
     lora_params_all = lora_params_for(ac_model.vlm.model)

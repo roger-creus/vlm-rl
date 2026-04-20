@@ -11,6 +11,9 @@ screen_format: RGB24
 reward_clip: false
 max_episode_steps: null        # ViZDoom Basic uses its own 300-tic cap (~75 env steps at frame_skip=4)
 target_score: 60.0
-# Override processor budget to match native 320x240 = 76800 pixels; avoids silent 3.4x upscale.
-processor_min_pixels: 76800
-processor_max_pixels: 76800
+# processor_min_pixels / processor_max_pixels default to H*W of the env's
+# observation space (i.e., 320*240 = 76800 for single-frame VizdoomBasic;
+# scales automatically if frame_stack.n grows via a tiling wrapper).
+# Uncomment + set explicitly to override.
+# processor_min_pixels: 76800
+# processor_max_pixels: 76800

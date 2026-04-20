@@ -12,8 +12,10 @@ resolution:
 screen_format: RGB24
 clip_reward: false
 max_episode_steps: 27000         # master-spec §4: fixed for all Atari envs; DO NOT change
-# Pong is 210x160 = 33600 pixels. Force the processor budget down to
-# match native resolution so we don't upscale noise.
-processor_min_pixels: 33600
-processor_max_pixels: 33600
+# processor_min_pixels / processor_max_pixels default to H*W of the env's
+# observation space (i.e., 210*160 = 33600 for single-frame Pong; scales
+# automatically if frame_stack.n grows via a tiling wrapper). Uncomment +
+# set explicitly to override.
+# processor_min_pixels: 33600
+# processor_max_pixels: 33600
 target_score: 21.0               # Pong: [-21, 21]; an RL-saturated agent reaches +21
