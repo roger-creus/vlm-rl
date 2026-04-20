@@ -6,6 +6,32 @@ One entry per iteration, not per commit within an iteration.
 
 ---
 
+## 2026-04-20 — iter 5 — PPO-COT implementation plan (task B — plan step)
+
+**What.** 27-task implementation plan for task `B-ppo-cot-vizdoom-basic-2B`.
+1 commit (`dfc3c4d`).
+
+- `docs/superpowers/specs/plans/2026-04-20-ppo-cot-vizdoom-basic.md`
+  (3741 lines) — bite-sized TDD tasks with exact file paths, verbatim
+  code blocks, conventional-commits messages, self-review checklist.
+
+**Why.** Design spec at `f7b7fe7` needs task-level decomposition before
+implementation iters can consume it. Writing-plans skill output is the
+source of truth for iters 6-? to execute under subagent-driven-development.
+
+**Evidence.**
+- Line count: 3741 (substantial; delegated to general-purpose subagent
+  to conserve main-loop context).
+- Self-review checklist at plan tail confirms: 20 §3 module units
+  mapped, 9 in-scope invariants mapped to test files, 8 reviewer majors
+  encoded, 12 reviewer minors landed.
+- Grep for `## Task N:` shows 27 top-level tasks matching design §10.
+
+**Invariants run.** None landed yet — plan describes Inv-1/3/4[single-
+path]/5/6/9/10/11/13 test files; implementations land iters 6+.
+
+---
+
 ## 2026-04-20 — iter 4 — PPO-COT design spec (task B — design step)
 
 **What.** Design spec for the first canon trainer

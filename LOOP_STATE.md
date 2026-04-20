@@ -1,11 +1,17 @@
 # LOOP_STATE.md
 
-**Last updated:** 2026-04-20 (iter 4 — PPO-COT design reviewed + revised).
+**Last updated:** 2026-04-20 (iter 5 — PPO-COT implementation plan committed).
 **Maintained by:** the autonomous `/loop` agent; humans read only.
 
 ## Current phase
 
-**Phase:** `B-ppo-cot-vizdoom-basic-2B` — design sign-off. **Design spec committed and code-reviewer-approved at `f7b7fe7`.** Next iteration invokes `superpowers:writing-plans` on §10 of the design to emit the bite-sized implementation plan (27 tasks).
+**Phase:** `B-ppo-cot-vizdoom-basic-2B` — **ready to execute**. Design spec at `f7b7fe7`, implementation plan at `dfc3c4d` (27 tasks, 3741 lines). Next iter starts Task 1 under `superpowers:subagent-driven-development`.
+
+## Iter 5 sub-step completed
+
+- `superpowers:writing-plans` dispatched via general-purpose subagent.
+- Output: `docs/superpowers/specs/plans/2026-04-20-ppo-cot-vizdoom-basic.md` committed at `dfc3c4d`.
+- Self-review checklist at plan's tail verifies: all 20 §3 module units mapped; 9 in-scope invariants tested; 8 majors + 12 minors all encoded into specific tasks.
 
 **Iter 3 evidence.** `uv sync --extra dev` resolved 222 packages and installed cleanly (`transformers` pinned to `a29df2d`, `torch 2.6.0+cu124`, `vllm 0.8.5.post1`, 8 × RTX A6000 visible). `flash-attn 2.7.4.post1` built against CUDA 12.5 (cvmfs). `ruff check .` / `ruff format --check .` / `pyright src/cleanrl_vlm` / `mkdocs build --strict` all clean. Pre-commit installed and green. `tests/smoke/test_hello_vlm.py::test_hello_vlm_loads_and_generates` — **PASSED in 92.93s** on `Qwen/Qwen3-VL-2B-Instruct` (per 2026-04-20 backbone-names amendment).
 
@@ -49,38 +55,69 @@ Iter-2 execution of the pre-existing bootstrap plan
 - Revised spec at `f7b7fe7` — all blockers resolved in-spec; majors
   assigned to §10 plan tasks; minors folded into simplify pass.
 
-## Next task (iter 5)
+## Next task (iter 6)
 
-**ID:** `B-ppo-cot-vizdoom-basic-2B` — step: writing-plans.
+**ID:** `B-ppo-cot-vizdoom-basic-2B` — plan Task 1 "Configs — backbones + targets + VizdoomBasic env".
 
-**Objective.** Invoke `superpowers:writing-plans` on §10 of the design
-spec to emit `docs/superpowers/specs/plans/2026-04-20-ppo-cot-vizdoom-basic.md`
-— 27 bite-sized tasks decomposed from the design.
+**Plan file:** `docs/superpowers/specs/plans/2026-04-20-ppo-cot-vizdoom-basic.md` (commit `dfc3c4d`).
 
-**Scope of that single iteration.** Just the plan file, committed. No
-code yet.
+Execution mode: `superpowers:subagent-driven-development`. Each /loop iter
+picks the next incomplete task (tracked via plan checkboxes + LOOP_STATE
+sub-step table below), dispatches a subagent if independent work is
+available, verifies locally, commits.
 
-## Iters 6+
+## Plan-task checklist (iters 6-?)
 
-Execute the plan task-by-task under
-`superpowers:subagent-driven-development`. Each /loop iter picks the
-next incomplete task from the plan, runs it (possibly via subagent),
-verifies, commits. Milestones where `/loop` iter boundaries naturally
-land:
+- [ ] Task 1 — configs (backbones + targets + VizdoomBasic env YAML)
+- [ ] Task 2 — env wrappers (TDD)
+- [ ] Task 3 — VizDoom action tables + factories
+- [ ] Task 4 — env registry dispatcher
+- [ ] Task 5 — LoRA topology helper (TDD)
+- [ ] Task 6 — MLP heads (CriticHead / ActorHead)
+- [ ] Task 7 — BaseVLM wrapper
+- [ ] Task 8 — DecoupledActorCriticVLM_COT + active_adapter ctxmgr + Inv-1/3 tests
+- [ ] Task 9 — VizdoomBasic prompt templates
+- [ ] Task 10 — parser + PromptBuilder (M2, M3)
+- [ ] Task 11 — RolloutBuffer + GAE + Inv-10
+- [ ] Task 12 — generate_cot_actions + CotRolloutStep (M1)
+- [ ] Task 13 — accelerate config loader + Fp16State + Inv-6
+- [ ] Task 14 — microbatch_probe (M7)
+- [ ] Task 15 — logging (Rich / CSV / W&B)
+- [ ] Task 16 — save_vlm_actor_critic_checkpoint (m6)
+- [ ] Task 17 — InvariantMonitor scaffold + Inv-04/05/09/11/13 tests
+- [ ] Task 18 — scripts/_cluster_env.sh
+- [ ] Task 19 — algos/ppo_cot.py assembly
+- [ ] Task 20 — tier1 integration test
+- [ ] Task 21 — scripts/probe_vision.py + initial report
+- [ ] Task 22 — scripts/probe_backbone.py (m1)
+- [ ] Task 23 — **training run kickoff** (long, background, milestone-gated wakeups)
+- [ ] Task 24 — docs update (ALGORITHMS / ENVS / RECIPES / RESULTS / BACKBONES)
+- [ ] Task 25 — simplify pass (m12)
+- [ ] Task 26 — code-reviewer subagent pass
+- [ ] Task 27 — journals + LOOP_STATE pivot to `C-envs-tier1-expand`
 
-1. Configs + env layer (tasks 1-4)
-2. Model layer (tasks 5-8) — first invariant tests green
-3. Prompts + rollout (tasks 9-12)
-4. Training scaffolding (tasks 13-17) — remaining invariant tests green
-5. `algos/ppo_cot.py` assembly (task 19)
-6. Integration test green (task 20)
-7. Vision probe + backbone probe (tasks 21-22)
-8. First training run (task 23) — milestone-gated Wakeup cadence
-9. Docs updates + simplify + code-review + journals (tasks 24-27)
+## Planned iter boundaries (rough)
 
-Task 23 (the actual training run) is the long pole — agent kicks off via
-`run_in_background`, arms a `Monitor` on the metrics-CSV tail with an
-alternation grep for `Traceback|Error|FAILED|OOM|elapsed_steps=|ep_return_mean=|inv_.*_status=FAIL`,
+| Iters | Plan tasks | What |
+|-------|------------|------|
+| 6     | 1          | Configs land |
+| 7     | 2-4        | Env layer (port + test) |
+| 8     | 5-7        | Model layer pt 1 (topology + heads + BaseVLM) |
+| 9     | 8          | Model layer pt 2 (actor_critic + Inv-1/3) |
+| 10    | 9-10       | Prompts + parser + builder |
+| 11    | 11-12      | Rollout layer |
+| 12    | 13-14      | Training layer pt 1 (precision + microbatch probe + Inv-6) |
+| 13    | 15-16      | Training layer pt 2 (logging + checkpoint) |
+| 14    | 17         | InvariantMonitor + remaining Inv tests |
+| 15    | 18-19      | Cluster script + trainer assembly |
+| 16    | 20-22      | Integration test + vision/backbone probes |
+| 17    | 23 start   | Training run kicks off (background) |
+| 18-?  | 23 watch   | Milestone wakeups on Monitor events |
+| ?+1   | 24-27      | Docs + simplify + review + journals |
+
+Task 23 is the long pole — agent kicks off via `run_in_background`, arms
+a `Monitor` on the metrics-CSV tail with an alternation grep for
+`Traceback|Error|FAILED|OOM|elapsed_steps=|ep_return_mean=|inv_.*_status=FAIL`,
 and schedules fallback wakeups every ~30 min.
 
 ## Prioritized task queue (carried from pre-existing plan)

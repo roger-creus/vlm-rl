@@ -468,3 +468,77 @@ in the subagent's tool result, not transcribed here).**
 - LOOP_STATE pivots to "iter 6 — task 1 of the plan" after writing-
   plans lands.
 - Journals updated at iter 5 end with plan-file SHA.
+
+---
+
+### 2026-04-20 — iter 5 — writing-plans — @dfc3c4d
+
+**Context.** Design spec locked at `f7b7fe7` with reviewer blockers
+resolved. This iter emits the bite-sized implementation plan that
+subsequent iters consume.
+
+**Decisions.**
+
+1. **Delegated plan writing to a general-purpose subagent.** 3741 lines
+   of plan content would have burned significant context in the main
+   loop. The subagent received: design-spec path, master-spec path,
+   prototype source references, scaffold inventory, writing-plans
+   style requirements, the explicit M1–M8 / m1–m12 encoding mandate,
+   and the output path. It produced the file in one shot; main loop
+   verified the self-review checklist at the tail + task count + line
+   count before committing.
+
+2. **Verification-before-completion.** Main loop grep-checked:
+   - 27 top-level tasks (`## Task N:`) — matches design §10.
+   - Plan tail contains all four checklist sections (§3 units, Inv
+     mapping, M1-M8 mapping, m1-m12 mapping).
+   - Each major + minor cites a specific task number.
+
+3. **No code-reviewer subagent on the plan file.** The plan is
+   mechanical decomposition of the reviewed design; reviewing the
+   plan itself would duplicate the design review. The reviewer pass
+   comes back online at plan task 26 (code-reviewer on the full diff
+   after implementation).
+
+4. **Plan-task checkboxes in LOOP_STATE rather than inside the plan
+   file.** The plan file's checkboxes are for each task's internal
+   steps (red/impl/green/commit); LOOP_STATE tracks top-level-task
+   completion across /loop iters. Keeps the plan file stable and
+   LOOP_STATE the single source of "where am I in the queue" truth.
+
+5. **Rough iter-boundary table in LOOP_STATE.** 11 planned iter
+   boundaries for tasks 1-22, then variable iters for task 23 (long-
+   running training run), then tasks 24-27 in a final cleanup iter.
+   The boundaries are a sketch, not a contract — each /loop iter
+   re-reads LOOP_STATE and picks the next incomplete task; progress
+   may cluster or split.
+
+**Artifacts produced this iter.**
+
+- `docs/superpowers/specs/plans/2026-04-20-ppo-cot-vizdoom-basic.md`
+  (3741 lines) at commit `dfc3c4d`.
+
+**Skills invoked.**
+- `superpowers:using-superpowers` (auto)
+- `superpowers:writing-plans` (via general-purpose subagent; §13.1
+  interactive gate satisfied by the subagent's plan-file output being
+  the deliverable, not a user-dialog artifact)
+- `superpowers:verification-before-completion` (spot-check the plan's
+  self-review checklist before committing)
+
+**Skills deferred / not applicable this iter.**
+- `superpowers:brainstorming` — design step already done iter 4.
+- `superpowers:test-driven-development` — first red test lands iter 6
+  Task 2.
+- `superpowers:subagent-driven-development` — execution starts iter 6.
+- `superpowers:code-reviewer` — plan file doesn't need its own review;
+  review lands at Task 26 after implementation.
+- `superpowers:simplify` — Task 25.
+
+**Follow-ups (iter 6).**
+
+- Execute plan Task 1: `configs/backbones.yaml` + `configs/targets.yaml`
+  + `configs/envs/VizdoomBasic-v0.yaml` (with per-env pixel-budget
+  override; M8 null `max_episode_steps`). TDD does not apply — configs
+  are static YAML. Commit + move on to Task 2 same iter if budget
+  permits.
