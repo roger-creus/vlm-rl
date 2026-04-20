@@ -220,7 +220,6 @@ def main() -> None:  # noqa: C901  (trainer orchestration; complexity expected)
         load_accelerator_config(ds_yaml, num_processes=args.num_processes)
 
     batch_size = args.num_envs * args.num_steps * args.num_processes
-    minibatch_size = batch_size // args.num_minibatches
     num_iterations = args.total_timesteps // max(1, batch_size)
 
     csv = CsvWriter(run_dir / "metrics.csv")
@@ -292,7 +291,25 @@ def main() -> None:  # noqa: C901  (trainer orchestration; complexity expected)
         buffer.compute_gae(args.gamma, args.gae_lambda, next_value, done)
 
         # ---- PPO update ----
-        b_inds = torch.randperm(batch_size, device="cuda").cpu().tolist()
+        # Inv-4 bit-parity requires the re-score forward to run at the
+        # *same batch size* and *same padding pattern* as the rollout's
+        # forward. Rollout runs each step at batch=num_envs. Batching
+        # rows across steps (with variable S_t) introduces padding +
+        # batch-size divergence that shifts fp16 output by ~1e-2 for
+        # padded rows. We therefore shuffle at **step** granularity and
+        # re-score each step intact at batch=num_envs — same shape as
+        # rollout, so flash-attn dispatches the same kernel and the
+        # output matches bit-for-bit. A single minibatch bundles
+        # ``steps_per_mb = num_steps // num_minibatches`` consecutive
+        # rollout steps so loss aggregation still sees ``minibatch_size``
+        # rows at a time.
+        assert args.num_steps % args.num_minibatches == 0, (
+            f"num_steps ({args.num_steps}) must be divisible by num_minibatches "
+            f"({args.num_minibatches}) for step-grouped re-score (Inv-4 parity)."
+        )
+        steps_per_mb = args.num_steps // args.num_minibatches
+
+        step_inds = torch.randperm(args.num_steps, device="cuda").cpu().tolist()
         clip_fracs: list[float] = []
         approx_kls: list[float] = []
         inv_04_status = "skipped"
@@ -302,48 +319,48 @@ def main() -> None:  # noqa: C901  (trainer orchestration; complexity expected)
         loss = torch.tensor(0.0, device="cuda")
         grad_norm = torch.tensor(0.0, device="cuda")
         for epoch in range(args.update_epochs):
-            for start in range(0, batch_size, minibatch_size):
-                mb = b_inds[start : start + minibatch_size]
+            for mb_start in range(0, args.num_steps, steps_per_mb):
+                mb_steps = step_inds[mb_start : mb_start + steps_per_mb]
 
-                # Row-by-row re-score at batch=1 so each actor forward has the
-                # same shape + padding as the rollout's forward. Batched
-                # re-score with variable-length rows pads the short rows with
-                # pad_id, which invokes a padding-aware fp16 kernel path
-                # whose numerics diverge from batch=1 forwards by O(1e-2)
-                # across 24 layers. That divergence would bias the PPO ratio
-                # -- a real correctness bug, not just an Inv-4 reporting
-                # issue. See amendment 2026-04-20-backbone-switch-to-qwen3.5
-                # and the _debug_inv4_batched.py investigation.
-                lp_new_rows: list[torch.Tensor] = []
-                entropy_rows: list[torch.Tensor] = []
-                obs_rows: list[torch.Tensor] = []
-                for flat_idx in mb:
-                    t_idx = flat_idx // args.num_envs
-                    b_idx = flat_idx % args.num_envs
-                    row_obs = buffer.obs[t_idx, b_idx : b_idx + 1].float()
-                    row_full_ids = buffer.full_ids_per_step[t_idx][b_idx : b_idx + 1]
-                    row_prompt_lens = buffer.prompt_lens_per_step[t_idx][b_idx : b_idx + 1]
-                    log_probs, ent_row = ac_model.get_action(
-                        obs=row_obs,
-                        text_prompts=[actor_prompt],
-                        action_ids=row_full_ids,
-                        prompt_lens=row_prompt_lens,
+                # Re-score each step at batch=num_envs (matches rollout).
+                lp_new_parts: list[torch.Tensor] = []
+                entropy_parts: list[torch.Tensor] = []
+                obs_parts: list[torch.Tensor] = []
+                for t in mb_steps:
+                    step_full_ids = buffer.full_ids_per_step[t]
+                    step_prompt_lens = buffer.prompt_lens_per_step[t]
+                    assert step_full_ids is not None and step_prompt_lens is not None
+                    step_obs = buffer.obs[t].float()  # [num_envs, H, W, C]
+                    log_probs, ent_t = ac_model.get_action(
+                        obs=step_obs,
+                        text_prompts=[actor_prompt] * args.num_envs,
+                        action_ids=step_full_ids,
+                        prompt_lens=step_prompt_lens,
                     )
-                    span_mask = generated_span_mask(row_full_ids, row_prompt_lens, pad_id, dtype=log_probs.dtype)
+                    span_mask = generated_span_mask(step_full_ids, step_prompt_lens, pad_id, dtype=log_probs.dtype)
                     span_count = span_mask.sum(dim=-1).clamp(min=1)
-                    lp_new_rows.append((log_probs * span_mask).sum(dim=-1).squeeze(0))
-                    entropy_rows.append(((ent_row * span_mask).sum(dim=-1) / span_count).squeeze(0))
-                    obs_rows.append(row_obs.squeeze(0))
-                lp_new = torch.stack(lp_new_rows)
-                entropy = torch.stack(entropy_rows)
-                mb_obs = torch.stack(obs_rows)
-                mb_adv = buffer.advantages.view(batch_size)[mb]
-                mb_ret = buffer.returns.view(batch_size)[mb]
-                mb_lp_old = buffer.logprob_sum.view(batch_size)[mb]
+                    lp_new_parts.append((log_probs * span_mask).sum(dim=-1))
+                    entropy_parts.append((ent_t * span_mask).sum(dim=-1) / span_count)
+                    obs_parts.append(step_obs)
+                lp_new = torch.cat(lp_new_parts)
+                entropy = torch.cat(entropy_parts)
+                mb_obs = torch.cat(obs_parts)
+
+                # Flat [batch_size] layout mirrors buffer.obs.view(batch_size, ...)
+                # ordering (step-major, env-minor) so we can gather matching
+                # advantages / returns / stored logprob_sum.
+                mb_indices = torch.tensor(
+                    [t * args.num_envs + b for t in mb_steps for b in range(args.num_envs)],
+                    device="cuda",
+                    dtype=torch.long,
+                )
+                mb_adv = buffer.advantages.view(batch_size)[mb_indices]
+                mb_ret = buffer.returns.view(batch_size)[mb_indices]
+                mb_lp_old = buffer.logprob_sum.view(batch_size)[mb_indices]
 
                 # Inv-04 single-path: first minibatch of first epoch must
                 # match the rollout's cached logprob_sum (ratio ≈ 1).
-                if epoch == 0 and start == 0:
+                if epoch == 0 and mb_start == 0:
                     drift = (lp_new.detach() - mb_lp_old).abs().max().item()
                     inv_04_status = "green" if drift < INV_04_TOLERANCE else "red"
 
