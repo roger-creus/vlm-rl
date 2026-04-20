@@ -1,5 +1,12 @@
 # Backbones
 
+## Probed
+
+| backbone | params | context | probe |
+|---|---|---|---|
+| `Qwen/Qwen3-VL-2B-Instruct` | 2B | 262K | [report](backbone_probes/qwen3-vl-2b-instruct.md) (Inv-8 PASS: 280 image tokens @ 320×240 / 76800 px) |
+
+
 Actual backbones available on Hugging Face (as of 2026-04-20 — see
 `docs/superpowers/specs/amendments/2026-04-20-backbone-names-correction.md`
 for the deviation from master-spec §3's Qwen3.5-VL naming):
