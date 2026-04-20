@@ -1,7 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info
+*.egg
+.eggs/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pyright_cache/
+
+# Virtualenvs / conda
+.venv/
+venv/
+env/
+
+# UV — lockfile IS tracked; cache and venv are not
+.uv/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+*.swp
+*~
+
+# Project artifacts
 runs/
 wandb/
 launchers/
-
+checkpoints/
+*.pt
+*.pth
+*.safetensors
 *_vizdoom*
-*.pyc
-*.egg-info
+
+# Reference material supplied out-of-band
+cleanrl-master*.zip
+*.zip
