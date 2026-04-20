@@ -6,6 +6,45 @@ One entry per iteration, not per commit within an iteration.
 
 ---
 
+## 2026-04-20 — iter 8 — model layer cornerstone (plan task 8/27)
+
+**What.** Plan Task 8. 1 commit for the 400-line plan section.
+
+- `src/cleanrl_vlm/models/actor_critic.py` (185 LOC) —
+  `DecoupledActorCriticVLM_COT` with dual-adapter LoRA (actor + critic
+  on same BaseVLM), `CriticHead` on last non-pad hidden state,
+  `max_new_tokens` on generate path, build-time assert of actor/critic
+  target_modules identity (reviewer m10), critic `.forward()`-only
+  discipline (reviewer m9), `active_adapter` tripwire ctxmgr (reviewer
+  m7) with `_active_adapter_name` shim over PEFT's str-vs-list
+  divergence.
+- `tests/invariants/_tiny_vlm.py` (111 LOC, under 150 time-box per
+  reviewer m3) — CPU nn.Module stub that PEFT can LoRA-wrap so Inv-01/
+  03 tests don't need a GPU + backbone download.
+- `tests/invariants/test_inv_01_lora_trainability.py` — 3 tests
+  covering the reviewer M4 extensions (requires_grad split + base-
+  weight identity across set_adapter + disjoint actor/critic optim
+  groups).
+- `tests/invariants/test_inv_03_active_adapter.py` — 3 tests covering
+  the tripwire (pass on match, raise on mismatch, raise on mutation).
+
+**Why.** Task 8 is the model-layer cornerstone. All later tasks
+(rollout, trainer, integration) consume `DecoupledActorCriticVLM_COT`.
+Landing Inv-1/3 with M4 extensions now gives the invariant safety net
+before the trainer wires them together.
+
+**Evidence.** `uv run --no-env-file pytest tests/invariants/
+test_inv_01_lora_trainability.py tests/invariants/
+test_inv_03_active_adapter.py -v` → 6 passed in 140.52s on CPU.
+Stub size 111 LOC.
+
+**Invariants run.**
+- Inv-1 (LoRA trainability split) — 3 sub-tests including M4
+  extensions.
+- Inv-3 (active adapter sanity) — 3 sub-tests on the ctxmgr tripwire.
+
+---
+
 ## 2026-04-20 — iter 7 — model layer pt 1 (plan tasks 5-7/27)
 
 **What.** 3 commits for the model layer scaffolding.

@@ -682,3 +682,81 @@ LoRA-topology helper, MLP heads (critic + actor), BaseVLM wrapper.
   backbone). Decision made iter 8 based on actual stub size.
 - No GPU required for Task 8 tests if the stub route holds; GPU
   required if demoted.
+
+---
+
+### 2026-04-20 — iter 8 — plan-task-8 — @<tbd>
+
+**Context.** Task 8 dedicated iter. 400-line plan section covering the
+model-layer cornerstone: `DecoupledActorCriticVLM_COT` + `active_adapter`
+ctxmgr + Inv-1/3 invariant tests + TinyVLM CPU stub.
+
+**Accomplished.** Plan Task 8 done. 6 invariant tests green.
+
+**Decisions.**
+
+1. **Stub path held — no demote to @gpu.** Reviewer m3's time-box
+   `_tiny_vlm.py` ≤ 150 LOC. Final size: **111 LOC**. Well under.
+   Zero need to demote Inv-01/03 tests to real backbone.
+
+2. **PEFT `active_adapter` return-type shim.** PEFT 0.19.1 sometimes
+   returns `active_adapter` as a list `["actor"]` rather than a bare
+   string `"actor"` (depends on the wrapped model / version). Added
+   `_active_adapter_name(peft_model)` helper that handles both cases,
+   asserts list-length == 1. Caught only after initial run; the
+   tripwire ctxmgr would have spuriously fired if we'd compared `[x]`
+   to `x`.
+
+3. **Ruff SIM117 auto-lint blocked initial commit.** Nested
+   `with pytest.raises(...): with active_adapter(...):` flagged as
+   combine-with-opportunity. Fix: single-line combined `with
+   pytest.raises(...), active_adapter(...):`. Semantically identical.
+   Logged as a ruff finding rather than a logic bug.
+
+4. **PEFT on synthetic CPU stub works as designed.** Concern before
+   running: PEFT might not traverse a plain `nn.Module`-tree stub with
+   arbitrary attribute names — target-module pattern `self_attn.q_proj`
+   requires modules *named* with that suffix in `named_modules()`.
+   Resolution: the `_Block` + `_SelfAttn` class hierarchy in the stub
+   causes `named_modules()` to yield `"block.self_attn.q_proj"` etc.,
+   and PEFT's suffix match catches it. Stub also registers `lm_head`
+   as a direct child. Both match cleanly.
+
+5. **Test runtime 140.52s is dominated by transformers + PEFT import.**
+   The tests themselves are microseconds; the 2+ minutes is cold-start
+   for the PEFT + transformers module tree. Not a correctness concern;
+   noted for future iters where running full invariant suite might
+   amortize across fewer imports.
+
+**Verification evidence.**
+
+- `uv run --no-env-file pytest tests/invariants/test_inv_01_lora_trainability.py
+  tests/invariants/test_inv_03_active_adapter.py -v` → 6 passed in
+  140.52s on CPU (no GPU, no model download).
+- `wc -l tests/invariants/_tiny_vlm.py src/cleanrl_vlm/models/
+  actor_critic.py` → 111 + 185 = 296 total; stub under the 150-line
+  cap.
+
+**Commits this iter** (pending SHA backfill on the current iter-8
+journals commit):
+
+| SHA | What |
+|---|---|
+| @<task-8-sha> | actor_critic + _tiny_vlm + test_inv_01 + test_inv_03 |
+
+**Skills invoked.**
+- `superpowers:test-driven-development` — tests written first (at least
+  for Inv-01/03 they came bundled with actor_critic; arguably test
+  and impl are simultaneous per the plan).
+- `superpowers:verification-before-completion` — 6-test green run
+  captured in commit message.
+- `superpowers:systematic-debugging` — PEFT `active_adapter` return-
+  type divergence diagnosed + shim added without widening scope.
+
+**Follow-ups (iter 9).**
+
+- Task 9 — VizdoomBasic prompt templates (3 small text files under
+  `prompts/vizdoom/basic/`; no test, just content).
+- Task 10 — Parser + PromptBuilder with the M2/M3 regex + whitelist
+  + repeated-ACTION-pathology test. Substantial but smaller than Task 8.
+- Iter 9 should comfortably do both.
