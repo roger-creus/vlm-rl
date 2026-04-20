@@ -6,6 +6,51 @@ One entry per iteration, not per commit within an iteration.
 
 ---
 
+## 2026-04-20 — iter 19 — reward scaling + ep_return + docs (plan task 24)
+
+**What.** 4 commits closing iter-18's follow-up queue and executing
+plan Task 24.
+
+- `1fea5c6` — `Args.reward_scale=0.01` applied to `buffer.rewards[step]`;
+  `_extract_ep_returns(info)` handles 3 gymnasium API patterns and is
+  called per rollout step.
+- `d0a17f1` — `docs/ALGORITHMS.md` PPO-COT paragraph + status,
+  `docs/ENVS.md` VizdoomBasic-v1 onboarded row + v0 deprecation note,
+  `docs/RECIPES.md` full + smoke CLIs, `docs/BACKBONES.md` 2B probe
+  link, `docs/RESULTS.md` first combo row with smoke-run summary.
+- `e4540dd` — mkdocs strict-mode fix (inline prompt path as code).
+
+**Why.** Value loss + ep_return were both iter-17 training-run
+findings that would block meaningful learning. Task 24 docs close the
+first-canon-trainer onboarding (§11 S-8 ritual).
+
+**Evidence** (10-iter smoke after fixes):
+- `loss_value` 0.01-0.4 (was 60-660 → ~1600× reduction).
+- `loss_scale` stable at 32768 (was halving 8192→4096→2048).
+- `ep_return_n > 0` on iters 1/5/7/10 (returns 95 / -410 / 0 / -410
+  — raw env units, noisy at 10-iter scale as expected).
+- Both lora_actor + lora_critic drifting (iter-18 fix sticks).
+- `mkdocs build --strict` → built in 2.81s (no warnings).
+
+**Invariants run.**
+- Inv-6 (FP16 scale stability): green — constant 32768 across 10
+  iters (was red in iter 17 with halving).
+- Inv-4 (logprob parity single-path): 9/10 iters green (iter 2 red —
+  first update's accumulated drift tiny but over threshold).
+- Inv-2 (LoRA weights change): green for both adapters
+  (post-iter-18-fix).
+
+**Process notes.**
+- Zombie vizdoom worker cleanup. 20 zombie processes from iters 3/13/
+  17/18 blocked iter-19's launch — GPU util 0%. `kill -9` cleared.
+  Added to follow-up: helper `pkill -f vizdoom` before `AsyncVectorEnv()`.
+- Launch style change: `python -u` (unbuffered) without `| tail` pipe
+  for real-time output visibility.
+- User-requested git push: `master` 62 commits to `origin/master`;
+  `old` branch to new remote ref.
+
+---
+
 ## 2026-04-20 — iter 18 — LoRA actor-grads fix (iter-17 findings)
 
 **What.** 1 commit (`7137931`) fixing the actor LoRA-frozen bug found

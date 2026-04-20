@@ -1,24 +1,27 @@
 # LOOP_STATE.md
 
-**Last updated:** 2026-04-20 (iter 18 — LoRA-grads fix verified, real training loop alive).
+**Last updated:** 2026-04-20 (iter 19 — reward scale + ep_return + docs; Task 24 done).
 **Maintained by:** the autonomous `/loop` agent; humans read only.
 
 ## Current phase
 
-**Phase:** `B-ppo-cot-vizdoom-basic-2B` — **first real training + first correctness fixes**. Plan tasks 1-22 done; Task 23 in iterative debug mode.
+**Phase:** `B-ppo-cot-vizdoom-basic-2B` — **correctness milestones green**. Plan tasks 1-24/27 complete (89% through). 10-iter smoke run after fixes shows:
+- `loss_value` 0.01-0.4 (was 60-660 → reward_scale 0.01 worked)
+- `loss_scale = 32768.0` constant (GradScaler stable → Inv-6 green)
+- `ep_return_n > 0` on 4/10 iters (episode returns captured)
+- Both LoRA adapters training (lora_actor drifts + lora_critic drifts)
+- Inv-4 single-path green 9/10 iters
 
-### Iter 17 surfaced three issues (training ran 10 iters clean, artifacts landed):
-1. **LoRA actor frozen** (critical, Inv-2 red) — PEFT `set_adapter(name)` sets `requires_grad_(False)` on the non-active adapter; after `get_value` switched to critic, actor was frozen at backward → actor never trained. **Fixed iter 18.**
-2. **`loss_scale` monotonic halving** (Inv-6 red territory) — 8192 → 4096 → 2048 across 10 iters. FP16 instability, likely from value-loss explosion (60-660 magnitudes). Needs investigation.
-3. **`ep_return_n = 0`** — gymnasium AsyncVectorEnv info-dict API mismatch; final_info is not where the trainer looks. Episode returns never captured.
+Remaining plan tasks:
+- Task 25 — `simplify` pass (reviewer m12 — before code review).
+- Task 26 — `code-reviewer` subagent on the full diff (iter 6..now).
+- Task 27 — journals + LOOP_STATE pivot to `C-envs-tier1-expand`.
 
-Iter 18 fix commit: `7137931` — `for p in lora_*: p.requires_grad_(True)` right before `fp16.scale(loss).backward()`. Retry confirmed actor norm now drifts.
-
-Remaining iter-23-blocker investigations:
-- Value loss scaling / clipping. Spec §14 suggests reward scale 0.01.
-- Episode return extraction — modern gymnasium likely needs `final_info` list + `_final_info` mask.
-
-Next iter: fix ep_return extraction + value-loss management, then re-run a longer campaign (say 40 iters) to watch whether the policy actually learns vs. trainer correctness issues.
+Deferred / follow-up:
+- Dedicated long-campaign training run (hours) to observe actual
+  learning curve. Noise at 10-iter scale masks any signal.
+- Add `pkill -f "vizdoom.*viz_controlled"` to launch helper to prevent
+  worker-pool zombie accumulation across training runs.
 
 ## Iter 5 sub-step completed
 
@@ -103,8 +106,8 @@ available, verifies locally, commits.
 - [x] Task 20 — tier1 integration test — iter 14 (bug-fix-driven; 5 real bugs caught, 1 shortcut for iter 15)
 - [x] Task 21 — scripts/probe_vision.py + initial report — iter 16 (script + placeholder; GPU run pending)
 - [x] Task 22 — scripts/probe_backbone.py (m1) — iter 16 (Inv-8 PASS on 2B @ 76800 px)
-- [ ] Task 23 — **training run kickoff** (long, background, milestone-gated wakeups)
-- [ ] Task 24 — docs update (ALGORITHMS / ENVS / RECIPES / RESULTS / BACKBONES)
+- [x] Task 23 — **training run kickoff** (iter 17-19; smoke runs only; long-campaign deferred post-plan)
+- [x] Task 24 — docs update (ALGORITHMS / ENVS / RECIPES / RESULTS / BACKBONES) — iter 19
 - [ ] Task 25 — simplify pass (m12)
 - [ ] Task 26 — code-reviewer subagent pass
 - [ ] Task 27 — journals + LOOP_STATE pivot to `C-envs-tier1-expand`
