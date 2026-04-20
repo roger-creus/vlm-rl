@@ -6,6 +6,67 @@ One entry per iteration, not per commit within an iteration.
 
 ---
 
+## 2026-04-20 — iter 22 — step-grouped re-score for speed+correctness (plan task 28 follow-on)
+
+**What.** 1 commit (`29a484b`) replacing iter-21's row-by-row re-score
+with step-grouped: shuffle at step-granularity, re-score each rollout
+step at batch=num_envs (matching rollout's forward shape exactly).
+
+- `algos/ppo_cot.py` PPO update loop rewritten. Minibatches are groups
+  of `steps_per_mb = num_steps // num_minibatches` whole rollout steps.
+  Each step is re-scored intact at batch=num_envs using the stored
+  `[num_envs, S_t]` full_ids — same shape as rollout, so flash-attn
+  dispatches the same kernel and fp16 numerics line up bit-for-bit.
+  Added `assert num_steps % num_minibatches == 0` so steps_per_mb is
+  integer (satisfied by default + smoke configs).
+
+**Why.** Iter 21's row-by-row fix was correct but wasteful. A probe
+(since removed) against the iter-21 code estimated ~10-15× slowdown on
+Tier-1 default (num_envs=4) vs the original buggy batched path.
+Step-grouped recovers most of that throughput (batch=4 per forward
+instead of batch=1) while keeping bit-parity.
+
+**Investigations this iter.** Before committing step-grouped, tried two
+alternate paths toward a SINGLE batched re-score:
+
+1. Fixed-pad-length: pad every row (rollout + re-score) to
+   `S_fixed = prompt_len + max_new_tokens`. Drift stayed at ~7.8e-3 —
+   padding alone doesn't explain the divergence; batch size matters too.
+2. BF16 + flash-attn: drift 6.8e-3 (down from 3.1e-2 but still >> 1e-4).
+3. FP16 + eager attention: drift 3.1e-2. Eager doesn't help.
+4. BF16 + eager: drift 1.7e-2.
+
+Neither precision nor attention backend gives bit-parity at a single
+batched re-score. The fp-precision noise comes primarily from the
+linear-layer matmuls (not just attention) — GPU matmul kernels choose
+tiles based on `(M, K, N)` shape; changing batch size changes tile
+selection, which changes reduction order, which changes output bits.
+Full parity at a single batched op would require FP32 or a custom
+batch-invariant kernel (out of scope). Step-grouped matches rollout's
+kernel naturally and is the clean answer.
+
+**Evidence.**
+- Probe at num_envs=2, num_steps=2: drift = 0.0 across all 4 rows
+  (bit-exact).
+- `pytest tests/unit tests/invariants -m "not gpu"`: 49/49 pass.
+- `pytest tests/integration/*.py -m "tier1 and gpu"`: 8/8 pass in
+  99.40 s (7 wiring + 1 trainer-short-run).
+- Integration-test `metrics.csv`: `approx_kl=0.0`, `clip_fraction=0.0`,
+  `inv_4_status=green`.
+
+**Invariants run.**
+- Inv-4: green (bit-parity preserved at any num_envs via same-shape
+  re-score).
+- Inv-1/3/8/2: green on wiring tests.
+
+**Follow-ups (iter 23+).**
+- Investigate `grad_norm_global=nan` still present iter 1 (pre-existing).
+- Explore FP32-anchored re-score or batch-invariant kernels as a
+  research direction for reclaiming single-batched fast path if
+  Tier-2 throughput demands it.
+
+---
+
 ## 2026-04-20 — iter 21 — fix batched Inv-4 drift: row-by-row re-score (plan task 28)
 
 **What.** 1 commit resolving the iter-20 `inv_4_status=red` signal. Root

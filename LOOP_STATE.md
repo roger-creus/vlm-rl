@@ -1,61 +1,51 @@
 # LOOP_STATE.md
 
-**Last updated:** 2026-04-20 (iter 20 — simplify pass + Qwen3.5 backbone switch).
+**Last updated:** 2026-04-20 (iter 22 — step-grouped re-score gives bit-parity + speed).
 **Maintained by:** the autonomous `/loop` agent; humans read only.
 
 ## Current phase
 
-**Phase:** `B-ppo-cot-vizdoom-basic-Qwen3.5-2B` — plan tasks 1-25/27
-complete (93% through). Backbone switched mid-iter-20 from
-Qwen/Qwen3-VL-2B-Instruct to Qwen/Qwen3.5-2B per user directive; LoRA
-default is now all 6 towers (text_attn + text_mlp + vision_attn +
-vision_mlp + merger + lm_head).
+**Phase:** `B-ppo-cot-vizdoom-basic-Qwen3.5-2B` — Inv-4 bit-parity
+restored. Plan tasks 1-25/27 complete; task 28 (inv_4 drift fix) also
+resolved this iter pair.
 
-- `hello_vlm` smoke: PASS on Qwen3.5-2B in 45.94 s.
-- Backbone wiring mechanical tests (7/7 PASS in 65.67 s): image tokens
-  present, every LoRA group wraps ≥1 module, Inv-1 trainability split,
-  Inv-3 base-weight identity + ctxmgr tripwire, actor/critic disjoint.
-- Integration test (full PPO-COT pipeline): PASS in 76.83 s on new
-  backbone + all-towers LoRA.
-- `loss_value`, `loss_scale = 32768.0`, LoRA actor + critic both
-  drifting, Inv-6 green from iter-19.
-- **Known signal**: integration-test `inv_4_status=red` with
-  first-minibatch drift ~8e-3. Isolated single-row parity probe gave
-  drift=0.0 — likely fp16 batched-vs-single forward noise. Logged to
-  `docs/superpowers/specs/amendments/2026-04-20-backbone-switch-to-
-  qwen3.5.md`; investigation deferred to iter 21.
+- Iter 21 diagnosed the drift as *padding-specific row divergence in
+  batched re-score* (not general fp16 noise). Row-by-row re-score
+  gave bit-parity at ~10-15× Tier-2 slowdown.
+- Iter 22 replaced row-by-row with **step-grouped re-score**: each
+  rollout step re-scored at batch=num_envs, matching rollout's
+  forward shape exactly. Probe at num_envs=2: drift = 0.0 across
+  all rows. ~4× speedup over row-by-row.
+- Integration test: `inv_4_status=green`, `approx_kl=0.0`,
+  `clip_fraction=0.0`.
+- Alternate single-batched fast-path probes (BF16, eager attention)
+  all left drift >> 1e-4 — the fp-precision noise comes from
+  linear-layer matmuls, not just attention. Step-grouped remains
+  the correct answer.
 
 ## Immediate next task (fresh session resumes here)
 
-**Iter 21 — investigate batched Inv-4 drift on Qwen3.5-2B.**
+**Iter 23+ priority queue** (loose order; agent judges):
 
-The integration test's inv_4 red signal (~8e-3 mean drift at
-first-minibatch-first-epoch) is the highest-priority follow-up.
-Isolated single-row parity is exact (drift = 0.0) per the iter-20
-debug probe. Options, in order of simplicity:
+1. **Investigate `grad_norm_global=nan`** in iter-1 metrics (pre-existing
+   across iter 20/21/22). Independent from the Inv-4 work. Possibly
+   from the full-vocab entropy term producing numerical instability;
+   check against the deferred "vocab-wide entropy" simplify item.
+2. **Plan task 26 — `superpowers:code-reviewer` subagent** on the full
+   diff (iter 6..29a484b). Address findings with per-finding commits.
+3. **Plan task 27 — pivot LOOP_STATE to `C-envs-tier1-expand`**
+   (adds `ALE/Pong-v5` + `MiniGrid-Empty-5x5-v0` as Tier-1 envs per
+   §11 S-7 ritual).
+4. **Cache `Qwen/Qwen3.5-0.8B`** locally → enable the faster debug
+   backbone path in `test_qwen35_backbone_wiring.py`.
+5. **Long Tier-2 training run** on VizdoomBasic-v1 + step-grouped
+   re-score to check actual learning curve now that correctness is
+   green.
+6. **Research idea (backlog)**: FP32-anchored re-score or batch-
+   invariant custom kernel for reclaiming the single-batched fast
+   path. Only if Tier-2 throughput becomes the bottleneck.
 
-1. Re-score row-by-row (batch=1) in the PPO update loop. Matches
-   rollout's batch=1 forward exactly — kills the noise source.
-   Wall-clock cost: `minibatch_size × forward_time` per minibatch.
-2. Raise `INV_04_TOLERANCE` to a level consistent with observed fp16
-   noise floor; gather drift evidence across 10+ iters to pick it.
-3. Ablate BF16 (master-spec §1's first-class ablation) — larger
-   exponent, less reduction-order noise; if drift drops to ~1e-4,
-   supports the fp16-noise hypothesis without new code.
-
-After that, per the existing plan:
-
-- **Plan task 26 — `superpowers:code-reviewer` subagent** on the full
-  diff (iter 6..b8636b3). Address findings with per-finding commits.
-- **Plan task 27 — pivot LOOP_STATE to
-  `C-envs-tier1-expand`** (adds `ALE/Pong-v5` + `MiniGrid-Empty-5x5-v0`
-  as Tier-1 envs per §11 S-7 ritual).
-- Cache `Qwen/Qwen3.5-0.8B` locally → enable the faster debug
-  backbone path in `test_qwen35_backbone_wiring.py`.
-- Kick off a longer Tier-2 training run once inv_4 signal is
-  understood.
-
-## Handoff state (as of commit `b8636b3`)
+## Handoff state (as of commit `29a484b`)
 
 Everything needed for a fresh `/loop` session to continue from this
 exact point is on disk + in git:
@@ -173,9 +163,9 @@ available, verifies locally, commits.
 - [x] Task 23 — **training run kickoff** (iter 17-19; smoke runs only; long-campaign deferred post-plan)
 - [x] Task 24 — docs update (ALGORITHMS / ENVS / RECIPES / RESULTS / BACKBONES) — iter 19
 - [x] Task 25 — simplify pass (m12) — iter 20 (@ `8dab039`)
-- [ ] Task 26 — code-reviewer subagent pass (on iter-6..`b8636b3` diff)
+- [ ] Task 26 — code-reviewer subagent pass (on iter-6..`29a484b` diff)
 - [ ] Task 27 — journals + LOOP_STATE pivot to `C-envs-tier1-expand`
-- [ ] Task 28 (iter-20 addition) — investigate batched Inv-4 drift on Qwen3.5-2B (see amendment `2026-04-20-backbone-switch-to-qwen3.5.md`)
+- [x] Task 28 (iter-20 addition) — investigate + fix batched Inv-4 drift on Qwen3.5-2B — iter 21 (@ `bb138b8`, row-by-row) + iter 22 (@ `29a484b`, step-grouped)
 
 ## Planned iter boundaries (rough)
 

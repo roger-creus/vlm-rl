@@ -1868,3 +1868,131 @@ LoRA application.
   MiniGrid-Empty-5x5-v0 per §11 S-7).
 - Long-campaign Tier-2 training run on VizdoomBasic-v1 once inv_4
   signal is explained.
+
+---
+
+### 2026-04-20 — iter 21 — batched-inv4-fix (row-by-row re-score) — @bb138b8
+
+**Context.** Iter 20 left `inv_4_status=red` at ~8e-3 first-minibatch
+drift on the integration test. Isolated single-row probe from iter 20
+already showed drift=0.0, implicating the batched re-score.
+
+**Diagnostic (Phase 1 root cause).** Extended the iter-20 probe to
+compare solo (batch=1) vs batched (batch=2, padded to S_max) re-score
+on the SAME 2 rollout rows. Observed:
+- Solo: drift = 0.0 for both rows.
+- Batched: shorter (padded) row drift = 2.9e-2, longer row (no pad)
+  drift = 0.0.
+
+Root cause: flash-attn's pad-aware kernel produces per-row fp16
+output that differs from the no-pad batch=1 forward by ~3e-2 across
+24 layers. NOT "general fp16 noise at batch>1"; specifically the
+padded-row forward. That bias would skew the PPO ratio — real
+correctness defect, not just Inv-4 reporting.
+
+**Decisions.**
+
+1. **Row-by-row re-score at batch=1.** Matches rollout semantics
+   exactly. Correctness preserved; Inv-4 goes green.
+
+2. **Failing-test-before-fix per systematic-debugging Phase 4.**
+   Tightened `test_trainer_short_run.py` to assert
+   `row["inv_4_status"] == "green"`. Ran → AssertionError (as
+   expected). Then applied fix → test PASS in 68.03 s.
+
+3. **Accepted perf cost (this iter).** Row-by-row at num_envs=1 is
+   batch=1 — same as step-grouped. At num_envs=4 production default it
+   would be 10-15× slower than original batched. Flagged for iter 22.
+
+**Evidence.**
+- Pre-fix: integration test AssertionError, approx_kl=-0.007843.
+- Post-fix: integration test PASS, approx_kl=0.0, inv_4_status=green.
+- CPU regression: 49/49 green.
+- Wiring regression: 7/7 green.
+
+**Skills invoked.**
+- `superpowers:systematic-debugging` — strict Phase 1..4 adherence.
+  Hypothesis + tested probe + failing test + single fix + verify.
+- `superpowers:verification-before-completion` — ran all regressions
+  before commit.
+
+---
+
+### 2026-04-20 — iter 22 — step-grouped re-score (perf recovery) — @29a484b
+
+**Context.** Iter 21 landed correctness at ~10-15× Tier-2 slowdown.
+User pushed for "full correctness AND full speed". Iter 22 explores
+alternatives to the row-by-row approach.
+
+**Investigation (Phase 2+3).**
+
+1. **Hypothesis A: pad everything to S_fixed = prompt_len +
+   max_new_tokens.** If pad pattern identical in rollout + re-score,
+   batched re-score should match.
+   - Modified `actor_critic.py::get_action` to pad full_ids to target_S
+     in both generate and action_ids paths.
+   - Integration test: drift stayed at ~7.78e-3. **HYPOTHESIS
+     REFUTED.** Padding alone doesn't explain divergence; batch size
+     matters too.
+   - Reverted the fixed-pad change.
+
+2. **Hypothesis B: step-grouped re-score (batch=num_envs per step).**
+   Each step in the update phase re-scored at the SAME batch size as
+   rollout. Same kernel dispatch → bit-parity.
+   - Implemented in `algos/ppo_cot.py` PPO update. Minibatches are
+     groups of `steps_per_mb = num_steps / num_minibatches` whole
+     rollout steps.
+   - Added `assert num_steps % num_minibatches == 0`.
+   - Probe at num_envs=2, num_steps=2: drift = 0.0 for all 4 rows.
+     **HYPOTHESIS CONFIRMED.**
+   - Integration test: inv_4_status=green, approx_kl=0.0.
+
+3. **User-prompted follow-up: single-batched fast path?** Probed two
+   escape hatches:
+   - BF16 + flash-attn: drift 6.8e-3 (down from 3.1e-2 but > 1e-4).
+   - FP16 + eager attention: drift 3.1e-2 (no improvement).
+   - BF16 + eager: drift 1.7e-2.
+   - Conclusion: neither precision nor attention backend fixes batched
+     re-score. The noise comes from LINEAR-LAYER matmuls — GPU matmul
+     kernels choose tile sizes based on (M, K, N); different batch
+     sizes give different tiles + reduction orders. Full parity at one
+     batched op would need FP32 or a batch-invariant custom kernel.
+     Out of scope.
+
+**Decisions.**
+
+1. **Shuffle at step-granularity.** Changed the PPO update's randperm
+   scope from `batch_size` to `num_steps`. Natural unit for VLM PPO
+   where each rollout step is a batched num_envs forward.
+
+2. **Enforce `num_steps % num_minibatches == 0`.** Integer
+   steps_per_mb. Default config satisfies this; smoke configs
+   satisfy it.
+
+3. **Removed `minibatch_size` local variable.** Derivable from
+   `steps_per_mb * num_envs`; redundant. Ruff caught the dead
+   assignment.
+
+4. **Did not pursue BF16/eager fast path.** Both confirmed insufficient
+   via probes. Step-grouped is the clean correctness answer with
+   4× speedup over row-by-row (batch=4 vs batch=1).
+
+**Verification evidence.**
+- Bit-parity probe at num_envs=2, num_steps=2: drift = 0.0 for all
+  4 rows.
+- `pytest tests/integration/*.py -m "tier1 and gpu"`: 8/8 pass in
+  99.40 s.
+- Integration test: approx_kl=0.0, inv_4_status=green.
+- CPU regression: 49/49.
+
+**Skills invoked.**
+- `superpowers:systematic-debugging` — refuted Hypothesis A with a
+  real probe instead of assuming; pivoted to Hypothesis B.
+- `superpowers:verification-before-completion` — probe + tests before
+  claiming parity.
+
+**Follow-ups (iter 23+).**
+- Investigate grad_norm_global=nan (pre-existing, orthogonal).
+- FP32-anchored re-score exploration if Tier-2 throughput demands it.
+- Plan task 26 (code-reviewer subagent) on the iter-6..29a484b diff.
+- Plan task 27 pivot LOOP_STATE to `C-envs-tier1-expand`.
