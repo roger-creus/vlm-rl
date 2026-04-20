@@ -618,6 +618,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#ppo-cot" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PPO-COT
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#planned-canon-master-spec-5" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -938,6 +949,26 @@
 
 
 <h1 id="algorithms">Algorithms<a class="headerlink" href="#algorithms" title="Permanent link">&para;</a></h1>
+<h2 id="ppo-cot">PPO-COT<a class="headerlink" href="#ppo-cot" title="Permanent link">&para;</a></h2>
+<p>Chain-of-thought PPO on VLMs. The actor VLM generates free-form text under
+the COT prompt; the parser extracts <code>ACTION: &lt;NAME&gt;</code> from the tail (last
+regex match, whitelisted against the env's action names). The scalar logprob
+per trajectory is the sum of token logprobs over the generated span; the PPO
+ratio is sequence-level.</p>
+<p>The critic shares the same base VLM via a second LoRA adapter; a
+<code>CriticHead</code> MLP reads the last non-pad hidden state. GAE(λ) runs on env
+rewards (scaled by <code>reward_scale=0.01</code> per spec §14 to keep FP16 GradScaler
+stable).</p>
+<p>Signed loss (master-spec §4):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>Loss = mean(L_clip) + c_v * mean(L_value) - c_e * H
+</code></pre></div>
+<ul>
+<li>Canon impl: <code>algos/ppo_cot.py</code>.</li>
+<li>Default backbone: <code>Qwen/Qwen3-VL-2B-Instruct</code> (Tier-1).</li>
+<li>Invariants at iter-4 scope: Inv-1, Inv-3, Inv-4 (single-path), Inv-5,
+  Inv-6, Inv-9, Inv-10, Inv-11, Inv-13.</li>
+</ul>
+<hr />
 <p>Placeholder. A per-algorithm page ships with each new <code>algos/*.py</code> file per master-spec S-8.</p>
 <h2 id="planned-canon-master-spec-5">Planned canon (master-spec §5)<a class="headerlink" href="#planned-canon-master-spec-5" title="Permanent link">&para;</a></h2>
 <table>
@@ -954,7 +985,7 @@
 <td><code>algos/ppo_cot.py</code></td>
 <td>COT</td>
 <td>PPO (clipped surrogate + GAE)</td>
-<td>not started</td>
+<td><strong>landed</strong> (iter 4 v1)</td>
 </tr>
 <tr>
 <td><code>algos/ppo_action.py</code></td>

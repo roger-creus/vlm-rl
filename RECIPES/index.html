@@ -710,10 +710,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#first-canon-trainer-when-it-lands" class="md-nav__link">
+  <a href="#ppo-cot-on-vizdoombasic-with-qwen3-vl-2b-instruct" class="md-nav__link">
     <span class="md-ellipsis">
       
-        First canon trainer (when it lands)
+        PPO-COT on VizdoomBasic with Qwen3-VL-2B-Instruct
       
     </span>
   </a>
@@ -944,8 +944,26 @@
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>uv<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>flash-attn<span class="o">==</span><span class="m">2</span>.7.4.post1<span class="w"> </span>--no-build-isolation
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>uv<span class="w"> </span>run<span class="w"> </span>pytest<span class="w"> </span>-m<span class="w"> </span>tier1<span class="w"> </span>-v
 </code></pre></div>
-<h2 id="first-canon-trainer-when-it-lands">First canon trainer (when it lands)<a class="headerlink" href="#first-canon-trainer-when-it-lands" title="Permanent link">&para;</a></h2>
-<p>Filled by /loop once <code>algos/ppo_cot.py</code> is merged.</p>
+<h2 id="ppo-cot-on-vizdoombasic-with-qwen3-vl-2b-instruct">PPO-COT on VizdoomBasic with Qwen3-VL-2B-Instruct<a class="headerlink" href="#ppo-cot-on-vizdoombasic-with-qwen3-vl-2b-instruct" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nb">source</span><span class="w"> </span>scripts/_cluster_env.sh
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>uv<span class="w"> </span>run<span class="w"> </span>--no-env-file<span class="w"> </span>python<span class="w"> </span>-u<span class="w"> </span>-m<span class="w"> </span>algos.ppo_cot<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">    </span>--env-id<span class="w"> </span>VizdoomBasic-v1<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">    </span>--backbone<span class="w"> </span>Qwen/Qwen3-VL-2B-Instruct<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">    </span>--num-envs<span class="w"> </span><span class="m">4</span><span class="w"> </span>--num-steps<span class="w"> </span><span class="m">32</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">    </span>--total-timesteps<span class="w"> </span><span class="m">200000</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">    </span>--max-new-tokens<span class="w"> </span><span class="m">256</span><span class="w"> </span>--seed<span class="w"> </span><span class="m">0</span><span class="w"> </span>--track
+</code></pre></div>
+<p>Expected wall-clock on a single A6000: ~2.5-3 min per iteration at
+<code>num_envs=4 num_steps=32 max_new_tokens=256</code>; a 100-iter run ≈ 4-5 h.
+Per spec §0 the target is "genuinely learning" by agent judgment rather
+than a hard score threshold; <code>configs/targets.yaml</code> seeds a reference
+target of 60.0 on <code>VizdoomBasic-v1</code>.</p>
+<p><strong>Small smoke variant</strong> (for iteration-on-code; ~15 min wall):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>uv<span class="w"> </span>run<span class="w"> </span>--no-env-file<span class="w"> </span>python<span class="w"> </span>-u<span class="w"> </span>-m<span class="w"> </span>algos.ppo_cot<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">    </span>--env-id<span class="w"> </span>VizdoomBasic-v1<span class="w"> </span>--num-envs<span class="w"> </span><span class="m">2</span><span class="w"> </span>--num-steps<span class="w"> </span><span class="m">16</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">    </span>--total-timesteps<span class="w"> </span><span class="m">320</span><span class="w"> </span>--max-new-tokens<span class="w"> </span><span class="m">64</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">    </span>--num-minibatches<span class="w"> </span><span class="m">2</span><span class="w"> </span>--update-epochs<span class="w"> </span><span class="m">2</span><span class="w"> </span>--checkpoint-interval<span class="w"> </span><span class="m">5</span>
+</code></pre></div>
 
 
 

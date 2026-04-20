@@ -645,6 +645,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#onboarded" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Onboarded
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#planned-tiering" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -949,12 +960,38 @@
 
 
 <h1 id="environments">Environments<a class="headerlink" href="#environments" title="Permanent link">&para;</a></h1>
-<p>Placeholder — populated as envs are onboarded per master-spec §11 S-7.</p>
+<h2 id="onboarded">Onboarded<a class="headerlink" href="#onboarded" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>env_id</th>
+<th>horizon</th>
+<th>obs shape</th>
+<th>actions</th>
+<th>target</th>
+<th>prompt</th>
+<th>probe</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>VizdoomBasic-v1</td>
+<td>300 tics / ~75 env steps @ frame_skip=4</td>
+<td>(240, 320, 3) uint8</td>
+<td>Discrete(3): MOVE_LEFT / MOVE_RIGHT / ATTACK</td>
+<td>60.0</td>
+<td><code>src/cleanrl_vlm/prompts/templates/vizdoom/basic/actor.txt</code></td>
+<td><a href="../vision_probes/VizdoomBasic-v1_qwen3-vl-2b-instruct/report/">report</a></td>
+</tr>
+</tbody>
+</table>
+<p>Placeholder — remaining envs populated as onboarded per master-spec §11 S-7.</p>
 <h2 id="planned-tiering">Planned tiering<a class="headerlink" href="#planned-tiering" title="Permanent link">&para;</a></h2>
 <ul>
-<li><strong>Tier-1</strong> (CI smoke, 0.8B backbone, ≤ 10 min): <code>VizdoomBasic-v0</code>, <code>ALE/Pong-v5</code>, <code>MiniGrid-Empty-5x5-v0</code>.</li>
-<li><strong>Tier-2</strong> (overnight / paper runs, 4B backbone): all remaining ViZDoom scenarios, full ALE suite, full Minigrid/BabyAI suite.</li>
+<li><strong>Tier-1</strong> (CI smoke, 2B backbone, ≤ 10 min): <code>VizdoomBasic-v1</code>, <code>ALE/Pong-v5</code>, <code>MiniGrid-Empty-5x5-v0</code>.</li>
+<li><strong>Tier-2</strong> (overnight / paper runs, 4B backbone): all remaining ViZDoom scenarios (<code>VizdoomDeadlyCorridor-v1</code>, <code>VizdoomDefendLine-v1</code>, …), full ALE suite, full Minigrid/BabyAI suite.</li>
 </ul>
+<p>Note: <code>VizdoomBasic-v0</code> / <code>VizdoomCorridor-v0</code> names are deprecated in the current <code>vizdoom.gymnasium_wrapper</code>; use the v1 series (see 2026-04-20 backbone-names amendment for rationale).</p>
 <h2 id="atari-horizon">Atari horizon<a class="headerlink" href="#atari-horizon" title="Permanent link">&para;</a></h2>
 <p><code>max_episode_steps = 27000</code> is <strong>fixed</strong>. See master-spec §4 + §5.</p>
 <h2 id="target-score-table">Target-score table<a class="headerlink" href="#target-score-table" title="Permanent link">&para;</a></h2>
