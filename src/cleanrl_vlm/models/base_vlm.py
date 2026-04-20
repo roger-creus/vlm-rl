@@ -29,6 +29,7 @@ class BaseVLM(nn.Module):
         max_pixels: int,
         attn_implementation: str = "flash_attention_2",
         dtype: torch.dtype = torch.float16,
+        device_map: str = "cuda",
     ) -> None:
         super().__init__()
         self.processor = AutoProcessor.from_pretrained(
@@ -42,6 +43,7 @@ class BaseVLM(nn.Module):
             dtype=dtype,
             trust_remote_code=True,
             attn_implementation=attn_implementation,
+            device_map=device_map,
         )
 
     def preprocess_obs_and_text(

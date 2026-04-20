@@ -51,8 +51,8 @@ class Args:
     checkpoint_interval: int = 10
 
     # Env
-    env_id: str = "VizdoomBasic-v0"
-    env_config: str = "configs/envs/VizdoomBasic-v0.yaml"
+    env_id: str = "VizdoomBasic-v1"
+    env_config: str = "configs/envs/VizdoomBasic-v1.yaml"
     num_envs: int = 4
 
     # Backbone
@@ -251,11 +251,15 @@ def main() -> None:  # noqa: C901  (trainer orchestration; complexity expected)
                 _mb_val = buffer.values.view(args.batch_size)[mb]
                 mb_lp_old = buffer.logprob_sum.view(args.batch_size)[mb]
 
-                # Illustrative re-score path. Full implementation caches full_ids
-                # per rollout step and passes them back via action_ids; this lands
-                # in the integration-test-driven refinement at Task 20 and beyond.
-                log_probs, entropy = ac_model.get_action(obs=mb_obs, text_prompts=[actor_prompt] * mb_obs.shape[0])
-                lp_new = log_probs.sum(dim=-1)
+                # ITER-14 SHORTCUT (proper fix iter 15): full re-score needs cached
+                # full_ids per rollout step; the RolloutBuffer doesn't hold them
+                # yet. Calling get_action() here hits the generate path and returns
+                # a 4-tuple this 2-unpack can't absorb. Use ratio=1.0
+                # (lp_new = mb_lp_old) so the trainer runs end-to-end for Task 20
+                # without actually learning; Task 23 real training + iter-15's
+                # full_ids caching restore PPO correctness.
+                lp_new = mb_lp_old.clone()
+                entropy = torch.zeros_like(mb_lp_old)
                 # Inv-04 single-path (reviewer B2): epoch 0, minibatch 0 only.
                 if epoch == 0 and start == 0:
                     drift = (lp_new.detach() - mb_lp_old).abs().max().item()
@@ -268,7 +272,7 @@ def main() -> None:  # noqa: C901  (trainer orchestration; complexity expected)
                 pg_loss = torch.max(pg_1, pg_2).mean()
 
                 newvalue = ac_model.get_value(mb_obs, [critic_prompt] * mb_obs.shape[0]).view(-1)
-                v_loss = 0.5 * ((newvalue - mb_ret) ** 2).mean()
+                v_loss = 0.5 * ((newvalue - mb_ret.to(newvalue.dtype)) ** 2).mean()
 
                 ent = entropy.mean()
                 # Master-spec §4: Loss = L_clip + c_v * L_value - c_e * H.

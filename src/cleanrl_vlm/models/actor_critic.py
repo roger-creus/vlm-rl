@@ -72,7 +72,10 @@ class DecoupledActorCriticVLM_COT(nn.Module):
             dtype=dtype,
         )
         hidden_size = self.vlm.model.config.text_config.hidden_size
-        self.critic_head = CriticHead(hidden_size).to(self.vlm.model.dtype)
+        # Critic head stays fp32 so GradScaler can unscale its grads. Forward
+        # output is cast to the VLM's dtype at the call-site in get_value() if
+        # downstream arithmetic requires it.
+        self.critic_head = CriticHead(hidden_size).to(device=self.vlm.model.device)
         self.max_new_tokens = max_new_tokens
 
         # Snapshot the target-module list ONCE; feed the identical list to both
@@ -99,9 +102,14 @@ class DecoupledActorCriticVLM_COT(nn.Module):
         self.vlm.model.add_adapter("critic", critic_cfg)
 
         # Re-freeze: only lora_* params train (critic head handled separately in
-        # get_trainable_params).
+        # get_trainable_params). Cast trainable LoRA params to fp32 so the
+        # GradScaler can unscale their gradients (GradScaler refuses to unscale
+        # fp16 grads — "Attempting to unscale FP16 gradients").
         for n, p in self.vlm.model.named_parameters():
-            p.requires_grad = "lora_" in n
+            trainable = "lora_" in n
+            p.requires_grad = trainable
+            if trainable:
+                p.data = p.data.float()
 
     def get_trainable_params(self) -> list[torch.nn.Parameter]:
         params = self.vlm.get_trainable_params()
@@ -148,10 +156,30 @@ class DecoupledActorCriticVLM_COT(nn.Module):
             else:
                 full_ids = action_ids
             attention_mask = (full_ids != self.vlm.processor.tokenizer.pad_token_id).long()
+            # Extend mm_token_type_ids with zeros for generated positions so Qwen3-VL's
+            # M-RoPE can compute position ids over the full span. Original
+            # mm_token_type_ids has shape [B, prompt_len]; pad to [B, full_ids.shape[1]].
+            mm_tti = getattr(inputs, "mm_token_type_ids", None)
+            if mm_tti is not None:
+                pad_len = full_ids.shape[1] - mm_tti.shape[1]
+                if pad_len > 0:
+                    mm_tti = torch.cat(
+                        [
+                            mm_tti,
+                            torch.zeros(
+                                mm_tti.shape[0],
+                                pad_len,
+                                dtype=mm_tti.dtype,
+                                device=mm_tti.device,
+                            ),
+                        ],
+                        dim=1,
+                    )
             outputs = self.vlm.model(
                 input_ids=full_ids,
                 image_grid_thw=inputs.image_grid_thw,
                 pixel_values=inputs.pixel_values,
+                mm_token_type_ids=mm_tti,
                 output_hidden_states=True,
                 attention_mask=attention_mask,
             )
@@ -174,4 +202,6 @@ class DecoupledActorCriticVLM_COT(nn.Module):
                 outputs.hidden_states[-1],
                 inputs["attention_mask"],
             )
-            return self.critic_head(last_hidden)
+            # critic_head is fp32 to keep GradScaler happy; cast the VLM hidden
+            # (fp16 in default precision) before feeding in.
+            return self.critic_head(last_hidden.float())
