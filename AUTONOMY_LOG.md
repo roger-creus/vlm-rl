@@ -1548,3 +1548,110 @@ notification per matching line; §0 judgment on incoming data.
   or investigate.
 - If no events fire by safety-net wake (30 min), investigate why —
   subprocess stuck / buffered / model-load hung.
+
+---
+
+### 2026-04-20 — iter 18 — training-findings-and-lora-fix — @7137931
+
+**Context.** Woken by fallback heartbeat (Monitor fired no events in
+30 min). Investigation found: training completed cleanly (10 iters in
+~135s wall), but no Monitor events because the trainer's RichDashboard
+log lines don't match my grep pattern in its expected format. Silence
+≠ crash — just mis-matched filter.
+
+**Findings from the first real run** (`metrics.csv` at run dir with 10
+rows):
+
+1. **CRITICAL: Actor LoRA frozen.** `lora_weight_norm_actor =
+   45.844815` exactly constant across all 10 iterations;
+   `lora_weight_norm_critic` drifts normally (45.842 → 45.867).
+   Actor never trained. This is Inv-2 red for the actor.
+
+   **Root cause** (via systematic-debugging): PEFT's
+   `LoraLayer.set_adapter(name)` sets `requires_grad_(False)` on the
+   non-active adapter's LoRA layers. The update loop calls
+   `get_action` (→ `set_adapter('actor')` → actor requires_grad=True,
+   critic=False) then `get_value` (→ `set_adapter('critic')` → critic
+   =True, actor=False). At `backward()` time, actor is frozen;
+   `.backward()` only populates grads on leaves with requires_grad=
+   True, so actor never receives gradients.
+
+   **Fix** (commit `7137931`): re-enable `requires_grad=True` on all
+   `lora_*` params right before `fp16.scale(loss).backward()`. The
+   non-active adapter's LoraLayer is still out of the forward graph
+   (because `active_adapters` controls forward routing), so each loss
+   only backprops through the adapter it used — correctness preserved.
+
+   **Verification**: retry with same config produces `lora_actor =
+   45.844814 → 45.845337` over 10 iters (non-zero per-iter deltas).
+
+2. **Inv-6 red signal: loss_scale monotonic halving.** 8192 (iter 1)
+   → 4096 (iter 5) → 2048 (iter 10). GradScaler halved twice. Per
+   master-spec §8 Inv-6, repeated halving without recovery is an
+   investigate signal. Likely cause: value loss magnitudes 60-660
+   (raw VizdoomBasic kill reward ~100 squared) producing fp16
+   overflows that GradScaler catches. Fix candidates: reward scale
+   0.01 (spec §14 default), value loss Huber clipping, reduce
+   vf_coef. Deferred to iter 19.
+
+3. **ep_return_n = 0 across all iters.** VizdoomBasic episode length
+   ≤ 75 env steps at frame_skip=4, and we ran 80 env-steps per env
+   × 2 envs = 160 env-steps total — should have completed some
+   episodes. Root cause: gymnasium AsyncVectorEnv info-dict API
+   mismatch. Trainer reads `info.get("final_info")` but newer
+   gymnasium emits terminal info differently (`_final_info` mask +
+   `final_info` list with None for non-terminal envs). Deferred to
+   iter 19.
+
+**Decisions.**
+
+1. **Stopped Monitor** after training completed — no further events
+   to catch; `TaskStop babxwv341`.
+
+2. **Fixed LoRA grads first** because it's the largest correctness
+   issue (actor wasn't training at all). Reward-scale / ep_return
+   are trainability polish — lower priority than "trainer is
+   actually doing PPO".
+
+3. **Did not overhaul the Monitor grep pattern.** The reason it
+   didn't fire: RichDashboard emits via `logging.info("step=%s ret=
+   %s grad=%s", ...)` which formats to `"step=X ret=Y grad=Z"` as
+   expected — but my pattern was `step=|iteration=|...` which would
+   match. Actually it probably DID match, but the subprocess is
+   captured with stdout → so the logger (which writes to stderr)
+   might not have reached the `.output` file if the logging handler
+   wasn't configured to stderr-merge. Deferred investigation.
+
+4. **Accepted the second run's existence.** The iter-17 subprocess
+   (`b71svc4he`) completed; the iter-18 retry
+   (`bbmb9u6ma`) is still tearing down at time of commit but CSV
+   confirmed fix.
+
+**Verification evidence.**
+- `runs/ppo_cot__VizdoomBasic-v1__qwen3-vl-2b-instruct__0__2026-04-20/
+  metrics.csv` (post-fix): 10 rows, lora_actor changing per iter
+  (45.844814 → 45.845337), Inv-4 green for most iters.
+
+**Skills invoked.**
+- `superpowers:systematic-debugging` — LoRA-frozen bug: CSV observation
+  (constant) → hypothesis (non-active adapter frozen by set_adapter) →
+  read PEFT source mentally → confirmed by: fix makes values move.
+  Clean single-hypothesis-confirmation cycle.
+
+**Follow-ups (iter 19).**
+
+- **Fix ep_return extraction.** Try modern gymnasium API:
+  ```python
+  if "final_info" in info and "_final_info" in info:
+      for i, was_final in enumerate(info["_final_info"]):
+          if was_final and "episode" in info["final_info"][i]:
+              ep_returns.append(info["final_info"][i]["episode"]["r"])
+  ```
+- **Reward scaling / value loss.** Options:
+  a) `reward = reward * 0.01` (spec §14 default).
+  b) `v_loss = F.smooth_l1_loss(newvalue, mb_ret)` (Huber).
+  c) Reduce `vf_coef` 0.5 → 0.1.
+  Start with (a) — simplest, matches spec default.
+- Re-run with `--total-timesteps 400` (25 iters) after both fixes.
+  Look for actual learning: ep_return trending up, loss_value
+  trending down, loss_scale stable at 2048+.

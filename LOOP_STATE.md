@@ -1,25 +1,24 @@
 # LOOP_STATE.md
 
-**Last updated:** 2026-04-20 (iter 17 — first real training run KICKED OFF).
+**Last updated:** 2026-04-20 (iter 18 — LoRA-grads fix verified, real training loop alive).
 **Maintained by:** the autonomous `/loop` agent; humans read only.
 
 ## Current phase
 
-**Phase:** `B-ppo-cot-vizdoom-basic-2B` — **training running**. Plan tasks 1-22 done; Task 23 in flight (background subprocess `b71svc4he`, Monitor `babxwv341` armed on output).
+**Phase:** `B-ppo-cot-vizdoom-basic-2B` — **first real training + first correctness fixes**. Plan tasks 1-22 done; Task 23 in iterative debug mode.
 
-**Launch config** (first real run, conservative):
-- `--env-id VizdoomBasic-v1 --num-envs 2 --num-steps 8 --total-timesteps 160 --max-new-tokens 64 --num-minibatches 2 --update-epochs 2 --checkpoint-interval 5`
-- Expected: ~10 iterations × ~2-3 min/iter = 20-30 min wall.
-- Run dir: `runs/ppo_cot__VizdoomBasic-v1__qwen3-vl-2b-instruct__0__2026-04-20/`.
-- Monitor grep: `step=|iteration=|Traceback|Error|FAILED|OOM|Killed|AssertionError|CUDA out of memory|ValueError|RuntimeError|inv_._status=red|nan|loss_total`.
+### Iter 17 surfaced three issues (training ran 10 iters clean, artifacts landed):
+1. **LoRA actor frozen** (critical, Inv-2 red) — PEFT `set_adapter(name)` sets `requires_grad_(False)` on the non-active adapter; after `get_value` switched to critic, actor was frozen at backward → actor never trained. **Fixed iter 18.**
+2. **`loss_scale` monotonic halving** (Inv-6 red territory) — 8192 → 4096 → 2048 across 10 iters. FP16 instability, likely from value-loss explosion (60-660 magnitudes). Needs investigation.
+3. **`ep_return_n = 0`** — gymnasium AsyncVectorEnv info-dict API mismatch; final_info is not where the trainer looks. Episode returns never captured.
 
-Agent reviews per §0 once CSV rows land:
-- Reward trend (ep_return_mean): static would mean policy not learning; monotonic up = genuinely learning.
-- Inv statuses: any red triggers systematic-debugging.
-- Grad norm band: growing monotonically = exploding; collapsing = dead.
-- Loss scale history: collapse = fp16 instability.
+Iter 18 fix commit: `7137931` — `for p in lora_*: p.requires_grad_(True)` right before `fp16.scale(loss).backward()`. Retry confirmed actor norm now drifts.
 
-If green → scale up (`--total-timesteps 2000`, longer iters). If red → investigate per §0, iterate on config / prompt / lr / lora groups.
+Remaining iter-23-blocker investigations:
+- Value loss scaling / clipping. Spec §14 suggests reward scale 0.01.
+- Episode return extraction — modern gymnasium likely needs `final_info` list + `_final_info` mask.
+
+Next iter: fix ep_return extraction + value-loss management, then re-run a longer campaign (say 40 iters) to watch whether the policy actually learns vs. trainer correctness issues.
 
 ## Iter 5 sub-step completed
 

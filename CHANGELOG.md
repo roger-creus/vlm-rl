@@ -6,6 +6,36 @@ One entry per iteration, not per commit within an iteration.
 
 ---
 
+## 2026-04-20 — iter 18 — LoRA actor-grads fix (iter-17 findings)
+
+**What.** 1 commit (`7137931`) fixing the actor LoRA-frozen bug found
+in iter 17's run.
+
+- `algos/ppo_cot.py` update loop: re-enable `requires_grad=True` on
+  every `lora_*` param right before `fp16.scale(loss).backward()`.
+
+**Why.** PEFT's `LoraLayer.set_adapter(name)` freezes the non-active
+adapter's LoRA params. After `get_value` (→ `set_adapter('critic')`)
+the actor params were `requires_grad=False`, so `.backward()` never
+populated their `.grad`. First real training run showed lora_actor
+norm exactly constant across 10 iterations — Inv-2 red for the actor.
+
+**Evidence.**
+- Pre-fix CSV: lora_actor = 45.844815 × 10 (identical fp6 precision).
+- Post-fix CSV: lora_actor = 45.844814 → 45.845337 (changes per iter).
+- lora_critic was already working; still does (45.842 → 45.867).
+
+**Invariants run.**
+- Inv-2 (LoRA weights change): was red for actor pre-fix, green
+  post-fix.
+- Inv-4 (logprob parity): green most iters; red on iter 10 of the
+  pre-fix run (drift accumulated from update noise).
+- Inv-6 (loss_scale stability): red signal — scale halved 8192 → 2048
+  over 10 iters. Investigate-then-fix (value-loss scaling) queued for
+  iter 19.
+
+---
+
 ## 2026-04-20 — iter 17 — first real training run kickoff (plan task 23)
 
 **What.** Task 23 launch. No file commits this iter — just a journal
