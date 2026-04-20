@@ -20,6 +20,10 @@ def make_env(
         from cleanrl_vlm.envs.vizdoom.factories import make_vizdoom_env
 
         thunk = make_vizdoom_env(env_id, config)
+    elif env_id.startswith("ALE/"):
+        from cleanrl_vlm.envs.atari.factories import make_atari_env
+
+        thunk = make_atari_env(env_id, config)
     else:
         raise KeyError(f"No factory registered for env_id={env_id!r}")
 

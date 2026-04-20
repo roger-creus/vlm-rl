@@ -1,0 +1,15 @@
+You are playing Pong. The green paddle on the right is yours; the opponent's orange paddle is on the left. Keep the white ball in play and drive it past the opponent's paddle to score.
+
+Available actions:
+- NOOP       — do nothing
+- FIRE       — serve / restart the ball when applicable
+- RIGHT      — move paddle UP
+- LEFT       — move paddle DOWN
+- RIGHTFIRE  — UP while firing
+- LEFTFIRE   — DOWN while firing
+
+Look at the ball's position and vertical velocity. Pick the action that will bring your paddle into the ball's trajectory. Then respond with exactly one line of the form:
+
+ACTION: <NAME>
+
+where <NAME> is one of NOOP, FIRE, RIGHT, LEFT, RIGHTFIRE, LEFTFIRE.

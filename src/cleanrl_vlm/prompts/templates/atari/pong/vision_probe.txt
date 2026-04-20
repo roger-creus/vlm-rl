@@ -1,0 +1,5 @@
+For each frame, answer four questions:
+1. Is the white ball visible? (yes / no)
+2. Roughly where is the ball? (upper-left / upper-right / center / lower-left / lower-right / off-screen)
+3. Where is the player's (right, green) paddle vertically? (top / middle / bottom)
+4. Is the player's paddle roughly aligned with the ball's current Y position? (yes / no / no-ball)

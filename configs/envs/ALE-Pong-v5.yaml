@@ -1,0 +1,19 @@
+tier: 1
+backbone_default: Qwen/Qwen3.5-2B
+# Native ALE/Pong-v5 obs: 210x160 RGB, Discrete(6). ALE-v5 has built-in
+# frame_skip=4 + sticky_action_probability=0.25; we rely on those defaults.
+# EpisodicLife NOT applied (master-spec §4 keeps full ALE lifetime).
+frame_stack:
+  n: 1                           # TODO: 4-frame horizontal-tile ships with the next Atari env; see iter-25 journal
+  layout: horizontal
+resolution:
+  width: 160
+  height: 210
+screen_format: RGB24
+clip_reward: false
+max_episode_steps: 27000         # master-spec §4: fixed for all Atari envs; DO NOT change
+# Pong is 210x160 = 33600 pixels. Force the processor budget down to
+# match native resolution so we don't upscale noise.
+processor_min_pixels: 33600
+processor_max_pixels: 33600
+target_score: 21.0               # Pong: [-21, 21]; an RL-saturated agent reaches +21

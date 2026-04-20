@@ -17,8 +17,8 @@ import tyro
 import yaml
 from gymnasium.vector import AsyncVectorEnv
 
+from cleanrl_vlm.envs.action_tables import action_tables
 from cleanrl_vlm.envs.registry import make_env
-from cleanrl_vlm.envs.vizdoom.action_tables import action_tables
 from cleanrl_vlm.models.actor_critic import (
     ACTOR,
     CRITIC,
@@ -114,7 +114,10 @@ class Args:
 def _build_run_name(args: Args) -> str:
     date = time.strftime("%Y-%m-%d")
     slug = args.backbone.split("/")[-1].lower()
-    return f"{args.exp_name}__{args.env_id}__{slug}__{args.seed}__{date}"
+    # Atari env ids contain "/" (e.g., ``ALE/Pong-v5``). Replace so the run
+    # name is filesystem-safe (no nested subdirs under ``runs/``).
+    env_slug = args.env_id.replace("/", "-")
+    return f"{args.exp_name}__{env_slug}__{slug}__{args.seed}__{date}"
 
 
 def _set_seed(seed: int) -> None:

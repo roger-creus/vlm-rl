@@ -21,15 +21,19 @@ class PromptBuilder:
         self.actor_template = (self.templates_root / slug / "actor.txt").read_text()
         self.critic_template = (self.templates_root / slug / "critic.txt").read_text()
 
-    @staticmethod
-    def _env_id_to_slug(env_id: str) -> str:
-        if env_id == "VizdoomBasic-v1":
-            return "vizdoom/basic"
-        if env_id == "VizdoomDeadlyCorridor-v1":
-            return "vizdoom/corridor"
-        if env_id == "VizdoomDefendLine-v1":
-            return "vizdoom/defend_line"
-        raise KeyError(f"No prompt template slug for {env_id!r}")
+    _ENV_ID_SLUGS: dict[str, str] = {
+        "VizdoomBasic-v1": "vizdoom/basic",
+        "VizdoomDeadlyCorridor-v1": "vizdoom/corridor",
+        "VizdoomDefendLine-v1": "vizdoom/defend_line",
+        "ALE/Pong-v5": "atari/pong",
+    }
+
+    @classmethod
+    def _env_id_to_slug(cls, env_id: str) -> str:
+        try:
+            return cls._ENV_ID_SLUGS[env_id]
+        except KeyError as e:
+            raise KeyError(f"No prompt template slug for {env_id!r}") from e
 
     def actor_prompt(self) -> str:
         return self.actor_template

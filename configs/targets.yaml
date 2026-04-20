@@ -3,3 +3,14 @@ VizdoomBasic-v1:
     reference_score: 60.0
     zero_shot_baseline: null
     scratch_cnn_baseline: null
+  Qwen/Qwen3.5-2B:
+    reference_score: 60.0
+    zero_shot_baseline: null
+    scratch_cnn_baseline: null
+
+ALE/Pong-v5:
+  Qwen/Qwen3.5-2B:
+    # Pong score range is [-21, 21]; solve-target is +21 by RL convention.
+    reference_score: 21.0
+    zero_shot_baseline: null
+    scratch_cnn_baseline: 21.0
