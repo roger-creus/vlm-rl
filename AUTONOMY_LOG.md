@@ -2204,3 +2204,90 @@ third Tier-1 env). Native 210×160 RGB, Discrete(6) actions.
 - Frame-stack horizontal-tile wrapper for Atari (§4 default).
 - Pong vision-probe (Inv-15) run and artifact.
 - Long Tier-2 training on both VizDoom and Pong (kick off background).
+
+---
+
+### 2026-04-20 — iter 26 — adaptive-pixel-budget — @befdbd4
+
+**Context.** User flagged: "not super convinced about frame stacking
+for VLMs; frame_stack=1 should give a single image, resolution and
+pixels should adapt automatically." The configs had the
+`frame_stack.n` knob but the pixel budget was **hardcoded** per env
+(76800 for VizDoom, 33600 for Pong), introducing drift risk when a
+future tiling wrapper would change obs dims.
+
+**Decision: adaptive pixel budget.** `algos/ppo_cot.py` computes
+`min_pixels = max_pixels = obs_shape[0] * obs_shape[1]` AFTER env
+construction; YAML override still works if someone wants to force a
+specific budget. Both VizDoom + Pong YAMLs had their hardcoded pixel
+entries commented out. The adaptive path gives numerically identical
+defaults for single-frame envs.
+
+**Future-proofing**: when a tiling wrapper grows `obs_shape[1]`, the
+budget tracks automatically — no per-env hand-tuning.
+
+**Evidence.** 53/53 CPU + 2/2 GPU integration pass. Unit tests
+pin derivations (VizDoom 76800, Pong 33600). Runtime log records
+`derived` vs `yaml` budget so future runs are auditable.
+
+**Skills invoked.** `superpowers:test-driven-development` — the 4 new
+unit tests pin the adaptive semantics before any further env lands.
+
+---
+
+### 2026-04-20 — iter 27 — minigrid-empty-5x5-onboarding — @0648da7
+
+**Context.** Closes the master-spec §4 Tier-1 set: VizdoomBasic-v1 +
+ALE/Pong-v5 + MiniGrid-Empty-5x5-v0. Mid-iter, user added a specific
+directive: **default to the full observation mode** for MiniGrid, not
+the classic agent-centered partial 7×7 view.
+
+**Design choices.**
+
+1. **obs_mode config knob (default "full")** in `MiniGrid-Empty-5x5-
+   v0.yaml` dispatches between `RGBImgObsWrapper` (full grid) and
+   `RGBImgPartialObsWrapper` (partial). Full is the default per user;
+   partial is one YAML line away for the standard RL-literature
+   ablation.
+
+2. **tile_size=32** default → 160×160 RGB for a 5×5 grid. Adaptive
+   pixel budget (iter 26) gives 25600 px.
+
+3. **Generalized DictImageKeyWrapper** in `envs/wrappers.py` so
+   MiniGrid's `{image, direction, mission}` Dict obs can be flattened
+   to a plain image the same way VizDoom exposes `screen`. Kept
+   ScreenOnlyWrapper for VizDoom backward-compat (not collapsed into
+   the generalized one — 4 LOC each, orthogonal call sites).
+
+4. **Full 7-action set** kept (`LEFT/RIGHT/FORWARD/PICKUP/DROP/
+   TOGGLE/DONE`). Master-spec §4: "MiniGrid discrete actions are
+   native." The prompt nudges navigation-only envs toward the first
+   three actions but the full action space stays available for
+   future (Pickup/Doorkey) tasks.
+
+5. **frame_stack.n = 1** for MiniGrid per master-spec §4 (state is
+   already symbolic-rich). No tiling wrapper this iter — user is
+   skeptical about frame-stacking for VLMs; deferred until evidence
+   accrues.
+
+**Verification evidence.**
+- CPU tests 56/56 (+3 MiniGrid tests: pixel derivation, yaml-no-
+  hardcoded, obs_mode=full default).
+- GPU integration 3/3: test_trainer_short_run.py parametrized over
+  all three Tier-1 envs; each ran rollout + PPO + checkpoint + Inv-4
+  green + finite grad_norm.
+- Wall-clock 203 s for the parametrized 3-env run on a single A6000.
+
+**Skills invoked.**
+- `superpowers:test-driven-development` — added full-obs assertion
+  test before making the wrapper configurable.
+- `superpowers:verification-before-completion` — pytest after each
+  sub-edit.
+
+**Follow-ups (iter 28+).**
+- **Tier-1 triad is green.** Phase-B is complete; Phase-D research
+  campaign can start.
+- Long Tier-2 training run on all three envs.
+- Vision probes (Inv-15) artifacts for Pong + MiniGrid.
+- Simplify-pass backlog for iter-24 MINORs.
+- Perf ablation: install flash-linear-attention + causal-conv1d.

@@ -6,6 +6,66 @@ One entry per iteration, not per commit within an iteration.
 
 ---
 
+## 2026-04-20 — iter 27 — MiniGrid-Empty-5x5-v0 onboarded (Tier-1 triad complete)
+
+**What.** 1 commit (`0648da7`) closing the master-spec §4 Tier-1 set:
+VizdoomBasic-v1 + ALE/Pong-v5 + MiniGrid-Empty-5x5-v0.
+
+- New MiniGrid package under `src/cleanrl_vlm/envs/minigrid/` with
+  factory + action table. `make_minigrid_env` dispatches on
+  `obs_mode` (**full** default per user directive, `partial` for the
+  classic RL-literature 7×7 agent-centered ablation).
+- New generalized `DictImageKeyWrapper` in
+  `src/cleanrl_vlm/envs/wrappers.py` — drops a Dict-obs env (MiniGrid
+  emits `{image, direction, mission}`) to a single image-shaped
+  entry. Keeps `ScreenOnlyWrapper` for VizDoom backward-compat.
+- MiniGrid-specific COT prompts + a `configs/envs/MiniGrid-Empty-5x5-
+  v0.yaml` with `tile_size=32`, `obs_mode=full`, `frame_stack.n=1`.
+  Native obs = 160×160 RGB; pixel budget adapts.
+- Integration test parametrized over all three Tier-1 envs.
+
+**Evidence.**
+- CPU tests 56/56 (was 53, +3 MiniGrid tests).
+- GPU integration 3/3 pass in 203.19 s across all three envs.
+- MiniGrid iter-1 metrics: `inv_4=green`, `approx_kl=0`, `grad_norm`
+  finite.
+
+**Invariants run.**
+- Inv-4/8 green on all three Tier-1 envs.
+- Inv-1/3 green (env-independent).
+
+**Deferred.**
+- Pong + MiniGrid Inv-15 (vision-probe) artifacts.
+- Long Tier-2 training run — Phase B is done, Phase D / research
+  campaign can start.
+
+---
+
+## 2026-04-20 — iter 26 — adaptive pixel budget from obs shape
+
+**What.** 1 commit (`befdbd4`) per user directive: "frame_stack must be
+configurable; n=1 gives a single image; resolution + pixels adapt
+automatically."
+
+- `algos/ppo_cot.py` derives `processor_{min,max}_pixels` from
+  `envs.single_observation_space.shape` (H×W) at trainer startup by
+  default. YAML override still works.
+- Both VizDoom + Pong YAMLs had their hardcoded pixel entries
+  commented out; adaptive path gives identical numerical budgets
+  (76800 / 33600) for single-frame envs.
+- Startup logs the derived-vs-override distinction.
+- New test `tests/unit/test_pixel_budget.py` (4 tests) proves the
+  derivation path.
+
+**Why.** Removes a latent drift risk: when a future tiling wrapper
+grows `obs_shape[1]`, the budget tracks automatically — no per-env
+hand-tuning. Matches user's design preference.
+
+**Evidence.** 53/53 CPU + 2/2 GPU integration pass; identical
+numerical budget to pre-fix (no value change, only structure).
+
+---
+
 ## 2026-04-20 — iter 25 — ALE/Pong-v5 onboarded (§11 S-7 second env)
 
 **What.** 1 commit (`7bb16f6`) adding `ALE/Pong-v5` as the second
