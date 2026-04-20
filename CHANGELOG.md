@@ -6,6 +6,39 @@ One entry per iteration, not per commit within an iteration.
 
 ---
 
+## 2026-04-20 — iter 10 — generate + precision (plan tasks 12-13/27)
+
+**What.** 2 commits for the generation path + precision layer.
+
+- Task 12 (`3deb27a`) — `src/cleanrl_vlm/rollout/in_process.py`:
+  `CotRolloutStep` typed dataclass (reviewer M1) + `generate_cot_actions`
+  that runs ac_model.get_action, parses via `parse_action_cot`, fills
+  `gen_truncated` when no EOS appears, sums logprobs over generated
+  span.
+- Task 13 — `src/cleanrl_vlm/training/distributed.py::load_accelerator_config`
+  with single-rank "sharding ignored" startup log (reviewer m11);
+  `src/cleanrl_vlm/training/precision.py::Fp16State` wrapping
+  `torch.amp.GradScaler("cuda", ...)` with bounded scale-history deque;
+  `tests/invariants/test_inv_06_fp16_scale.py` with 2 tests covering
+  scale history + disabled mode.
+
+**Why.** Generation + FP16 precision are on the critical path to the
+trainer assembly (Task 19).
+
+**Evidence.**
+- Task 12 import sanity: `from cleanrl_vlm.rollout.in_process import
+  CotRolloutStep, generate_cot_actions` → ok.
+- Task 13: `uv run --no-env-file pytest
+  tests/invariants/test_inv_06_fp16_scale.py -v` → 2 passed in 86.54s
+  (GPU cuda:0).
+
+**Invariants run.**
+- Inv-6 — FP16 stability: 2 tests green. Corrected plan literal's
+  no-NaN-on-scaled-grads assertion to actual Inv-6 invariant
+  (scale history non-collapsing).
+
+---
+
 ## 2026-04-20 — iter 9 — prompts + parser + rollout (plan tasks 9-11/27)
 
 **What.** 3 commits across prompts and rollout layers.

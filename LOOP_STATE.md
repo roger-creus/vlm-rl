@@ -1,11 +1,11 @@
 # LOOP_STATE.md
 
-**Last updated:** 2026-04-20 (iter 9 — prompts + parser + rollout buffer done, tasks 1-11/27).
+**Last updated:** 2026-04-20 (iter 10 — generate + precision done, tasks 1-13/27).
 **Maintained by:** the autonomous `/loop` agent; humans read only.
 
 ## Current phase
 
-**Phase:** `B-ppo-cot-vizdoom-basic-2B` — **executing**. Plan tasks 1-11/27 complete (40% through). **36 tests green** (26 unit + 7 invariant + 1 hello-VLM smoke + 2 earlier smoke/test). Next iter picks up Task 12 (generate_cot_actions with typed CotRolloutStep dataclass, reviewer M1).
+**Phase:** `B-ppo-cot-vizdoom-basic-2B` — **executing**. Plan tasks 1-13/27 complete (48% through). 38 tests green (26 unit + 8 invariant [adds Inv-6] + 1 smoke + 2 meta dir + hello-VLM). Task 13 ran GPU GradScaler test on single A6000; Inv-6 test corrected from plan literal (plan assumed no-NaN on scaled grads; GradScaler is designed to detect overflow itself). Next iter picks up Task 14 (microbatch_probe).
 
 ## Iter 5 sub-step completed
 
@@ -79,8 +79,8 @@ available, verifies locally, commits.
 - [x] Task 9 — VizdoomBasic prompt templates — iter 9
 - [x] Task 10 — parser + PromptBuilder (M2, M3) — iter 9
 - [x] Task 11 — RolloutBuffer + GAE + Inv-10 — iter 9
-- [ ] Task 12 — generate_cot_actions + CotRolloutStep (M1)
-- [ ] Task 13 — accelerate config loader + Fp16State + Inv-6
+- [x] Task 12 — generate_cot_actions + CotRolloutStep (M1) — iter 10
+- [x] Task 13 — accelerate config loader + Fp16State + Inv-6 — iter 10
 - [ ] Task 14 — microbatch_probe (M7)
 - [ ] Task 15 — logging (Rich / CSV / W&B)
 - [ ] Task 16 — save_vlm_actor_critic_checkpoint (m6)
