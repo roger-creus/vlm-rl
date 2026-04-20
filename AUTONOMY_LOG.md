@@ -115,3 +115,122 @@ pre-existing plan and aligned to it; no new plan file produced net).
 - At the end of iter 2, AUTONOMY_LOG appends a new entry; CHANGELOG
   appends an iter-2 entry; LOOP_STATE next-task flips to
   `B-ppo-cot-vizdoom-basic-0.8B`.
+
+---
+
+### 2026-04-20 — iter 2 — scaffold-skeleton — @(multiple: 408684e..4a357c3)
+
+**Context.** Iter 2 executes the pre-existing bootstrap plan's Tasks
+3–20 (subset — UV env / smoke run deferred). 9 commits land on master
+in per-task groups; 12 CPU-safe tests pass locally under the conda
+python. The repo now carries the full §2 scaffold as flat files and
+`.gitkeep` markers; `src/cleanrl_vlm/` is importable (`__version__ ==
+"0.0.1"`), CLAUDE.md carries §13 verbatim, GitHub Actions are wired,
+mkdocs is configured with a 12-page nav, doc stubs fill every link.
+
+**Decisions.**
+
+1. **Deferred Task 5 (UV init).** `uv lock` pulls a large dep tree
+   (torch 2.6.0, transformers-from-git, deepspeed, vllm, vizdoom,
+   ale-py, flash-attn build-from-source) that takes many minutes and
+   can fail in cluster environments with specific CUDA constraints.
+   Running it inside a single `/loop` iteration risks consuming the
+   whole budget on network/compilation. Splitting it into its own
+   iteration (`A2-bootstrap-finalize`) gives the next iteration a
+   clean slate to handle retries and per-S-5 web-fetches for anything
+   that breaks.
+
+2. **Deferred Task 15 verification.** The `test_hello_vlm.py` file is
+   committed, but running it requires the UV env (Task 5) and a CUDA
+   GPU. Same as above — batched into `A2-bootstrap-finalize`.
+
+3. **Deferred Task 21 (full lint + test).** Depends on UV env. Same.
+
+4. **Skipped Task 22 (monolithic bootstrap commit).** Iter 1 decided
+   per-task commits instead of the plan's single-commit structure.
+   Iter 2 landed 9 commits (`408684e` LICENSE → `4a357c3` docs
+   stubs). `git log c23b0f1..HEAD --oneline` lists them all.
+
+5. **Task 24 handoff check treated as complete.** Since the /loop is
+   already running and §13 is committed to CLAUDE.md — verified
+   programmatically by `tests/test_spec_exists.py::test_claude_md_
+   carries_autonomy_section` — there's no separate "hand off" step
+   needed.
+
+6. **Left prototype files in place.** Iter 1 decided not to do the
+   orphan-branch surgery; as a result the prior prototype's `src/`,
+   `deepspeed_zero*.yaml`, `requirements.txt`, `setup.py`, `test.py`,
+   `prompts/` trees remain in the working tree. None of them are
+   imported by `cleanrl_vlm`; they are logical scratch space. LOOP_STATE
+   lists them explicitly so a later iteration can prune each when its
+   replacement lands (per-file `git rm` rather than a bulk wipe, to
+   stay inside the §13.1 safety floor).
+
+7. **Test run used conda python under `PYTHONPATH=src`, not UV.**
+   The 12 CPU-safe tests passed under the existing conda env. Once
+   the UV env lands, the same tests should still pass — verified in
+   iter 3 as part of `A2-bootstrap-finalize`.
+
+8. **Iteration committed more than I originally scoped.** Iter 1
+   notes said "iter 2 scope is project skeleton (Task 7 / CLAUDE.md
+   rewrite among others)." The actual iter-2 execution also covered
+   Tasks 3, 4, 6, 8, 12, 13, 14, 15, 16, 17, 18, 19, 20 — most of
+   the bootstrap plan minus the env-level tasks. The scope expanded
+   because the tasks are mechanical file writes with mutual
+   dependencies (e.g., mkdocs.yml's nav requires all the doc stubs
+   to exist for `mkdocs build --strict`); splitting across iterations
+   would have forced a broken intermediate state.
+
+**Artifacts produced this iter.**
+
+`LICENSE`, `pyproject.toml`, `src/cleanrl_vlm/` package tree (7
+`__init__.py` files), `algos/` `baselines/` `experimental/`
+`configs/envs/` `scripts/` `docs/backbone_probes/`
+`docs/vision_probes/` `docs/superpowers/specs/amendments/`
+`.gitkeep` markers, `tests/` submodule `__init__.py` files,
+`CLAUDE.md` (rewritten), `README.md` (rewritten — overwrote the
+prototype's conda-setup content), `MEMORY.md`,
+`tests/test_imports.py`, `tests/test_spec_exists.py`,
+`tests/smoke/test_hello_vlm.py`, `.pre-commit-config.yaml`,
+`.github/workflows/ci.yml`, `.github/workflows/docs.yml`,
+`mkdocs.yml`, `docs/index.md`, and 12 `docs/*.md` stubs.
+
+**Skills invoked.** `superpowers:using-superpowers` (auto at session
+start from iter 1's ScheduleWakeup continuation). No other skill
+called out directly — tasks were pre-specified by the bootstrap plan
+and executed inline.
+
+**Skills not invoked, justification.**
+- `superpowers:brainstorming` — scaffold is execution, not design
+  (same as iter 1).
+- `superpowers:writing-plans` — the plan already exists
+  (`2026-04-19-bootstrap-scaffold.md`); nothing new to write.
+- `superpowers:subagent-driven-development` — tasks are mechanical
+  file creation with strict plan content; subagent overhead wasn't
+  worth it. The next iteration (`A2-bootstrap-finalize`) deals with
+  UV env + a real smoke test and *will* benefit from subagents for
+  parallel retry handling.
+- `superpowers:code-reviewer` — the iter-2 diff is scaffolding with
+  no branching logic. Deferred to after iter-3 UV-env + smoke so the
+  reviewer has real test-pass signal to read.
+- `superpowers:test-driven-development` — Tasks 13/14 follow the TDD
+  shape (test-first, test-exists-before-impl isn't applicable for
+  scaffolded `__init__.py` modules; however the tests *are* committed
+  in the same iteration as the impl per S-1).
+- `superpowers:simplify` — nothing to simplify; scaffold is
+  deliberately minimal already.
+- `superpowers:verification-before-completion` — 12 CPU-safe tests
+  passing is the verification; the rest (mkdocs build --strict, UV
+  lock, pre-commit run, hello-VLM smoke) depends on iter 3's env
+  setup.
+
+**Follow-ups.**
+
+- Iter 3 (`A2-bootstrap-finalize`): UV env + lockfile + smoke. Expect
+  to web-fetch per S-5 on any dep-resolution failure.
+- Iter 4+ (`B-ppo-cot-vizdoom-basic-0.8B`): first canon trainer,
+  using the superpowers skills seriously (brainstorming for design,
+  writing-plans, subagent-driven-development, code-reviewer, etc.).
+- Prune prototype files (`src/models/`, `src/train_*.py`,
+  `deepspeed_zero*.yaml`, `requirements.txt`, `setup.py`,
+  `test.py`) once their replacements land under `algos/` + `src/cleanrl_vlm/`.

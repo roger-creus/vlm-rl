@@ -6,6 +6,55 @@ One entry per iteration, not per commit within an iteration.
 
 ---
 
+## 2026-04-20 — iter 2 — scaffold skeleton
+
+**What.** Execute bootstrap-plan Tasks 3–8, 12–20 on top of iter 1's
+loop infra. 9 commits land on master (`408684e`..`4a357c3`).
+
+- `LICENSE` (MIT).
+- `pyproject.toml` — UV + ruff + pyright + pytest config; full §3
+  dep list (torch 2.6.0, transformers-from-git, peft, accelerate,
+  deepspeed, vllm, gymnasium + vizdoom + minigrid + ale-py, imaging,
+  logging, dev).
+- `src/cleanrl_vlm/` importable package with 6 sub-packages (`envs`,
+  `models`, `prompts`, `rollout`, `training`, `research`).
+- `algos/`, `baselines/`, `experimental/`, `configs/envs/`,
+  `scripts/`, `docs/backbone_probes/`, `docs/vision_probes/`,
+  `docs/superpowers/specs/amendments/` all with `.gitkeep`.
+- `tests/{invariants,unit,integration,smoke,soak}/__init__.py`.
+- `CLAUDE.md` — §13 verbatim at top per Appendix B.
+- `README.md` — 1-page pitch + UV quickstart + links (replaces
+  the prior prototype's conda-setup README).
+- `MEMORY.md` — HTML-commented stub.
+- `tests/test_imports.py` (9 tests) + `tests/test_spec_exists.py`
+  (4 tests) + `tests/smoke/test_hello_vlm.py` (1 GPU-tier1 test).
+- `.pre-commit-config.yaml` — ruff + standard hygiene hooks.
+- `.github/workflows/ci.yml` — 3-job matrix (lint / tier1-smoke
+  disabled / docs build).
+- `.github/workflows/docs.yml` — `mkdocs gh-deploy` on push to master.
+- `mkdocs.yml` — material theme, strict build, 12-page nav.
+- `docs/index.md` + 12 doc stubs (ARCHITECTURE, ALGORITHMS, ENVS,
+  BACKBONES, RECIPES, RESULTS, RESEARCH, INVARIANTS, CHECKPOINTING,
+  LOGGING, CONTRIBUTING, TROUBLESHOOTING).
+
+**Why.** Bootstrap plan's §2 scaffold needs to land so the /loop's
+subsequent work (canon trainers, env onboarding, etc.) has a place
+to live per spec §11 rituals.
+
+**Evidence.** 12/12 CPU-safe tests pass (`PYTHONPATH=src python3 -m
+pytest tests/test_imports.py tests/test_spec_exists.py`). `pyproject.toml`
+parses under python3's tomllib. `cleanrl_vlm` package imports cleanly.
+
+Deferred verifications (iter 3 `A2-bootstrap-finalize`): `uv lock`
++ `uv sync`, `ruff check .`, `ruff format --check .`, `pyright src/
+cleanrl_vlm`, `mkdocs build --strict`, `pytest -m tier1 -v` (hello-VLM
+GPU smoke).
+
+**Invariants run.** None applicable — no model, env, or training
+surface exists yet.
+
+---
+
 ## 2026-04-20 — iter 1 — loop bootstrap
 
 **What.**
