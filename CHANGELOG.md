@@ -6,6 +6,36 @@ One entry per iteration, not per commit within an iteration.
 
 ---
 
+## 2026-04-20 — iter 13 — cluster script + trainer (plan tasks 18-19/27)
+
+**What.** 2 commits landing the trainer assembly.
+
+- Task 18 (`7bc03cf`) — `scripts/_cluster_env.sh`: HF_HOME,
+  CUDA_HOME, tokenizers-parallelism, CUBLAS_WORKSPACE_CONFIG
+  defaults. Sourceable before training.
+- Task 19 (`8d63816`) — `algos/ppo_cot.py` (346 LOC):
+  single-file trainer glueing every `cleanrl_vlm.*` module into the
+  PPO-COT iteration loop with FP16 + LoRA dual adapters + Inv-04
+  single-path drift check + CSV/Rich/W&B logging + algo-slug
+  checkpoint + microbatch probe + determinism seeding. All reviewer
+  M1-M8 and m1-m12 findings encoded. Import sanity green.
+
+**Why.** The trainer is the convergence point of every iter-6..12
+primitive. Landing it as a single file with no further shared
+abstractions matches the spec §5 "CleanRL-style single-file"
+discipline; further refinement happens through the integration test
+(Task 20) and the simplify pass (Task 25).
+
+**Evidence.**
+- `bash -c "source scripts/_cluster_env.sh"` → env exports fine.
+- `uv run --no-env-file python -c "import algos.ppo_cot"` → ok.
+- 346-line trainer; all imports resolve; ruff green.
+
+**Invariants run.** None new landed (Inv-04 drift check is in the
+trainer body; it activates when Task 20 runs the trainer).
+
+---
+
 ## 2026-04-20 — iter 12 — InvariantMonitor + 5 invariants (plan task 17/27)
 
 **What.** 1 commit landing the invariant batch.

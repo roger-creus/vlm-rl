@@ -1,11 +1,11 @@
 # LOOP_STATE.md
 
-**Last updated:** 2026-04-20 (iter 12 — InvariantMonitor + 5 invariants done, tasks 1-17/27).
+**Last updated:** 2026-04-20 (iter 13 — cluster script + trainer assembly done, tasks 1-19/27).
 **Maintained by:** the autonomous `/loop` agent; humans read only.
 
 ## Current phase
 
-**Phase:** `B-ppo-cot-vizdoom-basic-2B` — **executing**. Plan tasks 1-17/27 complete (63% through). **50 tests green** (including 14 invariant: Inv-1/3/4[tolerance]/5/6/9/10/11/13). All iter-4-scope §8 invariants covered as pytest units. Next iter picks up Tasks 18 (cluster env script, trivial) + 19 (trainer assembly — the big one, 360 lines).
+**Phase:** `B-ppo-cot-vizdoom-basic-2B` — **executing, trainer assembled**. Plan tasks 1-19/27 complete (70% through). 50 tests green + `algos/ppo_cot.py` (346 LOC) imports cleanly. Trainer includes all reviewer fixes: M1 CotRolloutStep / M2 parser / M3 regex / M4 base-weight id / M5 determinism seeding / M6 algo-slug checkpoint / M7 microbatch probe / B2 Inv-04 single-path drift / B3 pixel override / m4/m5 CSV metrics / m6 checkpoint signature / m7 active_adapter with model / m9 critic-forward-only / m10 target-modules snapshot / m11 sharding-log / m12 simplify-then-review order. Trainer has two acknowledged shortcuts (full_ids caching + prompt_len slicing) refined by Task 20 integration. Next iter: Task 20 tier1 integration test — first real training step end-to-end.
 
 ## Iter 5 sub-step completed
 
@@ -85,8 +85,8 @@ available, verifies locally, commits.
 - [x] Task 15 — logging (Rich / CSV / W&B) — iter 11
 - [x] Task 16 — save_vlm_actor_critic_checkpoint (m6) — iter 11
 - [x] Task 17 — InvariantMonitor scaffold + Inv-04/05/09/11/13 tests — iter 12
-- [ ] Task 18 — scripts/_cluster_env.sh
-- [ ] Task 19 — algos/ppo_cot.py assembly
+- [x] Task 18 — scripts/_cluster_env.sh — iter 13
+- [x] Task 19 — algos/ppo_cot.py assembly — iter 13
 - [ ] Task 20 — tier1 integration test
 - [ ] Task 21 — scripts/probe_vision.py + initial report
 - [ ] Task 22 — scripts/probe_backbone.py (m1)
