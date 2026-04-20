@@ -6,6 +6,48 @@ One entry per iteration, not per commit within an iteration.
 
 ---
 
+## 2026-04-20 — iter 23 — BF16 default (fixes grad_norm=nan)
+
+**What.** 1 commit (`b4e3950`) resolving the long-standing
+`grad_norm_global=nan` signal that survived iters 20/21/22.
+
+- Diagnostic via `torch.autograd.detect_anomaly` traced the NaN to
+  `MmBackward0` at `linear_attn.in_proj_qkv` — Qwen3.5's Gated
+  DeltaNet input projection. Forward was clean; only backward
+  produced NaNs. Fallback torch DeltaNet backward (without
+  `flash-linear-attention` fast path) is numerically unstable in FP16.
+- Refutation: dropping LoRA from `linear_attn` did NOT fix the NaN;
+  so the base DeltaNet backward is the source, not the LoRA wrapper.
+- Fix: flip precision default from FP16 → BF16 for the Qwen3.5
+  family. BF16's wider exponent avoids the underflow path.
+- `configs/backbones.yaml` and `algos/ppo_cot.py::Args.precision`
+  default flipped. `Fp16State` disables itself at BF16 (no GradScaler
+  needed).
+- Integration test now asserts `grad_norm_global` is finite (not
+  "nan"/"inf"). Also switched to reading the LAST metrics row to be
+  robust to CsvWriter's append-mode behavior across re-runs.
+- Amendment `docs/superpowers/specs/amendments/
+  2026-04-20-bf16-default-for-qwen3.5.md` records the override of
+  master-spec §1's FP16 default. FP16 stays opt-in for non-hybrid
+  backbones.
+
+**Evidence.**
+- `detect_anomaly` probe: FP16 → MmBackward0 NaN; BF16 → zero bad
+  params across all loss components + full loss.
+- Integration test: `approx_kl=0`, `inv_4_status=green`,
+  `grad_norm_global=91.75` (finite), `loss_scale=1.0`.
+- 49/49 CPU + 8/8 GPU integration tests pass.
+
+**Invariants run.**
+- Inv-1/3/4/8/2: green (precision-invariant).
+- Inv-6: green-by-construction under BF16 (Fp16State disabled, no
+  scale history to track).
+
+**Follow-up**: `flash-linear-attention` + `causal-conv1d` install as
+a perf ablation vs BF16-fallback.
+
+---
+
 ## 2026-04-20 — iter 22 — step-grouped re-score for speed+correctness (plan task 28 follow-on)
 
 **What.** 1 commit (`29a484b`) replacing iter-21's row-by-row re-score

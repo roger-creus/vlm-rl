@@ -1996,3 +1996,72 @@ alternatives to the row-by-row approach.
 - FP32-anchored re-score exploration if Tier-2 throughput demands it.
 - Plan task 26 (code-reviewer subagent) on the iter-6..29a484b diff.
 - Plan task 27 pivot LOOP_STATE to `C-envs-tier1-expand`.
+
+---
+
+### 2026-04-20 — iter 23 — grad-nan-fix (BF16 default) — @b4e3950
+
+**Context.** `grad_norm_global=nan` has been in every integration-test
+row since iter 17. Orthogonal to the Inv-4 work in 21/22; finally
+pulled to the top of the queue.
+
+**Diagnostic (Phase 1-3 per systematic-debugging).**
+
+1. Per-component backward probe (pg, v, ent separately + full) →
+   every backward produced NaN grads across all 354 trainable params.
+   So the NaN is NOT loss-specific; it's in the shared forward path.
+2. `torch.autograd.detect_anomaly` → NaN in `MmBackward0` at
+   `linear_attn.in_proj_qkv` (Gated DeltaNet input projection).
+3. Warning from model load: *"The fast path is not available because
+   flash-linear-attention is not installed. Falling back to torch
+   implementation."* → fallback torch DeltaNet is the suspect.
+4. Refutation: dropping LoRA from `linear_attn` did NOT fix the NaN.
+   So instability is in base DeltaNet, not PEFT.
+5. Hypothesis: BF16 resolves it (wider exponent avoids underflow).
+6. Verified with a targeted probe (since removed): BF16 →
+   `bad_param_count=0` for pg_loss, v_loss, ent, AND the full PPO
+   loss.
+
+**Decision: flip precision default to BF16 for Qwen3.5 family.**
+
+- `configs/backbones.yaml`: `dtype: float16` → `bfloat16` across all
+  four entries.
+- `algos/ppo_cot.py::Args.precision` default: `"fp16"` → `"bf16"`.
+- `Fp16State` disabled at BF16 (no GradScaler; BF16 has fp32's
+  exponent range, no underflow to guard against).
+- Master-spec §1 override captured in amendment
+  `2026-04-20-bf16-default-for-qwen3.5.md`. FP16 remains opt-in
+  for non-hybrid backbones via `--precision fp16`.
+
+**Test discipline.**
+- Added `grad_norm_global` finite-assertion to
+  `test_trainer_short_run.py` (pre-fix: FAIL with `'nan'`; post-fix:
+  PASS with `91.75`).
+- Also fixed a real bug in the test: it was reading `body[1]`
+  (first metrics row) but CsvWriter is in append mode, so
+  repeated test runs pile up rows and the FIRST row reflects the
+  oldest (pre-fix) run. Changed to `body[-1]`. Documented the
+  resume-friendly append semantics inline.
+
+**Evidence.**
+- `pytest tests/unit tests/invariants -m "not gpu"`: 49/49 pass.
+- `pytest tests/integration -m "tier1 and gpu"`: 8/8 pass in 104.64 s.
+- Integration metrics.csv post-fix: `grad_norm_global=91.75`,
+  `inv_4_status=green`, `approx_kl=0.0`, `loss_scale=1.0` (BF16
+  path), `loss_value=1.6e-3`, `loss_entropy=0.115`.
+
+**Skills invoked.**
+- `superpowers:systematic-debugging` — full Phase 1-4 discipline;
+  refuted one hypothesis (LoRA on DeltaNet) before landing on
+  precision.
+- `superpowers:verification-before-completion` — failing-test-before-
+  fix + full regression suite.
+
+**Follow-ups (iter 24+).**
+- Install `flash-linear-attention` + `causal-conv1d` as a perf
+  ablation (would enable FP16 with the fast DeltaNet path; may
+  combine with BF16 for additional throughput).
+- Plan task 26 (code-reviewer subagent).
+- Plan task 27 pivot to `C-envs-tier1-expand`.
+- Long Tier-2 training run on VizdoomBasic-v1 (all blocker signals
+  now green).

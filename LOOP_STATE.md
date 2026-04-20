@@ -1,51 +1,50 @@
 # LOOP_STATE.md
 
-**Last updated:** 2026-04-20 (iter 22 — step-grouped re-score gives bit-parity + speed).
+**Last updated:** 2026-04-20 (iter 23 — BF16 default fixes grad_norm=nan; all blocker signals green).
 **Maintained by:** the autonomous `/loop` agent; humans read only.
 
 ## Current phase
 
-**Phase:** `B-ppo-cot-vizdoom-basic-Qwen3.5-2B` — Inv-4 bit-parity
-restored. Plan tasks 1-25/27 complete; task 28 (inv_4 drift fix) also
-resolved this iter pair.
+**Phase:** `B-ppo-cot-vizdoom-basic-Qwen3.5-2B` — **all blocker
+signals green.** Plan tasks 1-25/27 + task 28 (Inv-4 drift) + task 29
+(grad-nan) all resolved.
 
-- Iter 21 diagnosed the drift as *padding-specific row divergence in
-  batched re-score* (not general fp16 noise). Row-by-row re-score
-  gave bit-parity at ~10-15× Tier-2 slowdown.
+- Iter 21 root-caused the Inv-4 drift: padding-specific row divergence
+  in batched re-score. Row-by-row fix gave bit-parity.
 - Iter 22 replaced row-by-row with **step-grouped re-score**: each
   rollout step re-scored at batch=num_envs, matching rollout's
-  forward shape exactly. Probe at num_envs=2: drift = 0.0 across
-  all rows. ~4× speedup over row-by-row.
-- Integration test: `inv_4_status=green`, `approx_kl=0.0`,
-  `clip_fraction=0.0`.
-- Alternate single-batched fast-path probes (BF16, eager attention)
-  all left drift >> 1e-4 — the fp-precision noise comes from
-  linear-layer matmuls, not just attention. Step-grouped remains
-  the correct answer.
+  forward shape exactly. Probe at num_envs=2 confirmed drift = 0.0
+  across all rows.
+- Iter 23 traced `grad_norm_global=nan` to Gated DeltaNet backward
+  being FP16-unstable without the `flash-linear-attention` fast path.
+  Fix: **BF16 default** for Qwen3.5 family (amendment overrides
+  master-spec §1's FP16 default).
+- Integration test CSV (post-fix): `inv_4_status=green`,
+  `approx_kl=0.0`, `grad_norm_global=91.75` (finite), all inv_*
+  columns green where applicable.
 
 ## Immediate next task (fresh session resumes here)
 
-**Iter 23+ priority queue** (loose order; agent judges):
+**Iter 24+ priority queue** (loose order; agent judges):
 
-1. **Investigate `grad_norm_global=nan`** in iter-1 metrics (pre-existing
-   across iter 20/21/22). Independent from the Inv-4 work. Possibly
-   from the full-vocab entropy term producing numerical instability;
-   check against the deferred "vocab-wide entropy" simplify item.
-2. **Plan task 26 — `superpowers:code-reviewer` subagent** on the full
-   diff (iter 6..29a484b). Address findings with per-finding commits.
-3. **Plan task 27 — pivot LOOP_STATE to `C-envs-tier1-expand`**
+1. **Plan task 26 — `superpowers:code-reviewer` subagent** on the full
+   diff (iter 6..`b4e3950`). Address findings with per-finding commits.
+2. **Plan task 27 — pivot LOOP_STATE to `C-envs-tier1-expand`**
    (adds `ALE/Pong-v5` + `MiniGrid-Empty-5x5-v0` as Tier-1 envs per
    §11 S-7 ritual).
+3. **Long Tier-2 training run** on VizdoomBasic-v1 — now that
+   correctness is green, check actual learning curve (hours; run in
+   background via Monitor).
 4. **Cache `Qwen/Qwen3.5-0.8B`** locally → enable the faster debug
    backbone path in `test_qwen35_backbone_wiring.py`.
-5. **Long Tier-2 training run** on VizdoomBasic-v1 + step-grouped
-   re-score to check actual learning curve now that correctness is
-   green.
-6. **Research idea (backlog)**: FP32-anchored re-score or batch-
-   invariant custom kernel for reclaiming the single-batched fast
-   path. Only if Tier-2 throughput becomes the bottleneck.
+5. **Perf ablation backlog**: install `flash-linear-attention` +
+   `causal-conv1d` (may enable FP16-fast-path if desired, or combine
+   with BF16 for throughput). Compare speed vs BF16-fallback.
+6. **Research backlog**: batch-invariant re-score kernel for
+   reclaiming single-batched fast path. Only if Tier-2 throughput
+   becomes the bottleneck.
 
-## Handoff state (as of commit `29a484b`)
+## Handoff state (as of commit `b4e3950`)
 
 Everything needed for a fresh `/loop` session to continue from this
 exact point is on disk + in git:
@@ -166,6 +165,7 @@ available, verifies locally, commits.
 - [ ] Task 26 — code-reviewer subagent pass (on iter-6..`29a484b` diff)
 - [ ] Task 27 — journals + LOOP_STATE pivot to `C-envs-tier1-expand`
 - [x] Task 28 (iter-20 addition) — investigate + fix batched Inv-4 drift on Qwen3.5-2B — iter 21 (@ `bb138b8`, row-by-row) + iter 22 (@ `29a484b`, step-grouped)
+- [x] Task 29 (iter-20 addition) — investigate + fix grad_norm=nan — iter 23 (@ `b4e3950`, BF16 default per DeltaNet FP16 backward instability)
 
 ## Planned iter boundaries (rough)
 
