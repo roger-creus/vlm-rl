@@ -107,3 +107,23 @@ def test_action_tables_contains_vizdoom_basic():
         "TURN_RIGHT",
     ]
     assert action_tables["VizdoomDefendLine-v0"] == ["TURN_LEFT", "TURN_RIGHT", "ATTACK"]
+
+
+def test_registry_dispatches_vizdoom():
+    from cleanrl_vlm.envs.registry import make_env
+
+    thunk = make_env(
+        env_id="VizdoomBasic-v0",
+        config={"frame_skip": 4},
+        seed=0,
+        idx=0,
+        run_name="test",
+    )
+    assert callable(thunk)
+
+
+def test_registry_rejects_unknown_env():
+    from cleanrl_vlm.envs.registry import make_env
+
+    with pytest.raises(KeyError):
+        make_env(env_id="Unknown-v0", config={}, seed=0, idx=0, run_name="test")
