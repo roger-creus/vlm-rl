@@ -1,11 +1,21 @@
 # LOOP_STATE.md
 
-**Last updated:** 2026-04-20 (iter 13 — cluster script + trainer assembly done, tasks 1-19/27).
+**Last updated:** 2026-04-20 (iter 14 — integration test GREEN, tasks 1-20/27).
 **Maintained by:** the autonomous `/loop` agent; humans read only.
 
 ## Current phase
 
-**Phase:** `B-ppo-cot-vizdoom-basic-2B` — **executing, trainer assembled**. Plan tasks 1-19/27 complete (70% through). 50 tests green + `algos/ppo_cot.py` (346 LOC) imports cleanly. Trainer includes all reviewer fixes: M1 CotRolloutStep / M2 parser / M3 regex / M4 base-weight id / M5 determinism seeding / M6 algo-slug checkpoint / M7 microbatch probe / B2 Inv-04 single-path drift / B3 pixel override / m4/m5 CSV metrics / m6 checkpoint signature / m7 active_adapter with model / m9 critic-forward-only / m10 target-modules snapshot / m11 sharding-log / m12 simplify-then-review order. Trainer has two acknowledged shortcuts (full_ids caching + prompt_len slicing) refined by Task 20 integration. Next iter: Task 20 tier1 integration test — first real training step end-to-end.
+**Phase:** `B-ppo-cot-vizdoom-basic-2B` — **trainer runs end-to-end**. Plan tasks 1-20/27 complete (74% through). Integration test passes in 80s on GPU. 5 real bugs caught by the integration run + 1 shortcut documented:
+
+1. `BaseVLM` now passes `device_map="cuda"` (model was on CPU → flash-attn failure).
+2. `DecoupledActorCriticVLM_COT.get_action` threads `mm_token_type_ids` through the re-score forward (Qwen3-VL M-RoPE requires it).
+3. `critic_head` + trainable LoRA params cast to fp32 after construction (GradScaler can't unscale fp16 grads).
+4. `critic_head` constructed on model device, not CPU.
+5. Vizdoom env IDs: `Vizdoom{Basic,Corridor,DefendLine}-v0` → `VizdoomBasic-v1 / VizdoomDeadlyCorridor-v1 / VizdoomDefendLine-v1` (gymnasium_wrapper deprecated v0).
+
+**Iter-14 shortcut** (fix scheduled iter 15): PPO update-loop re-score uses `lp_new = mb_lp_old.clone()` → ratio=1.0 → no PPO correction. Trainer runs but doesn't meaningfully learn. Proper fix requires caching `full_ids` per rollout step in `RolloutBuffer` and passing as `action_ids` to `get_action`.
+
+Next iter: Task 21 (vision probe) can proceed in parallel with iter-15 shortcut fix, OR iter 15 does shortcut first (recommended — Task 23 real training needs real PPO).
 
 ## Iter 5 sub-step completed
 
@@ -87,7 +97,7 @@ available, verifies locally, commits.
 - [x] Task 17 — InvariantMonitor scaffold + Inv-04/05/09/11/13 tests — iter 12
 - [x] Task 18 — scripts/_cluster_env.sh — iter 13
 - [x] Task 19 — algos/ppo_cot.py assembly — iter 13
-- [ ] Task 20 — tier1 integration test
+- [x] Task 20 — tier1 integration test — iter 14 (bug-fix-driven; 5 real bugs caught, 1 shortcut for iter 15)
 - [ ] Task 21 — scripts/probe_vision.py + initial report
 - [ ] Task 22 — scripts/probe_backbone.py (m1)
 - [ ] Task 23 — **training run kickoff** (long, background, milestone-gated wakeups)

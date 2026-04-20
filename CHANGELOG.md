@@ -6,6 +6,45 @@ One entry per iteration, not per commit within an iteration.
 
 ---
 
+## 2026-04-20 — iter 14 — integration test (plan task 20/27)
+
+**What.** 3 commits driving the first end-to-end trainer run on the 2B
+backbone:
+
+- `e3a11b0` — `tests/integration/test_trainer_short_run.py`: 10-iter
+  subprocess-based smoke, asserts runs dir + metrics.csv + header
+  columns.
+- `d0098b4` — 4 integration-bug fixes discovered by the test run:
+  1. BaseVLM `device_map="cuda"` (model was on CPU → flash-attn fail).
+  2. `mm_token_type_ids` threaded through the actor re-score forward
+     with zero-extension for generated tokens (Qwen3-VL M-RoPE).
+  3. CriticHead on model device + fp32 dtype.
+  4. Trainable LoRA params + critic_head cast to fp32 for GradScaler
+     compatibility.
+  Plus the documented ITER-14 SHORTCUT: PPO re-score uses ratio=1.0
+  until iter 15 caches full_ids.
+- `6ea86f2` — env ID rename Vizdoom*-v0 → v1 (gymnasium_wrapper
+  deprecation); integration test scaled to num_envs=1, num_steps=2,
+  max_new_tokens=16, streams stdout to log file.
+
+**Why.** Task 20 is the first moment the assembled trainer actually
+runs against the real backbone + real env. Expected to surface
+integration bugs; 5 real bugs caught + 1 shortcut deferred.
+
+**Evidence.**
+- `pytest tests/integration/test_trainer_short_run.py -v -m "tier1
+  and gpu"` → **1 passed in 80.37s** on single A6000.
+- `pytest tests/unit/test_env_factory.py -v` → 8 passed (post-rename).
+- Run artifacts: `runs/ppo_cot__VizdoomBasic-v1__qwen3-vl-2b-instruct__
+  0__2026-04-20/metrics.csv` + checkpoints/step_000002/.
+
+**Invariants run.** Inv-4 single-path drift check runs at iter 0
+minibatch 0 of the update loop — logs `inv_4_status=green` (drift=0
+because lp_new=mb_lp_old.clone()). Inv-01/Inv-05 register in
+InvariantMonitor but sample_every=10 doesn't fire in a 1-iter run.
+
+---
+
 ## 2026-04-20 — iter 13 — cluster script + trainer (plan tasks 18-19/27)
 
 **What.** 2 commits landing the trainer assembly.

@@ -1195,3 +1195,135 @@ lines plan section) might spill to iter 14; it did not.
     queue a follow-up commit fixing them.
 - Iter 14 may go long; if 10-iter run exceeds 60 min it kicks off
   via `run_in_background` + Monitor on the metrics CSV.
+
+---
+
+### 2026-04-20 — iter 14 — plan-task-20 — @e3a11b0..6ea86f2
+
+**Context.** First real end-to-end run of `algos/ppo_cot.py` on the 2B
+backbone. Expected to surface integration bugs — and it did, cleanly.
+
+**Accomplished.** Task 20 done; integration test green. 4 commits:
+`e3a11b0` test scaffold, `d0098b4` 4-bug fix, `6ea86f2` env rename +
+test scale-down.
+
+**Systematic-debugging sequence — each run surfaced one bug:**
+
+1. **Run 1 (56s)** — `DeprecatedEnv: VizdoomBasic-v0`. Caused by
+   vizdoom.gymnasium_wrapper deprecating the v0 series; registry probe
+   showed `VizdoomBasic-v1`, `VizdoomDeadlyCorridor-v1`,
+   `VizdoomDefendLine-v1`. Note: Corridor's prototype name
+   `VizdoomCorridor-v0` isn't in the v1 set — correct name is
+   `VizdoomDeadlyCorridor-v1`. Fix: 5-file rename + YAML file rename
+   (`configs/envs/VizdoomBasic-v0.yaml` → `-v1.yaml`). Applied to
+   action_tables, PromptBuilder slug map, trainer defaults, test
+   asserts.
+
+2. **Run 2 (1800s timeout)** — pytest-timeout fired. Trainer wasn't
+   hung; 10 iters × 2 envs × 8 steps × 180 model forwards on 2B
+   backbone just exceeded 30 min. Fix: minimize test scale
+   (num_envs=1, num_steps=2, total_timesteps=2, max_new_tokens=16)
+   + stream stdout to `tmp_path/trainer.log` (plan literal used
+   `capture_output=True` which buffers — hangs look identical to
+   progress until return). Test now ~80s.
+
+3. **Run 3 (56s)** — `NotImplementedError: Could not run
+   flash_attn::_flash_attn_varlen_forward with arguments from the CPU
+   backend`. Model on CPU. `BaseVLM` missing `device_map` kwarg. Fix:
+   add `device_map="cuda"` default.
+
+4. **Run 4 (56s)** — `ValueError: Multimodal data passed via
+   image_grid_thw but mm_token_type_ids is missing`. Qwen3-VL M-RoPE
+   needs `mm_token_type_ids` at forward. iter-3 hello-VLM smoke didn't
+   hit this because it called `model.generate(**inputs)` and let
+   transformers route everything; our `get_action` re-score path
+   passed fields explicitly and dropped `mm_token_type_ids`. Fix:
+   thread through, extend with zeros for generated tokens (original
+   `mm_token_type_ids` has shape `[B, prompt_len]`; `full_ids` is
+   `[B, prompt_len + gen_len]`; zeros = "not a multimodal token").
+
+5. **Run 5 (57s)** — `RuntimeError: Expected all tensors to be on the
+   same device, but found at least two devices, cpu and cuda:0`.
+   CriticHead on CPU. Construction was
+   `.to(dtype=self.vlm.model.dtype)` — changes dtype only. Fix:
+   `.to(device=self.vlm.model.device)` (intentionally dropped dtype →
+   fp32, see next bug).
+
+6. **Run 6 (62s)** — `ValueError: Attempting to unscale FP16
+   gradients`. GradScaler refuses to unscale fp16 grads (requires
+   master weights in fp32). Standard mixed-precision pattern. Fix:
+   cast trainable LoRA params + critic_head to fp32 after model
+   construction. Cast hidden_states back to fp32 in `get_value`
+   before CriticHead forward.
+
+7. **Run 7 (59s)** — `ValueError: too many values to unpack (expected
+   2)`. Update-loop call `log_probs, entropy = get_action(...)`
+   without `action_ids` hits generate branch, returns 4-tuple. Plan's
+   acknowledged shortcut (full_ids caching) manifested as an actual
+   crash. Fix for iter-14 scope: **shortcut** — `lp_new =
+   mb_lp_old.clone()` (ratio=1.0, no PPO correction); proper fix with
+   cached full_ids lands iter 15.
+
+8. **Run 8 (80s)** — **PASSED.** Integration test green. Subprocess
+   exits 0; `runs/ppo_cot__VizdoomBasic-v1__qwen3-vl-2b-instruct__0__
+   2026-04-20/metrics.csv` exists with >1 row; header contains
+   `gen_truncated_rate`, `lora_weight_norm_actor`, `inv_4_status`.
+
+**Decisions logged (beyond the 5+1 bug fixes).**
+
+1. **Env ID renaming propagated through 8 files** (action_tables,
+   builder, 2 YAMLs, 2 test files, trainer Args, integration test
+   subprocess). Single canonical change; no shims for v0 compat.
+
+2. **Test scaled down and streams stdout.** Plan-literal
+   `capture_output=True` plus 10-iter scale was unworkable.
+   `num_envs=1 num_steps=2 total_timesteps=2 max_new_tokens=16`
+   exercises full rollout + update + checkpoint + log flow in 80s.
+   Correctness-vs-realism tradeoff: this doesn't exercise large
+   batches or update epochs > 1, but lands the critical integration
+   path. Deeper correctness = Task 23 real training run.
+
+3. **ITER-14 SHORTCUT** (trainer.py lines ~254-261): PPO update
+   ratio=1.0. Trainer runs but doesn't meaningfully learn. Deferred
+   to iter 15 which adds `full_ids` caching to `RolloutBuffer` and
+   uses them as `action_ids` to the re-score path. Logged in code
+   comments + commit message + this log.
+
+4. **Critic head dtype policy: fp32.** Upstream hidden_states are
+   fp16 (VLM default). In get_value we explicitly cast
+   `last_hidden.float()` before passing to the fp32 critic head.
+   This pattern (master weights in fp32 with fp16 compute) is the
+   standard GradScaler contract and avoids the "Attempting to
+   unscale FP16 gradients" error at every update.
+
+**Verification evidence.**
+
+- `pytest tests/unit/test_env_factory.py -v` → 8 passed (post-rename).
+- `pytest tests/integration/test_trainer_short_run.py -v -m "tier1
+  and gpu" --timeout=900` → **1 passed in 80.37s** on GPU.
+- Runs directory `runs/ppo_cot__VizdoomBasic-v1__qwen3-vl-2b-instruct__
+  0__2026-04-20/` contains `metrics.csv` + `checkpoints/step_000002/`
+  + `microbatch_probe.json`.
+
+**Skills invoked.**
+- `superpowers:systematic-debugging` — 7-iteration fix cycle, one
+  hypothesis per run, cleanly layered.
+- `superpowers:verification-before-completion` — integration test
+  green before commit.
+- `superpowers:test-driven-development` — partial; the test came
+  before all the fixes, driving the bug surfacing.
+
+**Follow-ups (iter 15).**
+
+- **Fix the iter-14 shortcut** (ratio=1.0 update path). Plan:
+  a) Add `full_ids_per_step: list[torch.Tensor]` to `RolloutBuffer`
+     (init as empty list in `__post_init__`, appended during rollout).
+  b) Similarly `prompt_lens_per_step: list[torch.Tensor]`.
+  c) In update loop, for each minibatch: gather the right tensor
+     slices (`mb_t = mb // num_envs`, `mb_b = mb % num_envs`; pad to
+     max seq across minibatch), pass as `action_ids=mb_full_ids,
+     prompt_lens=mb_prompt_lens` to `get_action`.
+  d) Re-run the integration test; confirm PPO ratio actually deviates
+     from 1.0 after the first update step.
+- After iter-15 shortcut fix: Tasks 21 (vision probe) + 22 (backbone
+  probe) can land together in iter 16.
