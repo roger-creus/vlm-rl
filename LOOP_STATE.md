@@ -1,21 +1,19 @@
 # LOOP_STATE.md
 
-**Last updated:** 2026-04-20 (iter 14 — integration test GREEN, tasks 1-20/27).
+**Last updated:** 2026-04-20 (iter 15 — PPO re-score shortcut fixed, tasks 1-20/27).
 **Maintained by:** the autonomous `/loop` agent; humans read only.
 
 ## Current phase
 
-**Phase:** `B-ppo-cot-vizdoom-basic-2B` — **trainer runs end-to-end**. Plan tasks 1-20/27 complete (74% through). Integration test passes in 80s on GPU. 5 real bugs caught by the integration run + 1 shortcut documented:
+**Phase:** `B-ppo-cot-vizdoom-basic-2B` — **trainer runs with real PPO ratio**. Plan tasks 1-20/27 complete (74% through). Integration test still green (88.87s). Metrics show `approx_kl = 4.17e-6` on iter 2 (non-zero, so ratio ≠ 1.0) and `inv_4_status = green` (single-path drift within 1e-4 tolerance).
 
-1. `BaseVLM` now passes `device_map="cuda"` (model was on CPU → flash-attn failure).
-2. `DecoupledActorCriticVLM_COT.get_action` threads `mm_token_type_ids` through the re-score forward (Qwen3-VL M-RoPE requires it).
-3. `critic_head` + trainable LoRA params cast to fp32 after construction (GradScaler can't unscale fp16 grads).
-4. `critic_head` constructed on model device, not CPU.
-5. Vizdoom env IDs: `Vizdoom{Basic,Corridor,DefendLine}-v0` → `VizdoomBasic-v1 / VizdoomDeadlyCorridor-v1 / VizdoomDefendLine-v1` (gymnasium_wrapper deprecated v0).
+**Iter-14 shortcut resolved in iter 15:**
+- `RolloutBuffer` now caches `full_ids_per_step` + `prompt_lens_per_step` (list[Tensor]).
+- Trainer update loop gathers per-minibatch, pads to row-max, passes as `action_ids` to `get_action`.
+- Span-sum logprobs over `[prompt_len - 1, S - 2]` with non-pad targets.
+- Checkpoint save now idempotent: `_atomic_rename` rmtrees dst before replace.
 
-**Iter-14 shortcut** (fix scheduled iter 15): PPO update-loop re-score uses `lp_new = mb_lp_old.clone()` → ratio=1.0 → no PPO correction. Trainer runs but doesn't meaningfully learn. Proper fix requires caching `full_ids` per rollout step in `RolloutBuffer` and passing as `action_ids` to `get_action`.
-
-Next iter: Task 21 (vision probe) can proceed in parallel with iter-15 shortcut fix, OR iter 15 does shortcut first (recommended — Task 23 real training needs real PPO).
+Next iter: Task 21 (vision probe) or Task 22 (backbone probe) — both short, independent. Task 23 (real training) becomes plausible after these.
 
 ## Iter 5 sub-step completed
 

@@ -1327,3 +1327,94 @@ test scale-down.
      from 1.0 after the first update step.
 - After iter-15 shortcut fix: Tasks 21 (vision probe) + 22 (backbone
   probe) can land together in iter 16.
+
+---
+
+### 2026-04-20 — iter 15 — fix-shortcut-ratio-1 — @9c88823
+
+**Context.** Iter 14 shipped the integration test with a documented
+shortcut — PPO update used `ratio = 1.0` (no actual policy gradient).
+This iter fixes the root cause: cache `full_ids` per rollout step and
+re-score under the current actor adapter at update time.
+
+**Accomplished.** Plan Task 20 truly green now. 1 commit (`9c88823`)
+covering buffer + trainer + checkpoint.
+
+**Decisions.**
+
+1. **Caching strategy: `list[torch.Tensor | None]` of length `num_steps`.**
+   Each step writes `buffer.full_ids_per_step[step] = cot.full_ids.detach()`
+   (shape `[num_envs, S_step]`). Per-step tensors can have different
+   padded lengths; no need to pre-pad to a global max. Similarly
+   `prompt_lens_per_step[step]` stores `[num_envs]` longs.
+
+2. **Update-loop gathering: per-minibatch explicit loop.** For each
+   flat index `idx ∈ mb`:
+   - `t_idx = idx // num_envs`, `b_idx = idx % num_envs` (matches
+     `buffer.obs.view(batch_size, ...)` flattening order:
+     `[step * num_envs + env]`).
+   - Gather the corresponding row + prompt_len.
+   - Pad to `max_s` across the minibatch with `pad_token_id`.
+   - Stack prompt_lens.
+   Tradeoff: small minibatches (=2 at test scale) make the python loop
+   trivial; larger minibatches (128+ at Tier-2 scale) may want
+   vectorization. Vectorization = `torch.nn.utils.rnn.pad_sequence`
+   once we drop to a single `[batch_size, S_max]` tensor at rollout
+   end. Deferred.
+
+3. **Span-sum mask: `positions >= prompt_len - 1` AND `target != pad`.**
+   Vectorized:
+   ```python
+   positions = torch.arange(S-1, device=log_probs.device)
+   start_mask = positions.unsqueeze(0) >= (prompt_lens - 1).unsqueeze(1)
+   nonpad_mask = full_ids[:, 1:] != pad_id
+   span_mask = (start_mask & nonpad_mask).to(log_probs.dtype)
+   lp_new = (log_probs * span_mask).sum(-1)
+   ```
+   Entropy uses the same mask with mean-over-generated-span:
+   `(entropy * span_mask).sum(-1) / span_mask.sum(-1).clamp(min=1)`.
+
+4. **Checkpoint save idempotent.** `_atomic_rename(src, dst)` now
+   `shutil.rmtree(dst)` if it exists before `os.replace(src, dst)`.
+   Previously `os.replace` refused to overwrite a non-empty directory
+   (`FileExistsError` from the underlying `rename()` syscall).
+   Triggered on re-running the integration test with the same
+   run_name (run_name is date-level → collides on same-day re-runs).
+   Semantic choice: idempotent overwrite is the correct contract for
+   a train-run checkpoint — you save the latest, period.
+
+**Verification evidence.**
+
+- `pytest tests/integration/test_trainer_short_run.py -v -m "tier1 and
+  gpu" --timeout=900` → 1 passed in 88.87s on GPU.
+- `runs/ppo_cot__VizdoomBasic-v1__qwen3-vl-2b-instruct__0__2026-04-20/
+  metrics.csv`:
+  - Row 1 (iter 1): `approx_kl=0.0, clip_fraction=0.0,
+    inv_4_status=green`. Expected — first update on zeroed stored
+    logprobs has drift = 0 by construction.
+  - Row 2 (iter 2): **`approx_kl=4.17e-6`**, nonzero → real ratio
+    deviation from 1.0 → PPO is actually computing policy-gradient
+    updates. `inv_4_status=green` (drift well within 1e-4 tolerance).
+
+**Skills invoked.**
+- `superpowers:systematic-debugging` — 2-run cycle: first run surfaced
+  the checkpoint collision, second run green.
+- `superpowers:verification-before-completion` — verified non-zero
+  approx_kl and green inv_4 before commit.
+
+**Follow-ups (iter 16).**
+
+- **Task 21** `scripts/probe_vision.py` + initial vision-probe report
+  at `docs/vision_probes/VizdoomBasic-v1_qwen3-vl-2b-instruct/
+  report.md`. Rolls a 20-frame scripted episode, feeds the VLM the
+  `vision_probe.txt` questions, compares against ground truth
+  (vizdoom labels buffer).
+- **Task 22** `scripts/probe_backbone.py` + initial backbone-probe
+  report at `docs/backbone_probes/qwen3-vl-2b-instruct.md`. Records
+  observed architecture, module-suffix list, patch count, resolution
+  floor.
+- Both are independent + scope ~100-200 LOC each. Iter 16 comfortably
+  handles both, possibly via parallel subagents.
+- Task 23 (real training run) lands iter 17+. Requires kicking off
+  `algos.ppo_cot` with default total_timesteps=200k, arming a
+  Monitor on metrics.csv tail for milestone wake-ups.

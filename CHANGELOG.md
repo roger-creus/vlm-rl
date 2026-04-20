@@ -6,6 +6,44 @@ One entry per iteration, not per commit within an iteration.
 
 ---
 
+## 2026-04-20 — iter 15 — PPO re-score fix + idempotent checkpoint (shortcut from iter 14)
+
+**What.** 1 commit (`9c88823`) resolving the ITER-14 SHORTCUT
+(ratio=1.0 placeholder) into a real PPO update.
+
+- `src/cleanrl_vlm/rollout/buffer.py`: `RolloutBuffer` gains
+  `full_ids_per_step: list[torch.Tensor | None]` +
+  `prompt_lens_per_step: list[torch.Tensor | None]`. Populated during
+  rollout.
+- `algos/ppo_cot.py` update loop: for each minibatch, gather the
+  cached rows + prompt_lens, pad to row-max, pass as `action_ids` to
+  `get_action` (hits the no-generate branch returning
+  `(log_probs, entropy)`). Span-sum with `positions >= prompt_len-1`
+  AND `target != pad`. Entropy mean over the same mask.
+- `src/cleanrl_vlm/training/checkpoint.py::_atomic_rename`:
+  `shutil.rmtree(dst)` if it exists before `os.replace`. Checkpoint
+  save is now idempotent across re-runs with same run_name + step.
+
+**Why.** The iter-14 shortcut let the integration test pass but
+silently disabled the policy-gradient term. Task 23 real training
+needs real PPO to actually learn.
+
+**Evidence.**
+- `pytest tests/integration/test_trainer_short_run.py -v -m "tier1
+  and gpu"` → 1 passed in 88.87s on GPU.
+- `metrics.csv` shows **`approx_kl=4.17e-6` on iter 2** — non-zero
+  ratio → real PPO gradient. Previous shortcut had `approx_kl=0.0`
+  identically.
+- `inv_4_status=green` (drift well within 1e-4 tolerance).
+
+**Invariants run.**
+- Inv-4 single-path drift check — green by construction (lp_new
+  re-scored under the same adapter seconds after the stored value;
+  drift is fp16 reduction-order noise at 1e-6 level, well under the
+  1e-4 tolerance).
+
+---
+
 ## 2026-04-20 — iter 14 — integration test (plan task 20/27)
 
 **What.** 3 commits driving the first end-to-end trainer run on the 2B
