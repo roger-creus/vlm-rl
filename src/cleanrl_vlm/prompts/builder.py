@@ -26,6 +26,7 @@ class PromptBuilder:
         "VizdoomDeadlyCorridor-v1": "vizdoom/corridor",
         "VizdoomDefendLine-v1": "vizdoom/defend_line",
         "ALE/Pong-v5": "atari/pong",
+        "MiniGrid-Empty-5x5-v0": "minigrid/empty_5x5",
     }
 
     @classmethod

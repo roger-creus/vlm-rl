@@ -56,3 +56,30 @@ def test_ale_pong_yaml_has_no_hardcoded_pixel_budget():
     cfg = yaml.safe_load(raw)
     assert "processor_min_pixels" not in cfg
     assert "processor_max_pixels" not in cfg
+
+
+def test_minigrid_empty_5x5_single_frame_native_pixels():
+    # obs_mode=full: 5 cells × tile_size=32 = 160×160. Single-frame per §4.
+    pixels, pixels_with_c = _native_pixels_for("MiniGrid-Empty-5x5-v0", "configs/envs/MiniGrid-Empty-5x5-v0.yaml")
+    assert pixels == 160 * 160 == 25600
+    assert pixels_with_c == 25600 * 3
+
+
+def test_minigrid_yaml_has_no_hardcoded_pixel_budget():
+    raw = Path("configs/envs/MiniGrid-Empty-5x5-v0.yaml").read_text()
+    cfg = yaml.safe_load(raw)
+    assert "processor_min_pixels" not in cfg
+    assert "processor_max_pixels" not in cfg
+
+
+def test_minigrid_defaults_to_full_observation_mode():
+    """obs_mode=full is the default — the VLM sees the whole grid, not the
+    classic agent-centered 7x7 partial view. Switching to partial should be
+    explicit (for the standard RL-literature ablation)."""
+    cfg = yaml.safe_load(Path("configs/envs/MiniGrid-Empty-5x5-v0.yaml").read_text())
+    assert cfg.get("obs_mode", "full") == "full", "MiniGrid default should be full observation (RGBImgObsWrapper)."
+    # Verify the wrapper actually produces a full-grid render. For a 5x5 env
+    # at tile_size=32, full = 160 (5*32); partial would be 224 (7*32, i.e.
+    # the agent's 7-cell view).
+    pixels_full, _ = _native_pixels_for("MiniGrid-Empty-5x5-v0", "configs/envs/MiniGrid-Empty-5x5-v0.yaml")
+    assert pixels_full == 160 * 160, f"expected 160x160 full-grid render, got {pixels_full} px"

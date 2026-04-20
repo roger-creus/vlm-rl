@@ -1,0 +1,5 @@
+For each frame, answer four questions:
+1. Is the red agent triangle visible? (yes / no)
+2. Which direction is the agent facing? (up / right / down / left)
+3. Is the green goal square visible? (yes / no)
+4. Roughly where is the goal relative to the agent? (ahead / behind / left / right / overlapping / no-goal)

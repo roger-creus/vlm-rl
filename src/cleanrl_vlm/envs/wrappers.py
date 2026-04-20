@@ -39,6 +39,29 @@ class ScreenOnlyWrapper(gym.ObservationWrapper):
         return np.asarray(obs["screen"])
 
 
+class DictImageKeyWrapper(gym.ObservationWrapper):
+    """Drop a Dict-obs env down to a single image-shaped entry.
+
+    Generalizes ``ScreenOnlyWrapper`` so env families that emit Dict obs
+    (MiniGrid's ``{image, direction, mission}``, etc.) can expose the
+    renderable image to the VLM the same way VizDoom exposes ``screen``.
+    """
+
+    def __init__(self, env: gym.Env, key: str = "image") -> None:
+        super().__init__(env)
+        assert isinstance(
+            env.observation_space, spaces.Dict
+        ), f"DictImageKeyWrapper expects Dict obs; got {type(env.observation_space).__name__}"
+        assert (
+            key in env.observation_space.spaces
+        ), f"key {key!r} not in Dict obs (have {list(env.observation_space.spaces)})"
+        self._key = key
+        self.observation_space = env.observation_space[key]
+
+    def observation(self, obs):
+        return np.asarray(obs[self._key])
+
+
 class DiscreteMultiBinaryWrapper(gym.ActionWrapper):
     """Generalizes DeadlyCorridor / DefendTheLine prototype wrappers.
 

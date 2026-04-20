@@ -26,6 +26,11 @@ pytestmark = [pytest.mark.tier1, pytest.mark.gpu]
 TIER1_ENVS = [
     pytest.param("VizdoomBasic-v1", "configs/envs/VizdoomBasic-v1.yaml", id="vizdoom_basic"),
     pytest.param("ALE/Pong-v5", "configs/envs/ALE-Pong-v5.yaml", id="ale_pong"),
+    pytest.param(
+        "MiniGrid-Empty-5x5-v0",
+        "configs/envs/MiniGrid-Empty-5x5-v0.yaml",
+        id="minigrid_empty_5x5",
+    ),
 ]
 
 

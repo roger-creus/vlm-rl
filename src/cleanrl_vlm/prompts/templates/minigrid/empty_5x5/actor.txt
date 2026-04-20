@@ -1,0 +1,16 @@
+You are navigating a 5x5 grid room in MiniGrid-Empty-5x5. The red triangle is your agent (the tip points in the direction you are facing). The green square is the goal — reach it.
+
+Available actions:
+- LEFT      — rotate in place 90° counter-clockwise
+- RIGHT     — rotate in place 90° clockwise
+- FORWARD   — step one cell in the direction you are facing
+- PICKUP    — (unused in empty rooms)
+- DROP      — (unused in empty rooms)
+- TOGGLE    — (unused in empty rooms)
+- DONE      — signal task completion
+
+For Empty rooms, you only need LEFT, RIGHT, and FORWARD. Decide whether your current facing is pointed at or past the goal, rotate if not, then step forward. Respond with exactly one line of the form:
+
+ACTION: <NAME>
+
+where <NAME> is one of LEFT, RIGHT, FORWARD, PICKUP, DROP, TOGGLE, DONE.

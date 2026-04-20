@@ -14,3 +14,11 @@ ALE/Pong-v5:
     reference_score: 21.0
     zero_shot_baseline: null
     scratch_cnn_baseline: 21.0
+
+MiniGrid-Empty-5x5-v0:
+  Qwen/Qwen3.5-2B:
+    # MiniGrid reward is 1 - 0.9 * (step / max_steps); an optimal agent
+    # solving in ~7 steps scores ~0.95. Random scores near 0.
+    reference_score: 0.95
+    zero_shot_baseline: null
+    scratch_cnn_baseline: null

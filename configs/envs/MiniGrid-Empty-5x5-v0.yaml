@@ -1,0 +1,22 @@
+tier: 1
+backbone_default: Qwen/Qwen3.5-2B
+# MiniGrid-Empty-5x5-v0 native dims at tile_size=32, obs_mode=full:
+# (5 cells × 32 px) = 160×160 RGB per frame. Single-frame per master-spec
+# §4: "MiniGrid's state is already symbolic-rich; stacking hurts more
+# than helps."
+tile_size: 32
+# obs_mode: "full" (default) shows the whole 5x5 grid — agent position +
+# orientation are visible in the render, which the VLM can reason over
+# directly. Switch to "partial" for the classic agent-centered 7x7 view
+# (standard RL-literature ablation against CNN-PPO baselines).
+obs_mode: full
+frame_stack:
+  n: 1
+  layout: single
+max_episode_steps: null           # minigrid default is 4*grid_size*grid_size = 100 steps
+target_score: 0.95                # max achievable after solve; discount puts optimal-policy near this
+# processor_min_pixels / processor_max_pixels adapt from obs shape
+# (160*160 = 25600 px for single-frame 5x5 @ tile_size=32). Override here
+# if running an explicit resolution ablation.
+# processor_min_pixels: 25600
+# processor_max_pixels: 25600
