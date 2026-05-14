@@ -2,16 +2,16 @@ tier: 1
 backbone_default: Qwen/Qwen3.5-2B
 # Native ALE/Pong-v5 obs: 210x160 RGB, Discrete(6). ALE-v5 has built-in
 # frame_skip=4 + sticky_action_probability=0.25; we rely on those defaults.
-# EpisodicLife NOT applied (master-spec §4 keeps full ALE lifetime).
+# EpisodicLife NOT applied; keep the full ALE lifetime.
 frame_stack:
-  n: 1                           # TODO: 4-frame horizontal-tile ships with the next Atari env; see iter-25 journal
+  n: 1                           # VLM-aware 4-frame horizontal tiling is planned.
   layout: horizontal
 resolution:
   width: 160
   height: 210
 screen_format: RGB24
 clip_reward: false
-max_episode_steps: 27000         # master-spec §4: fixed for all Atari envs; DO NOT change
+max_episode_steps: 27000         # Fixed full-game Atari horizon.
 # processor_min_pixels / processor_max_pixels default to H*W of the env's
 # observation space (i.e., 210*160 = 33600 for single-frame Pong; scales
 # automatically if frame_stack.n grows via a tiling wrapper). Uncomment +

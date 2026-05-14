@@ -1,7 +1,7 @@
 """Inv-6 — FP16 GradScaler stability.
 
-Master-spec §8 Inv-6 is about the GradScaler NOT repeatedly halving its scale
-factor without recovery (which signals a real numerical instability). Scaled
+This invariant checks that GradScaler is NOT repeatedly halving its scale
+factor without recovery, which signals a real numerical instability. Scaled
 gradients on their own may legitimately overflow to inf — GradScaler is
 designed to detect that internally and skip those optimizer updates. Our test
 verifies:

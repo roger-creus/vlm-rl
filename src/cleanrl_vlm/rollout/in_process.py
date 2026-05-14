@@ -9,12 +9,12 @@ import torch
 
 @dataclass
 class CotRolloutStep:
-    actions: torch.LongTensor
-    full_ids: torch.LongTensor
-    logprob_sum: torch.FloatTensor
-    prompt_lens: torch.LongTensor
+    actions: torch.Tensor
+    full_ids: torch.Tensor
+    logprob_sum: torch.Tensor
+    prompt_lens: torch.Tensor
     raw_texts: list[str]
-    gen_truncated: torch.BoolTensor
+    gen_truncated: torch.Tensor
 
 
 def generated_span_mask(

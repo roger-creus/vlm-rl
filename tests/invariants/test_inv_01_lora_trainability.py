@@ -42,6 +42,6 @@ def test_inv_01_actor_critic_param_groups_disjoint():
     critic_ids = ac.critic_param_ids()
     assert actor_ids, "no trainable actor params found"
     assert critic_ids, "no trainable critic params found"
-    assert actor_ids.isdisjoint(
-        critic_ids
-    ), f"actor and critic param groups overlap on {len(actor_ids & critic_ids)} tensors"
+    assert actor_ids.isdisjoint(critic_ids), (
+        f"actor and critic param groups overlap on {len(actor_ids & critic_ids)} tensors"
+    )

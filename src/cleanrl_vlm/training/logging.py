@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import csv
+import importlib
 import logging
 from pathlib import Path
 from typing import Any
 
-# Full §9 schema. Order matters for the CSV header.
+# Full metrics schema. Order matters for the CSV header.
 CSV_COLUMNS = [
     "global_step",
     "iteration",
@@ -75,7 +76,7 @@ class CsvWriter:
 def wandb_init(run_name: str, project: str, config: dict[str, Any], enabled: bool):
     if not enabled:
         return None
-    import wandb
+    wandb = importlib.import_module("wandb")
 
     return wandb.init(project=project, name=run_name, config=config)
 

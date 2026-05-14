@@ -45,7 +45,7 @@ def ac_model():
         vlm_name=MODEL_ID,
         min_pixels=76800,
         max_pixels=76800,
-        attn_implementation="flash_attention_2",
+        attn_implementation="sdpa",
         dtype=torch.float16,
         lora_r=8,
         lora_alpha=16,
@@ -145,6 +145,6 @@ def test_actor_critic_param_ids_disjoint(ac_model) -> None:
     critic_ids = ac_model.critic_param_ids()
     assert actor_ids, "no trainable actor LoRA params found"
     assert critic_ids, "no trainable critic LoRA params found"
-    assert actor_ids.isdisjoint(
-        critic_ids
-    ), f"actor and critic param groups overlap on {len(actor_ids & critic_ids)} tensors"
+    assert actor_ids.isdisjoint(critic_ids), (
+        f"actor and critic param groups overlap on {len(actor_ids & critic_ids)} tensors"
+    )

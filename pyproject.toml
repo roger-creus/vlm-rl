@@ -1,8 +1,8 @@
 [project]
-name = "cleanrl-vlm"
+name = "vlm-rl"
 version = "0.0.1"
-description = "CleanRL-style library + research paper for online RL finetuning of Vision-Language Models in interactive visual environments."
-authors = [{ name = "Roger Creus Castanyer", email = "roger@vmax.ai" }]
+description = "Research code for online RL finetuning of Vision-Language Models in interactive visual environments."
+authors = [{ name = "Roger Creus Castanyer" }]
 readme = "README.md"
 requires-python = ">=3.10,<3.13"
 license = { text = "MIT" }
@@ -33,12 +33,8 @@ dependencies = [
     # Core ML
     "torch==2.6.0",
     "torchvision==0.21.0",
-    "torchaudio==2.6.0",
     "transformers @ git+https://github.com/huggingface/transformers",
     "peft>=0.13.0",
-    "accelerate>=1.0.0",
-    "deepspeed>=0.15.0",
-    "vllm>=0.7.0",
     # Envs
     "gymnasium>=1.0.0",
     "vizdoom>=1.2.3",
@@ -46,26 +42,29 @@ dependencies = [
     "ale-py>=0.9.0",
     "AutoROM[accept-rom-license]>=0.6.1",
     # Imaging
-    "opencv-python>=4.10.0",
     "pillow>=10.4.0",
     # Scientific
     "numpy>=1.26.0,<2",
-    "scipy>=1.13.0",
-    "pandas>=2.2.0",
-    "pyarrow>=17.0.0",
     # Config + CLI
     "pyyaml>=6.0",
     "tyro>=0.8.0",
-    # Logging
+    # Console logging
     "rich>=13.0.0",
-    "wandb>=0.18.0",
-    "tensorboard>=2.17.0",
     # Utilities
     "tqdm>=4.66.0",
     "huggingface-hub>=0.25.0",
 ]
 
 [project.optional-dependencies]
+distributed = [
+    "accelerate>=1.0.0",
+    "deepspeed>=0.15.0",
+    "vllm>=0.7.0",
+]
+tracking = [
+    "wandb>=0.18.0",
+    "tensorboard>=2.17.0",
+]
 perf = [
     # flash-attn requires torch installed first + --no-build-isolation;
     # document separate install step in README.
@@ -79,14 +78,11 @@ dev = [
     "ruff>=0.6.0",
     "pyright>=1.1.380",
     "pre-commit>=4.0.0",
-    "mkdocs>=1.6.0",
-    "mkdocs-material>=9.5.0",
 ]
 
 [project.urls]
-Homepage = "https://github.com/roger-creus/cleanrl-vlm"
-Documentation = "https://roger-creus.github.io/cleanrl-vlm"
-Repository = "https://github.com/roger-creus/cleanrl-vlm"
+Homepage = "https://github.com/roger-creus/vlm-rl"
+Repository = "https://github.com/roger-creus/vlm-rl"
 
 [build-system]
 requires = ["hatchling"]
@@ -106,24 +102,6 @@ packages = ["src/cleanrl_vlm"]
 [tool.ruff]
 line-length = 120
 target-version = "py310"
-# Pre-scaffold prototype files are kept in the working tree per iter-1
-# decision; they are not imported by cleanrl_vlm and will be pruned as
-# their replacements under algos/ + src/cleanrl_vlm/ land. Exclude them
-# from lint / format until then.
-extend-exclude = [
-    "src/eval.py",
-    "src/env_debug.py",
-    "src/models",
-    "src/ppo.py",
-    "src/test_vlm.py",
-    "src/tests",
-    "src/train_decoupled_actor_critic_action.py",
-    "src/train_decoupled_actor_critic_actionHead.py",
-    "src/train_decoupled_actor_critic_cot.py",
-    "src/utils",
-    "test.py",
-    "setup.py",
-]
 
 [tool.ruff.lint]
 select = [
@@ -157,9 +135,9 @@ minversion = "8.0"
 addopts = "-ra --strict-markers --strict-config"
 testpaths = ["tests"]
 markers = [
-    "tier1: fast smoke tests that run on CI (0.8B backbone, short runs)",
+    "tier1: fast smoke tests for short runs",
     "tier2: overnight / paper runs (4B backbone, longer runs)",
-    "invariant: correctness invariants from master-spec §8",
+    "invariant: correctness invariants for VLM-RL training",
     "gpu: requires at least one GPU",
     "vllm: requires vLLM to be installed and loadable",
 ]

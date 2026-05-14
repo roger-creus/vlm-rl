@@ -27,12 +27,12 @@ class BaseVLM(nn.Module):
         vlm_name: str,
         min_pixels: int,
         max_pixels: int,
-        attn_implementation: str = "flash_attention_2",
+        attn_implementation: str = "sdpa",
         dtype: torch.dtype = torch.float16,
         device_map: str = "cuda",
     ) -> None:
         super().__init__()
-        self.processor = AutoProcessor.from_pretrained(
+        self.processor: Any = AutoProcessor.from_pretrained(
             vlm_name,
             trust_remote_code=True,
             min_pixels=min_pixels,
@@ -50,7 +50,7 @@ class BaseVLM(nn.Module):
                     "cannot build attention_mask / span_mask safely."
                 )
             self.processor.tokenizer.pad_token = self.processor.tokenizer.eos_token
-        self.model = AutoModelForImageTextToText.from_pretrained(
+        self.model: Any = AutoModelForImageTextToText.from_pretrained(
             vlm_name,
             dtype=dtype,
             trust_remote_code=True,

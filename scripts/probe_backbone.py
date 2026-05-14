@@ -2,7 +2,7 @@
 
 Usage::
 
-    python -m scripts.probe_backbone --backbone Qwen/Qwen3-VL-2B-Instruct \
+    python -m scripts.probe_backbone --backbone Qwen/Qwen3.5-2B \
         --min-pixels 76800 --max-pixels 76800
 """
 
@@ -43,7 +43,7 @@ def main() -> None:
     assert num_image_tokens > 0, "Inv-8: processor emitted ZERO image tokens"
 
     slug = args.backbone.split("/")[-1].lower()
-    out = Path(f"docs/backbone_probes/{slug}.md")
+    out = Path(f"reports/backbone_probes/{slug}.md")
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(
         f"# Backbone probe — {args.backbone}\n\n"

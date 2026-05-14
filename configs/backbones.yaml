@@ -1,14 +1,13 @@
 Qwen/Qwen3.5-0.8B:
   # Debug / fast-smoke tier. Hybrid Gated-DeltaNet + sparse MoE; hidden 1024,
-  # 24 layers, vision hidden 768. Matches master-spec §3's architecture
-  # pattern for the "Tier-1 0.8B" slot.
+  # 24 layers, vision hidden 768. Useful as the smallest debug tier.
   tier: 1
   auto_class: AutoModelForImageTextToText
   processor_pixel_budget:
     # Backbone default; per-env YAML overrides via processor_min_pixels / processor_max_pixels.
     min_pixels: 262144
     max_pixels: 1310720
-  attn_implementation: flash_attention_2
+  attn_implementation: sdpa
   dtype: bfloat16
   thinking_mode: off
   lora_groups_default: [text_attn, text_mlp, vision_attn, vision_mlp, merger, lm_head]
@@ -18,13 +17,13 @@ Qwen/Qwen3.5-0.8B:
 Qwen/Qwen3.5-2B:
   # Primary Tier-1 model (user directive). Already an instruct model —
   # native chat template handles system / user / assistant turns without
-  # extra scaffolding.
+  # extra setup.
   tier: 1
   auto_class: AutoModelForImageTextToText
   processor_pixel_budget:
     min_pixels: 262144
     max_pixels: 1310720
-  attn_implementation: flash_attention_2
+  attn_implementation: sdpa
   dtype: bfloat16
   thinking_mode: off
   lora_groups_default: [text_attn, text_mlp, vision_attn, vision_mlp, merger, lm_head]
@@ -38,7 +37,7 @@ Qwen/Qwen3.5-4B:
   processor_pixel_budget:
     min_pixels: 262144
     max_pixels: 1310720
-  attn_implementation: flash_attention_2
+  attn_implementation: sdpa
   dtype: bfloat16
   thinking_mode: off
   lora_groups_default: [text_attn, text_mlp, vision_attn, vision_mlp, merger, lm_head]

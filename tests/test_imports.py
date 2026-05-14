@@ -1,7 +1,4 @@
-"""Verify that the scaffolded package and its submodules import cleanly.
-
-Follows master-spec §0: binary correctness (either imports work or they don't).
-"""
+"""Verify that the package and its submodules import cleanly."""
 
 import importlib
 

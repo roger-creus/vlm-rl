@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import deque
+from typing import Any
 
 import torch
 
@@ -12,7 +13,8 @@ class Fp16State:
 
     def __init__(self, enabled: bool = True, maxlen: int = 1024) -> None:
         self.enabled = enabled
-        self.scaler = torch.amp.GradScaler("cuda", enabled=enabled)
+        grad_scaler_cls: Any = torch.amp.GradScaler  # pyright: ignore[reportPrivateImportUsage]
+        self.scaler = grad_scaler_cls("cuda", enabled=enabled)
         self.scale_history: deque[float] = deque(maxlen=maxlen)
 
     def scale(self, loss: torch.Tensor) -> torch.Tensor:

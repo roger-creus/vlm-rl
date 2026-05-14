@@ -11,11 +11,9 @@ import gymnasium as gym
 def make_atari_env(env_id: str, config: dict[str, Any]) -> Callable[[], gym.Env]:
     """Return a thunk that builds an ALE-v5 env with spec §4 defaults.
 
-    - EpisodicLife is NOT applied (master-spec §4: "the ALE full lifetime
-      is the paper-standard horizon").
-    - Frame-stacking is NOT applied here (spec §4 calls for 4-frame
-      horizontal-tile; that wrapper lands with the second Atari env and
-      the VLM-aware tiling helper).
+    - EpisodicLife is NOT applied; ALE full lifetime is the default horizon.
+    - Frame-stacking is NOT applied here. VLM-aware frame tiling is planned
+      as an explicit wrapper.
     - ALE's native frameskip is used (v5 default = 4, sticky_action_probability=0.25).
     """
     import ale_py
@@ -28,7 +26,7 @@ def make_atari_env(env_id: str, config: dict[str, Any]) -> Callable[[], gym.Env]
     def thunk() -> gym.Env:
         env = gym.make(env_id, render_mode="rgb_array", max_episode_steps=max_episode_steps)
         if clip_reward:
-            env = gym.wrappers.TransformReward(env, lambda r: float(max(-1.0, min(1.0, r))))
+            env = gym.wrappers.TransformReward(env, lambda r: float(max(-1.0, min(1.0, float(r)))))
         env = gym.wrappers.RecordEpisodeStatistics(env)
         return env
 

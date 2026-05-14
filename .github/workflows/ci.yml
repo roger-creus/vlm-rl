@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
+      - uses: astral-sh/setup-uv@v8
         with:
           python-version: "3.10"
       - name: Install deps (core only, CPU-safe)
@@ -20,13 +20,13 @@ jobs:
           uv sync --extra dev --no-install-project
           uv pip install -e . --no-deps
       - name: Ruff
-        run: uv run ruff check .
+        run: uv run --no-env-file ruff check .
       - name: Ruff format check
-        run: uv run ruff format --check .
+        run: uv run --no-env-file ruff format --check .
       - name: Pyright
-        run: uv run pyright src/cleanrl_vlm || true  # warn-only at scaffold; tightened once real code lands
-      - name: CPU-safe tests (imports, spec-exists)
-        run: uv run pytest tests/test_imports.py tests/test_spec_exists.py -v
+        run: uv run --no-env-file pyright src/cleanrl_vlm
+      - name: CPU-safe tests
+        run: uv run --no-env-file pytest tests/test_imports.py tests/unit tests/invariants -v
 
   tier1-smoke:
     name: Tier-1 smoke (GPU)
@@ -34,7 +34,7 @@ jobs:
     if: false   # enable once a self-hosted GPU runner is registered for this repo
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
+      - uses: astral-sh/setup-uv@v8
         with:
           python-version: "3.10"
       - name: Install deps
@@ -42,18 +42,5 @@ jobs:
           uv sync --extra dev
           uv pip install flash-attn==2.7.4.post1 --no-build-isolation
       - name: Tier-1 smoke
-        run: uv run pytest -m tier1 -v
+        run: uv run --no-env-file pytest -m tier1 -v
         timeout-minutes: 20
-
-  docs:
-    name: Docs build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
-        with:
-          python-version: "3.10"
-      - name: Install deps
-        run: uv sync --extra dev --no-install-project
-      - name: mkdocs build --strict
-        run: uv run mkdocs build --strict

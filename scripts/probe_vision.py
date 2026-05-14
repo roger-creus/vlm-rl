@@ -2,7 +2,7 @@
 
 Usage::
 
-    python -m scripts.probe_vision --env-id VizdoomBasic-v1 --backbone Qwen/Qwen3-VL-2B-Instruct
+    python -m scripts.probe_vision --env-id VizdoomBasic-v1 --backbone Qwen/Qwen3.5-2B
 """
 
 from __future__ import annotations
@@ -53,16 +53,15 @@ def main() -> None:
         inputs = vlm.preprocess_obs_and_text(obs_t, [probe_text])
         ids = vlm.model.generate(**inputs, max_new_tokens=64, do_sample=False)
         txt = vlm.processor.batch_decode(ids[:, inputs.input_ids.shape[1] :], skip_special_tokens=True)[0]
-        # Ground truth: VizdoomBasic labels buffer would go here; for the probe
-        # we only record the VLM's answer and the agent reviews qualitatively
-        # per §0.
+        # Ground truth labels can be added per environment; for now the report
+        # records the VLM answer for qualitative inspection.
         frames.append(ProbeFrame(step=step, label_present=True, vlm_answer=txt))
         obs, _, term, trunc, _ = env.step(env.action_space.sample())
         if term or trunc:
             obs, _ = env.reset()
 
     slug = args.backbone.split("/")[-1].lower()
-    out = Path(f"docs/vision_probes/{args.env_id}_{slug}/report.md")
+    out = Path(f"reports/vision_probes/{args.env_id}_{slug}/report.md")
     out.parent.mkdir(parents=True, exist_ok=True)
     body = [
         f"# Vision probe — {args.env_id} / {args.backbone}",

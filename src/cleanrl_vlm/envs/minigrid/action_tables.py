@@ -7,8 +7,7 @@ captures them cleanly.
 
 For navigation-only envs like ``MiniGrid-Empty-*`` the first three
 actions suffice; the prompt nudges the VLM toward those while keeping
-the full native action set available (master-spec §4: "MiniGrid
-discrete actions are native").
+the full native action set available.
 """
 
 from __future__ import annotations

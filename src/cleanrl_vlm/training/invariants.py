@@ -1,4 +1,4 @@
-"""InvariantMonitor scaffold + per-Inv check functions."""
+"""InvariantMonitor and per-invariant check functions."""
 
 from __future__ import annotations
 

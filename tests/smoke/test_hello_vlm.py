@@ -2,14 +2,11 @@
 
 Verifies:
   * Dependency graph resolves and imports.
-  * Backbone loads (requires transformers from git per master-spec §3).
+  * Backbone loads (requires recent transformers support for Qwen3.5-VL).
   * AutoProcessor handles multimodal inputs.
   * Generation path does not error.
 
-This is NOT a correctness test for learning — it only proves the scaffold
-infra is runnable. Master-spec §0 governs the response to any failure:
-investigate → understand → iterate. Hard-fail only on genuine correctness
-bugs (wrong shapes, NaN, import errors).
+This is NOT a correctness test for learning; it only proves the VLM path is runnable.
 """
 
 import os

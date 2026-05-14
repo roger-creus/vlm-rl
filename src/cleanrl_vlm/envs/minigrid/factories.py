@@ -33,8 +33,8 @@ def make_minigrid_env(env_id: str, config: dict[str, Any]) -> Callable[[], gym.E
         ablation; keeps the task aligned with the CNN-PPO baseline
         literature.
 
-    Single-frame per master-spec §4 (MiniGrid's state is already
-    symbolic-rich, so frame-stacking hurts more than helps).
+    Single-frame by default: MiniGrid's state is already symbolic-rich,
+    so frame-stacking usually hurts more than helps.
     """
     import minigrid  # noqa: F401  — registers envs with gymnasium
     from minigrid.wrappers import RGBImgObsWrapper, RGBImgPartialObsWrapper

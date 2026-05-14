@@ -101,10 +101,8 @@ def test_ppo_cot_short_run(tmp_path: Path, env_id: str, env_config: str):
         f"[{env_id}] Inv-4 single-path parity red on iter 1. "
         f"approx_kl={row.get('approx_kl')} (mean); re-score path has diverged from rollout."
     )
-    # Gradients must be finite. Qwen3.5's Gated DeltaNet backward produces
-    # NaNs under FP16 without the flash-linear-attention fast path; the
-    # BF16 default (amendment 2026-04-20-bf16-default-for-qwen3.5.md)
-    # avoids this.
+    # Gradients must be finite. Qwen3.5's Gated DeltaNet backward produced
+    # NaNs under FP16 in local testing; the BF16 default avoids this.
     grad_norm = row.get("grad_norm_global", "")
     assert grad_norm and grad_norm.lower() not in {
         "nan",

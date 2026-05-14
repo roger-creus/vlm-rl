@@ -1,8 +1,8 @@
 tier: 1
-backbone_default: Qwen/Qwen3-VL-2B-Instruct
+backbone_default: Qwen/Qwen3.5-2B
 frame_skip: 4
 frame_stack:
-  n: 1                         # TODO(M6): re-evaluate when corridor + defend_line ports land; tracked in LOOP_STATE under C-envs-tier1-expand
+  n: 1                         # Re-evaluate when multi-frame tiling wrappers land.
   layout: horizontal
 resolution:
   width: 320

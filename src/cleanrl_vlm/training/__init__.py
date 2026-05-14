@@ -1,1 +1,1 @@
-"""Subpackage scaffolded; implementations land per master-spec cycle."""
+"""Training utilities for precision, logging, invariants, and checkpoints."""

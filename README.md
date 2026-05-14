@@ -1,60 +1,95 @@
-# cleanrl-vlm
+# vlm-rl
 
-**CleanRL-style library + research paper for online RL finetuning of Vision-Language Models in interactive visual environments (ViZDoom, Atari, Minigrid).**
+Research code for online reinforcement learning with vision-language models in visual environments.
 
-The promise: pretrained VLMs + efficient LoRA finetuning + a correct on-policy RL pipeline (PPO / GRPO / RLOO) can adapt a static foundation model into an agentic one that outperforms CNN agents trained from scratch — while training a small fraction of parameters. Along the way, we contribute novel methods for long-horizon credit assignment with VLM critics.
+The current experiment is PPO-COT: a VLM sees an RGB observation, generates a short response ending in `ACTION: <NAME>`, and PPO updates LoRA adapters plus a small critic head from on-policy rollouts.
 
-## Quickstart
+## Status
+
+This is an active research repo, not a finished benchmark package.
+
+Implemented:
+
+- PPO-COT trainer in `algos/ppo_cot.py`
+- Qwen3.5-VL model wrapper with actor/critic LoRA adapters
+- ViZDoom Basic, ALE Pong, and MiniGrid Empty factories
+- Prompt templates under `src/cleanrl_vlm/prompts/templates/`
+- Unit and invariant tests for parsing, rollout storage, GAE, LoRA wiring, logging, checkpoints, reward flow, determinism, and padding masks
+
+Not implemented yet:
+
+- vLLM rollout serving
+- GRPO/RLOO variants
+- CNN and frozen-VLM baselines
+- long multi-seed result tables
+- full checkpoint/resume parity
+
+## Install
+
+Use Python 3.10 and `uv`.
 
 ```bash
-# 1. Install UV: https://docs.astral.sh/uv/
+git clone git@github.com:roger-creus/vlm-rl.git
+cd vlm-rl
 
-# 2. Set up the environment
 uv venv --python 3.10
 uv sync --extra dev
-
-# 3. Install flash-attn (separate because of build-isolation requirement)
-uv pip install flash-attn==2.7.4.post1 --no-build-isolation
-
-# 4. Run the smoke test
-uv run pytest -m tier1 -v
 ```
 
-## Canonical trainers (spec §5 — initially empty; populated by /loop)
+Optional extras:
 
-`algos/{ppo, grpo, rloo}_{cot, action, head}.py` — 9 single-file trainers. COT is the hero interface; action-scoring and MLP-head are ablations.
+```bash
+uv sync --extra dev --extra distributed   # accelerate/deepspeed/vllm
+uv sync --extra dev --extra tracking      # wandb/tensorboard
+uv pip install flash-attn==2.7.4.post1 --no-build-isolation
+```
 
-## Baselines (spec §7)
+`transformers` is installed from GitHub because the active Qwen3.5-VL path depends on recent upstream support.
 
-- `baselines/cnn_ppo.py` — from-scratch CNN PPO (non-VLM)
-- `baselines/zero_shot_vlm.py` — pure prompting, no RL
-- `baselines/frozen_vlm_head.py` — frozen VLM + trainable MLP head (no LoRA)
+## Check
 
-## Documentation
+CPU-safe checks:
 
-See `docs/index.md` (mkdocs-rendered). Key pages:
+```bash
+uv run --no-env-file ruff check .
+uv run --no-env-file ruff format --check .
+uv run --no-env-file pyright src/cleanrl_vlm
+uv run --no-env-file pytest tests/test_imports.py tests/unit tests/invariants -v
+```
 
-- `docs/ARCHITECTURE.md` — library layout + data flow
-- `docs/ALGORITHMS.md` — per-algo math + code pointers
-- `docs/ENVS.md` — env catalogue + target scores
-- `docs/BACKBONES.md` — supported VLMs
-- `docs/RECIPES.md` — copy-pasteable reproduction commands
-- `docs/RESULTS.md` — live benchmark dashboard
-- `docs/RESEARCH.md` — research journal
-- `docs/INVARIANTS.md` — correctness invariants Inv-1..Inv-15
-- `docs/CONTRIBUTING.md` — onboarding rituals for new envs/algos/backbones
-- `docs/TROUBLESHOOTING.md` — OOM, NaN, logprob drift, vLLM issues
+GPU smoke:
 
-**Master spec (the single source of truth for design):** `docs/superpowers/specs/2026-04-19-cleanrl-vlm-masterplan.md`.
+```bash
+uv run --no-env-file pytest tests/smoke -m "tier1 and gpu" -v
+```
+
+## Run
+
+Small ViZDoom smoke run:
+
+```bash
+uv run --no-env-file python -m algos.ppo_cot \
+  --env-id VizdoomBasic-v1 \
+  --env-config configs/envs/VizdoomBasic-v1.yaml \
+  --backbone Qwen/Qwen3.5-2B \
+  --num-envs 2 \
+  --num-steps 16 \
+  --total-timesteps 320 \
+  --max-new-tokens 64 \
+  --num-minibatches 2 \
+  --update-epochs 2
+```
+
+Run outputs go to `runs/`, which is gitignored.
+
+## Layout
+
+- `algos/ppo_cot.py` — main trainer
+- `src/cleanrl_vlm/` — package code
+- `configs/` — env/backbone/target config
+- `scripts/` — local probe scripts
+- `tests/` — test suite
 
 ## License
 
 MIT. See `LICENSE`.
-
-## Citation
-
-To be populated on first tagged release (`v0.1.0`, triggered when all Tier-1 + hero Tier-2 combos land green simultaneously per spec §12).
-
-## Previous prototype
-
-The prior iteration of this project is preserved on branch `old` for reference. It is frozen and no longer developed.

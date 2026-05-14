@@ -1,1 +1,1 @@
-"""Subpackage scaffolded; implementations land per master-spec cycle."""
+"""Environment factories, wrappers, and action tables."""

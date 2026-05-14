@@ -1,1 +1,1 @@
-"""Subpackage scaffolded; implementations land per master-spec cycle."""
+"""Research helpers and experiment utilities."""

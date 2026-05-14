@@ -1,4 +1,4 @@
-"""PPO-COT trainer: Qwen3-VL-2B-Instruct on VizdoomBasic-v1.
+"""PPO-COT trainer for VLM policy learning in visual environments.
 
 Single-file trainer; imports from ``src/cleanrl_vlm/`` only.
 """
@@ -49,7 +49,7 @@ class Args:
     exp_name: str = "ppo_cot"
     seed: int = 0
     track: bool = False
-    wandb_project_name: str = "cleanRL-VLM"
+    wandb_project_name: str = "vlm-rl"
     wandb_entity: str | None = None
     checkpoint_interval: int = 10
 
@@ -74,11 +74,9 @@ class Args:
     num_minibatches: int = 4
     update_epochs: int = 4
     total_timesteps: int = 200_000
-    # Per spec §14: reward scaling 0.01 is the default. Multiplied into
-    # rewards before buffer storage so GAE / value loss use the scaled
-    # signal. RecordEpisodeStatistics still emits UNSCALED returns
-    # (wrapper sits inside AsyncVectorEnv → ep_return_mean is in raw env
-    # units regardless of this setting).
+    # Reward scaling keeps value targets numerically small. Multiplied into
+    # rewards before buffer storage so GAE / value loss use the scaled signal.
+    # RecordEpisodeStatistics still emits unscaled returns.
     reward_scale: float = 0.01
 
     # Optim
@@ -100,12 +98,11 @@ class Args:
 
     # Distributed
     sharding: str = "deepspeed_zero2"
-    # BF16 default (not FP16 as master-spec §1 suggested): Qwen3.5's Gated
+    # BF16 default: Qwen3.5's Gated
     # DeltaNet backward is numerically unstable in FP16 when the fast-path
     # flash-linear-attention is not installed — produces NaN gradients at
     # linear_attn.in_proj_qkv despite finite forward output. BF16's wider
-    # exponent avoids the underflow path. See amendment
-    # 2026-04-20-bf16-default-for-qwen3.5.md.
+    # exponent avoids the underflow path.
     precision: str = "bf16"
     num_processes: int = 1
     grad_accum: int = 1
@@ -211,9 +208,9 @@ def main() -> None:  # noqa: C901  (trainer orchestration; complexity expected)
     # frame_stack.n with a tiling wrapper will scale the obs shape and the
     # budget tracks it automatically.
     obs_shape = envs.single_observation_space.shape
-    assert (
-        obs_shape is not None and len(obs_shape) >= 2
-    ), f"Cannot derive pixel budget from obs_shape={obs_shape!r}; env must expose a 2D+ image."
+    assert obs_shape is not None and len(obs_shape) >= 2, (
+        f"Cannot derive pixel budget from obs_shape={obs_shape!r}; env must expose a 2D+ image."
+    )
     native_pixels = int(obs_shape[0]) * int(obs_shape[1])
     min_pixels = int(env_cfg.get("processor_min_pixels", native_pixels))
     max_pixels = int(env_cfg.get("processor_max_pixels", native_pixels))
@@ -241,9 +238,9 @@ def main() -> None:  # noqa: C901  (trainer orchestration; complexity expected)
     optimizer = torch.optim.AdamW(ac_model.get_trainable_params(), lr=args.learning_rate)
     fp16 = Fp16State(enabled=(args.precision == "fp16"))
 
-    # Conservative placeholder — returns min(num_envs, cap), not a real
-    # OOM-triggering auto-probe. The master-spec §3 "probe doubling until
-    # OOM" feature is backlog; for now we assume num_envs already fits.
+    # Conservative probe: returns min(num_envs, cap), not a real
+    # OOM-triggering auto-probe. A true doubling probe is backlog; for now
+    # we assume num_envs already fits.
     # The artifact is still written for record-keeping.
     per_gpu_microbatch = probe_microbatch(try_batch_fn=lambda s: s <= args.num_envs, cap=args.num_envs)
     record_microbatch_probe(run_dir, per_gpu_microbatch, target_batch_floor=128)

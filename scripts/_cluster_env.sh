@@ -4,7 +4,7 @@
 #   source scripts/_cluster_env.sh
 
 export CUDA_HOME="${CUDA_HOME:-/usr/local/cuda}"
-export HF_HOME="${HF_HOME:-$SCRATCH/hub}"
+export HF_HOME="${HF_HOME:-${SCRATCH:-$HOME/.cache}/huggingface}"
 export HF_HUB_CACHE="${HF_HUB_CACHE:-$HF_HOME/hub}"
 export TRANSFORMERS_CACHE="${TRANSFORMERS_CACHE:-$HF_HOME}"
 export TOKENIZERS_PARALLELISM="${TOKENIZERS_PARALLELISM:-false}"

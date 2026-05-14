@@ -1,4 +1,4 @@
-"""Gymnasium wrappers for cleanrl-vlm env layer."""
+"""Gymnasium wrappers for the vlm-rl environment layer."""
 
 from __future__ import annotations
 
@@ -49,12 +49,12 @@ class DictImageKeyWrapper(gym.ObservationWrapper):
 
     def __init__(self, env: gym.Env, key: str = "image") -> None:
         super().__init__(env)
-        assert isinstance(
-            env.observation_space, spaces.Dict
-        ), f"DictImageKeyWrapper expects Dict obs; got {type(env.observation_space).__name__}"
-        assert (
-            key in env.observation_space.spaces
-        ), f"key {key!r} not in Dict obs (have {list(env.observation_space.spaces)})"
+        assert isinstance(env.observation_space, spaces.Dict), (
+            f"DictImageKeyWrapper expects Dict obs; got {type(env.observation_space).__name__}"
+        )
+        assert key in env.observation_space.spaces, (
+            f"key {key!r} not in Dict obs (have {list(env.observation_space.spaces)})"
+        )
         self._key = key
         self.observation_space = env.observation_space[key]
 
